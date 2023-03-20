@@ -11,7 +11,6 @@ env:
   BUILD_TYPE: RelWithDebInfo
   SELECTED_CC: gcc-12
   SELECTED_CXX: g++-12
-  DEPS_DIR: ${{github.workspace}}/../../deps
   BOOST_MAJOR: 1
   BOOST_MINOR: 81
   BOOST_PATCH: 0
@@ -35,14 +34,22 @@ jobs:
       run: ${{env.SELECTED_CXX}} --version
 
     - name: Creating deps directory
-      run: mkdir -p ${{env.DEPS_DIR}}
+      run: mkdir -p ${{runner.temp}}/deps
+
+    - name: Cache boost tarball
+      id: cache-boost-tarball
+      uses: actions/cache@v3
+      with:
+        path: ${{runner.temp}}/deps/${{format('boost_{0}_{1}_{2}{3}', env.BOOST_MAJOR, env.BOOST_MINOR, env.BOOST_PATCH, env.BOOST_EXT)}}
+        key: boost-tarball
 
     - name: Download boost libraries
-      working-directory: ${{env.DEPS_DIR}}
+      if: steps.cache-boost-tarball.outputs.cache-hit != 'true'
+      working-directory: ${{runner.temp}}/deps
       run: wget --quiet ${{format('https://boostorg.jfrog.io/artifactory/main/release/{0}.{1}.{2}/source/boost_{0}_{1}_{2}{3}', env.BOOST_MAJOR, env.BOOST_MINOR, env.BOOST_PATCH, env.BOOST_EXT)}}
 
     - name: Unpack boost libraries
-      working-directory: ${{env.DEPS_DIR}}
+      working-directory: ${{runner.temp}}/deps
       run: tar xf ${{format('boost_{0}_{1}_{2}{3}', env.BOOST_MAJOR, env.BOOST_MINOR, env.BOOST_PATCH, env.BOOST_EXT)}}
 
     - uses: actions/checkout@v3
@@ -52,20 +59,20 @@ jobs:
       # See https://cmake.org/cmake/help/latest/variable/CMAKE_BUILD_TYPE.html?highlight=cmake_build_type
       run: |
         cmake \
-          -B ${{github.workspace}}/build-${{env.BUILD_TYPE}} \
+          -B ${{github.workspace}}/../build-${{env.BUILD_TYPE}} \
           -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} \
           -DCMAKE_C_COMPILER=${{env.SELECTED_CC}} \
           -DCMAKE_CXX_COMPILER=${{env.SELECTED_CXX}} \
-          -DBOOST_ROOT=${{env.DEPS_DIR}}/${{format('boost_{0}_{1}_{2}', env.BOOST_MAJOR, env.BOOST_MINOR, env.BOOST_PATCH)}}
+          -DBOOST_ROOT=${{runner.temp}}/deps/${{format('boost_{0}_{1}_{2}', env.BOOST_MAJOR, env.BOOST_MINOR, env.BOOST_PATCH)}}
 
     - name: CMake info
-      run: cmake -L ${{github.workspace}}/build-${{env.BUILD_TYPE}}
+      run: cmake -L ${{github.workspace}}/..//build-${{env.BUILD_TYPE}}
     - name: Build
       # Build your program with the given configuration
-      run: cmake --build ${{github.workspace}}/build-${{env.BUILD_TYPE}} --config ${{env.BUILD_TYPE}} --parallel
+      run: cmake --build ${{github.workspace}}/../build-${{env.BUILD_TYPE}} --config ${{env.BUILD_TYPE}} --parallel
 
     - name: Test
-      working-directory: ${{github.workspace}}/build-${{env.BUILD_TYPE}}
+      working-directory: ${{github.workspace}}/../build-${{env.BUILD_TYPE}}
       # Execute tests defined by the CMake configuration.
       # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
       run: ctest -C ${{env.BUILD_TYPE}} --parallel
