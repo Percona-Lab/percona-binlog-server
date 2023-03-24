@@ -5,6 +5,7 @@ project(BinlogServer VERSION 0.1 LANGUAGES CXX)
 # specify the C++ standard
 add_library(binlog_server_compiler_flags INTERFACE)
 target_compile_features(binlog_server_compiler_flags INTERFACE cxx_std_20)
+target_include_directories(binlog_server_compiler_flags INTERFACE "${PROJECT_SOURCE_DIR}/src")
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_SOURCE_DIR}/cmake)
 include(compiler_warnings)
@@ -24,7 +25,13 @@ find_package(Boost 1.81.0 EXACT REQUIRED)
 
 find_package(MySQL REQUIRED)
 
-add_executable(binlog_server app.cpp)
+set(source_files
+  src/app.cpp
+  src/binsrv/connection_config.hpp
+  src/binsrv/connection_config.cpp
+)
+
+add_executable(binlog_server ${source_files})
 target_link_libraries(binlog_server PUBLIC binlog_server_compiler_flags PRIVATE Boost::headers MySQL::client)
 # for some reason it is not possible to propagate CXX_EXTENSIONS and
 # CXX_STANDARD_REQUIRED via interface library (binlog_server_compiler_flags)
