@@ -12,6 +12,8 @@
 
 #include <boost/json/src.hpp>
 
+#include <mysql/mysql.h>
+
 template <typename T>
 [[noreturn]] void raise_exception(
     std::string_view message,
@@ -134,6 +136,9 @@ int main(int argc, char *argv[]) {
     std::cout << "port    : " << config->get_port() << '\n';
     std::cout << "user    : " << config->get_user() << '\n';
     std::cout << "password: " << config->get_password() << '\n';
+
+    std::cout << '\n';
+    std::cout << "mysql client version: " << mysql_get_client_version() << '\n';
 
     exit_code = EXIT_SUCCESS;
   } catch (const std::exception &e) {
