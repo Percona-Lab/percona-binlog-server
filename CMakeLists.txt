@@ -21,8 +21,11 @@ target_compile_options(binlog_server_compiler_flags INTERFACE
 )
 
 find_package(Boost 1.81.0 EXACT REQUIRED)
+
+find_package(MySQL REQUIRED)
+
 add_executable(binlog_server app.cpp)
-target_link_libraries(binlog_server PUBLIC binlog_server_compiler_flags PRIVATE Boost::headers)
+target_link_libraries(binlog_server PUBLIC binlog_server_compiler_flags PRIVATE Boost::headers MySQL::client)
 # for some reason it is not possible to propagate CXX_EXTENSIONS and
 # CXX_STANDARD_REQUIRED via interface library (binlog_server_compiler_flags)
 set_target_properties(binlog_server PROPERTIES
