@@ -1,0 +1,15 @@
+---
+Checks: "
+  *,
+  -fuchsia-*,
+  -android-*,
+  -google-*,
+  -zircon-*,
+  -abseil-*,
+  -modernize-use-trailing-return-type,
+  -llvmlibc-*,
+  -readability-redundant-member-init,
+  -llvm-header-guard
+"
+WarningsAsErrors: '*'
+HeaderFilterRegex: ''
