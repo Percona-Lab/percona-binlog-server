@@ -3,6 +3,7 @@
 #include <charconv>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <stdexcept>
 
 #include <boost/json/src.hpp>
@@ -20,36 +21,42 @@ constexpr std::string_view key_password{"password"};
 
 namespace binsrv {
 
-connection_config::connection_config(const parameter_container &parameters)
-    : host_{parameters[0]}, port_{0}, user_{parameters[2]},
-      password_{parameters[3]} {
-  auto port_bg = parameters[1].data();
-  auto port_en = port_bg + parameters[1].size();
+connection_config::connection_config(util::command_line_arg_view arguments)
+    : host_{arguments[1]}, port_{0}, user_{arguments[3]},
+      password_{arguments[4]} {
+  const auto *port_bg = arguments[2];
+  const auto *port_en = std::next(
+      port_bg, static_cast<std::ptrdiff_t>(std::strlen(arguments[2])));
   auto [ptr, ec] = std::from_chars(port_bg, port_en, port_);
-  if (ec != std::errc() || ptr != port_en)
+  if (ec != std::errc() || ptr != port_en) {
     util::raise_exception<std::invalid_argument>("invalid port value");
+  }
 }
 
 connection_config::connection_config(std::string_view file_name)
     : host_{}, port_{0}, user_{}, password_{} {
   static constexpr std::size_t max_file_size = 1048576;
 
-  std::filesystem::path file_path{file_name};
+  const std::filesystem::path file_path{file_name};
   std::ifstream ifs{file_path};
-  if (!ifs.is_open())
+  if (!ifs.is_open()) {
     util::raise_exception<std::invalid_argument>(
         "cannot open configuration file");
+  }
   auto file_size = std::filesystem::file_size(file_path);
-  if (file_size == 0)
+  if (file_size == 0) {
     util::raise_exception<std::invalid_argument>("configuration file is empty");
-  if (file_size > max_file_size)
+  }
+  if (file_size > max_file_size) {
     util::raise_exception<std::invalid_argument>(
         "configuration file is too large");
+  }
 
   std::string file_content(file_size, 'x');
-  if (!ifs.read(file_content.data(), static_cast<std::streamoff>(file_size)))
+  if (!ifs.read(file_content.data(), static_cast<std::streamoff>(file_size))) {
     util::raise_exception<std::invalid_argument>(
         "cannot read configuration file content");
+  }
 
   try {
     auto json_value = boost::json::parse(file_content);
