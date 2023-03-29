@@ -38,18 +38,18 @@ jobs:
             label: "relwithdebinfo_gcc12"
           }
         - {
-            name: "Clang 15 Debug",
+            name: "Clang 16 Debug",
             build_type: "Debug",
-            cc: "clang-15",
-            cxx: "clang++-15",
-            label: "debug_clang15"
+            cc: "clang-16",
+            cxx: "clang++-16",
+            label: "debug_clang16"
           }
         - {
-            name: "Clang 15 RelWithDebInfo",
+            name: "Clang 16 RelWithDebInfo",
             build_type: "RelWithDebInfo",
-            cc: "clang-15",
-            cxx: "clang++-15",
-            label: "relwithdebinfo_clang15"
+            cc: "clang-16",
+            cxx: "clang++-16",
+            label: "relwithdebinfo_clang16"
           }
 
     steps:
@@ -62,8 +62,10 @@ jobs:
     - name: Install dependencies on ubuntu
       if: startsWith(matrix.config.name, 'Clang')
       run: |
+        wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc
+        echo deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-16 main | sudo tee /etc/apt/sources.list.d/llvm.list
         sudo apt-get update
-        sudo apt-get install clang-15
+        sudo apt-get install clang-16
 
     - name: Info CC compiler
       run: ${{matrix.config.cc}} --version
