@@ -1,4 +1,4 @@
-#include "binsrv/connection_config.hpp"
+#include "easymysql/connection_config.hpp"
 
 #include <charconv>
 #include <filesystem>
@@ -19,7 +19,7 @@ constexpr std::string_view key_password{"password"};
 
 } // anonymous namespace
 
-namespace binsrv {
+namespace easymysql {
 
 connection_config::connection_config(util::command_line_arg_view arguments)
     : host_{arguments[1]}, port_{0}, user_{arguments[3]},
@@ -74,4 +74,9 @@ connection_config::connection_config(std::string_view file_name)
   }
 }
 
-} // namespace binsrv
+std::string connection_config::get_connection_string() const {
+  return get_user() + '@' + get_host() + ':' + std::to_string(get_port()) +
+         (has_password() ? " (password ***hidden***)" : " (no password)");
+}
+
+} // namespace easymysql

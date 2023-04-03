@@ -28,10 +28,6 @@ find_package(MySQL REQUIRED)
 set(source_files
   src/app.cpp
 
-  src/binsrv/connection_config_fwd.hpp
-  src/binsrv/connection_config.hpp
-  src/binsrv/connection_config.cpp
-
   src/binsrv/basic_logger_fwd.hpp
   src/binsrv/basic_logger.hpp
   src/binsrv/basic_logger.cpp
@@ -43,7 +39,21 @@ set(source_files
   src/util/command_line_helpers.hpp
   src/util/command_line_helpers.cpp
 
+  src/util/conversion_helpers.hpp
+
   src/util/exception_helpers.hpp
+
+  src/easymysql/connection_fwd.hpp
+  src/easymysql/connection.hpp
+  src/easymysql/connection.cpp
+
+  src/easymysql/connection_config_fwd.hpp
+  src/easymysql/connection_config.hpp
+  src/easymysql/connection_config.cpp
+
+  src/easymysql/library_fwd.hpp
+  src/easymysql/library.hpp
+  src/easymysql/library.cpp
 )
 
 add_executable(binlog_server ${source_files})

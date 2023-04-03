@@ -34,7 +34,7 @@ inline std::string_view to_string_view(log_severity level) noexcept {
 #undef BINSRV_BASIC_LOGGER_X_SEQUENCE
 // NOLINTEND(cppcoreguidelines-macro-usage)
 
-class basic_logger {
+class [[nodiscard]] basic_logger {
 public:
   basic_logger(const basic_logger &) = delete;
   basic_logger &operator=(const basic_logger &) = delete;
