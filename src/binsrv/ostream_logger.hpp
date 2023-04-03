@@ -7,7 +7,7 @@
 
 namespace binsrv {
 
-class ostream_logger : public basic_logger {
+class [[nodiscard]] ostream_logger : public basic_logger {
 public:
   explicit ostream_logger(std::ostream &stream)
       : basic_logger{}, stream_{&stream} {}

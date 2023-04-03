@@ -5,35 +5,13 @@
 #include <string>
 #include <string_view>
 
-#include <mysql/mysql.h>
-
-#include "binsrv/connection_config.hpp"
 #include "binsrv/ostream_logger.hpp"
 
+#include "easymysql/connection.hpp"
+#include "easymysql/connection_config.hpp"
+#include "easymysql/library.hpp"
+
 #include "util/command_line_helpers.hpp"
-
-[[nodiscard]] std::string get_readable_mysql_client_version() {
-  static constexpr std::uint32_t version_multiplier = 100U;
-  auto mysql_client_version =
-      static_cast<std::uint32_t>(mysql_get_client_version());
-  const std::uint32_t mysql_client_version_patch =
-      mysql_client_version % version_multiplier;
-  mysql_client_version /= version_multiplier;
-  const std::uint32_t mysql_client_version_minor =
-      mysql_client_version % version_multiplier;
-  mysql_client_version /= version_multiplier;
-  const std::uint32_t mysql_client_version_major =
-      mysql_client_version % version_multiplier;
-
-  std::string res;
-  res += std::to_string(mysql_client_version_major);
-  res += '.';
-  res += std::to_string(mysql_client_version_minor);
-  res += '.';
-  res += std::to_string(mysql_client_version_patch);
-
-  return res;
-}
 
 int main(int argc, char *argv[]) {
   using namespace std::string_literals;
@@ -44,7 +22,7 @@ int main(int argc, char *argv[]) {
   const auto number_of_cmd_args = std::size(cmd_args);
 
   if (number_of_cmd_args !=
-          binsrv::connection_config::expected_number_of_arguments + 1 &&
+          easymysql::connection_config::expected_number_of_arguments + 1 &&
       number_of_cmd_args != 2) {
     auto executable_name = util::extract_executable_name(cmd_args);
     std::cerr << "usage: " << executable_name
@@ -65,31 +43,49 @@ int main(int argc, char *argv[]) {
                 "logging level set to \""s + std::string{log_level_label} +
                     '"');
 
-    binsrv::connection_config_ptr config;
+    easymysql::connection_config_ptr config;
     if (number_of_cmd_args == 2) {
       logger->log(binsrv::log_severity::info,
                   "Reading connection configuration from the JSON file.");
-      config = std::make_shared<binsrv::connection_config>(cmd_args[1]);
+      config = std::make_shared<easymysql::connection_config>(cmd_args[1]);
     } else if (number_of_cmd_args ==
-               binsrv::connection_config::expected_number_of_arguments + 1) {
+               easymysql::connection_config::expected_number_of_arguments + 1) {
       logger->log(binsrv::log_severity::info,
                   "Reading connection configuration from the command line "
                   "parameters.");
-      config = std::make_shared<binsrv::connection_config>(cmd_args);
+      config = std::make_shared<easymysql::connection_config>(cmd_args);
     } else {
       assert(false);
     }
     assert(config);
 
-    logger->log(
-        binsrv::log_severity::info,
-        "mysql connection string: " + config->get_user() + '@' +
-            config->get_host() + ':' + std::to_string(config->get_port()) +
-            (config->get_password().empty() ? " (no password)"
-                                            : " (password ***hidden***)"));
+    logger->log(binsrv::log_severity::info,
+                "mysql connection string: " + config->get_connection_string());
+
+    easymysql::library mysql_lib;
+
+    std::string msg = "mysql client version: ";
+    msg += mysql_lib.get_readable_client_version();
+    logger->log(binsrv::log_severity::info, msg);
+
+    auto connection = mysql_lib.create_connection(*config);
+    logger->log(binsrv::log_severity::info,
+                "established connection to mysql server");
+    msg = "mysql server version: ";
+    msg += connection.get_readable_server_version();
+    logger->log(binsrv::log_severity::info, msg);
 
     logger->log(binsrv::log_severity::info,
-                "mysql client version: " + get_readable_mysql_client_version());
+                "mysql protocol version: " +
+                    std::to_string(connection.get_protocol_version()));
+
+    msg = "mysql server connection info: ";
+    msg += connection.get_server_connection_info();
+    logger->log(binsrv::log_severity::info, msg);
+
+    msg = "mysql connection character set: ";
+    msg += connection.get_character_set_name();
+    logger->log(binsrv::log_severity::info, msg);
 
     exit_code = EXIT_SUCCESS;
   } catch (const std::exception &e) {
