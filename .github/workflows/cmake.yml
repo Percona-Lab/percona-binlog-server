@@ -20,8 +20,22 @@ jobs:
       - uses: actions/checkout@v3
         with:
           fetch-depth: 2
+
       - name: Check formatting with git diff --check
-        run: git diff --check --color HEAD^
+        run: git diff --check --color HEAD~
+
+      - name: Install dependencies on ubuntu
+        run: |
+          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc
+          echo deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-16 main | sudo tee /etc/apt/sources.list.d/llvm.list
+          sudo apt-get update
+          sudo apt-get install clang-format-16
+
+      - name: Info Clang Format
+        run: clang-format-16 --version
+
+      - name: Check formatting with git clang-format-16
+        run: git clang-format-16 --diff HEAD~
 
   build:
     # The CMake configure and build commands are platform agnostic and should work equally well on Windows or Mac.
@@ -78,7 +92,7 @@ jobs:
         wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc
         echo deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-16 main | sudo tee /etc/apt/sources.list.d/llvm.list
         sudo apt-get update
-        sudo apt-get install clang-16 clang-tidy-16
+        sudo apt-get install clang-16 lld-16 clang-tidy-16
 
     - name: Info CC compiler
       run: ${{matrix.config.cc}} --version
@@ -125,6 +139,10 @@ jobs:
     - name: Build
       # Build your program with the given configuration
       run: cmake --build ${{github.workspace}}/../build-${{matrix.config.label}} --config ${{matrix.config.build_type}} --parallel
+
+    - name: Info Clang Tidy
+      if: startsWith(matrix.config.name, 'Clang')
+      run: clang-tidy-16 --version
 
     - name: Clang Tidy
       if: startsWith(matrix.config.name, 'Clang')
