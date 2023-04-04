@@ -13,6 +13,16 @@ env:
   BOOST_EXT: .tar.bz2
 
 jobs:
+  formatting-check:
+    runs-on: ubuntu-22.04
+    name: Formatting checks
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 2
+      - name: Check formatting with git diff --check
+        run: git diff --check --color HEAD^
+
   build:
     # The CMake configure and build commands are platform agnostic and should work equally well on Windows or Mac.
     # You can convert this to a matrix build if you need cross-platform coverage.
