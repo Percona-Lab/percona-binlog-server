@@ -84,7 +84,7 @@ if (MSVC)
                      ${libsuffixBuild}
     )
 else()
-    find_library(MYSQL_LIBRARY NAMES mysqlclient mysqlclient_r mariadbclient
+    find_library(MYSQL_LIBRARY NAMES libmysqlclient.a mysqlclient mysqlclient_r mariadbclient
                  HINTS
                     ${MYSQL_ROOT_DIR}/lib
                     ${MYSQL_ROOT_LIBRARY_DIRS}

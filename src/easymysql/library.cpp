@@ -11,7 +11,8 @@ namespace easymysql {
 
 library::library() {
   if (mysql_library_init(0, nullptr, nullptr) != 0) {
-    util::raise_exception<std::logic_error>("cannot initialize MySQL livrary");
+    util::exception_location().raise<std::logic_error>(
+        "cannot initialize MySQL library");
   }
 }
 
@@ -29,7 +30,7 @@ std::string_view library::get_readable_client_version() const noexcept {
 }
 
 // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-connection library::create_connection(const connection_config &config) {
+connection library::create_connection(const connection_config &config) const {
   return connection(config);
 }
 

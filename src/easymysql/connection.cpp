@@ -5,7 +5,9 @@
 
 #include <mysql/mysql.h>
 
+#include "easymysql/binlog.hpp"
 #include "easymysql/connection_config.hpp"
+#include "easymysql/core_error.hpp"
 
 #include "util/conversion_helpers.hpp"
 #include "util/exception_helpers.hpp"
@@ -21,9 +23,11 @@ void connection::connection_deleter::operator()(void *ptr) const noexcept {
 connection::connection(const connection_config &config)
     : impl_{mysql_init(nullptr)} {
   if (!impl_) {
-    util::raise_exception<std::logic_error>("cannot create MYSQL object");
+    util::exception_location().raise<std::logic_error>(
+        "cannot create MYSQL object");
   }
-  if (mysql_real_connect(static_cast<MYSQL *>(impl_.get()),
+  auto *casted_impl = static_cast<MYSQL *>(impl_.get());
+  if (mysql_real_connect(casted_impl,
                          /*        host */ config.get_host().c_str(),
                          /*        user */ config.get_user().c_str(),
                          /*    password */ config.get_password().c_str(),
@@ -31,8 +35,8 @@ connection::connection(const connection_config &config)
                          /*        port */ config.get_port(),
                          /* unix socket */ nullptr,
                          /*       flags */ 0) == nullptr) {
-    util::raise_exception<std::invalid_argument>(
-        "cannot connect to the MySQL server");
+    util::exception_location().raise<core_error>(
+        static_cast<int>(mysql_errno(casted_impl)), mysql_error(casted_impl));
   }
 }
 
@@ -53,16 +57,27 @@ std::uint32_t connection::get_protocol_version() const noexcept {
       mysql_get_proto_info(static_cast<MYSQL *>(impl_.get())));
 }
 
-[[nodiscard]] std::string_view
-connection::get_server_connection_info() const noexcept {
+std::string_view connection::get_server_connection_info() const noexcept {
   assert(!is_empty());
   return {mysql_get_host_info(static_cast<MYSQL *>(impl_.get()))};
 }
 
-[[nodiscard]] std::string_view
-connection::get_character_set_name() const noexcept {
+std::string_view connection::get_character_set_name() const noexcept {
   assert(!is_empty());
   return {mysql_character_set_name(static_cast<MYSQL *>(impl_.get()))};
+}
+
+binlog connection::create_binlog(std::uint32_t server_id) {
+  return {*this, server_id};
+}
+
+void connection::execute_generic_query_noresult(std::string_view query) {
+  assert(!is_empty());
+  auto *casted_impl = static_cast<MYSQL *>(impl_.get());
+  if (mysql_real_query(casted_impl, query.data(), query.size()) != 0) {
+    util::exception_location().raise<core_error>(
+        static_cast<int>(mysql_errno(casted_impl)), mysql_error(casted_impl));
+  }
 }
 
 } // namespace easymysql

@@ -24,6 +24,9 @@ target_compile_options(binlog_server_compiler_flags INTERFACE
 find_package(Boost 1.81.0 EXACT REQUIRED)
 
 find_package(MySQL REQUIRED)
+find_package(OpenSSL REQUIRED)
+find_package(zstd REQUIRED)
+find_package(ZLIB REQUIRED)
 
 set(source_files
   src/app.cpp
@@ -31,6 +34,9 @@ set(source_files
   src/binsrv/basic_logger_fwd.hpp
   src/binsrv/basic_logger.hpp
   src/binsrv/basic_logger.cpp
+
+  src/binsrv/exception_handling_helpers.hpp
+  src/binsrv/exception_handling_helpers.cpp
 
   src/binsrv/ostream_logger.hpp
   src/binsrv/ostream_logger.cpp
@@ -42,6 +48,13 @@ set(source_files
   src/util/conversion_helpers.hpp
 
   src/util/exception_helpers.hpp
+
+  src/easymysql/core_error.hpp
+  src/easymysql/core_error.cpp
+
+  src/easymysql/binlog_fwd.hpp
+  src/easymysql/binlog.hpp
+  src/easymysql/binlog.cpp
 
   src/easymysql/connection_fwd.hpp
   src/easymysql/connection.hpp
@@ -57,7 +70,12 @@ set(source_files
 )
 
 add_executable(binlog_server ${source_files})
-target_link_libraries(binlog_server PUBLIC binlog_server_compiler_flags PRIVATE Boost::headers MySQL::client)
+target_link_libraries(binlog_server
+  PUBLIC
+     binlog_server_compiler_flags
+  PRIVATE
+    Boost::headers MySQL::client OpenSSL::Crypto OpenSSL::SSL zstd::libzstd_shared ZLIB::ZLIB
+)
 # for some reason it is not possible to propagate CXX_EXTENSIONS and
 # CXX_STANDARD_REQUIRED via interface library (binlog_server_compiler_flags)
 set_target_properties(binlog_server PROPERTIES
