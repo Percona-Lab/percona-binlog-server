@@ -6,6 +6,7 @@
 #include <memory>
 #include <string_view>
 
+#include "easymysql/binlog_fwd.hpp"
 #include "easymysql/connection_config_fwd.hpp"
 #include "easymysql/library_fwd.hpp"
 
@@ -13,6 +14,7 @@ namespace easymysql {
 
 class [[nodiscard]] connection {
   friend class library;
+  friend class binlog;
 
 public:
   connection() = default;
@@ -33,6 +35,9 @@ public:
 
   [[nodiscard]] std::string_view get_server_connection_info() const noexcept;
   [[nodiscard]] std::string_view get_character_set_name() const noexcept;
+
+  [[nodiscard]] binlog create_binlog(std::uint32_t server_id);
+  void execute_generic_query_noresult(std::string_view query);
 
 private:
   explicit connection(const connection_config &config);

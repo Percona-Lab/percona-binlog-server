@@ -1,13 +1,11 @@
 #ifndef UTIL_COMMAND_LINE_HELPERS_HPP
 #define UTIL_COMMAND_LINE_HELPERS_HPP
 
-#include <iterator>
-
 #include "util/command_line_helpers_fwd.hpp"
 
-namespace util {
+#include <iterator>
 
-using command_line_arg_view = std::span<const char *const>;
+namespace util {
 
 inline command_line_arg_view to_command_line_agg_view(
     int argc,

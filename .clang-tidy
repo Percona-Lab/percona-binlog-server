@@ -1,6 +1,7 @@
 ---
 Checks: "
   *,
+  -altera-*
   -fuchsia-*,
   -android-*,
   -google-*,

@@ -24,7 +24,8 @@ public:
   [[nodiscard]] std::uint32_t get_client_version() const noexcept;
   [[nodiscard]] std::string_view get_readable_client_version() const noexcept;
 
-  [[nodiscard]] connection create_connection(const connection_config &config);
+  [[nodiscard]] connection
+  create_connection(const connection_config &config) const;
 };
 
 } // namespace easymysql

@@ -5,8 +5,10 @@
 #include <string>
 #include <string_view>
 
+#include "binsrv/exception_handling_helpers.hpp"
 #include "binsrv/ostream_logger.hpp"
 
+#include "easymysql/binlog.hpp"
 #include "easymysql/connection.hpp"
 #include "easymysql/connection_config.hpp"
 #include "easymysql/library.hpp"
@@ -62,7 +64,8 @@ int main(int argc, char *argv[]) {
     logger->log(binsrv::log_severity::info,
                 "mysql connection string: " + config->get_connection_string());
 
-    easymysql::library mysql_lib;
+    const easymysql::library mysql_lib;
+    logger->log(binsrv::log_severity::info, "initialized mysql client library");
 
     std::string msg = "mysql client version: ";
     msg += mysql_lib.get_readable_client_version();
@@ -87,16 +90,20 @@ int main(int argc, char *argv[]) {
     msg += connection.get_character_set_name();
     logger->log(binsrv::log_severity::info, msg);
 
+    static constexpr std::uint32_t default_server_id = 0;
+    auto binlog = connection.create_binlog(default_server_id);
+    logger->log(binsrv::log_severity::info, "opened binary log connection");
+
+    easymysql::binlog_stream_span portion;
+    while (!(portion = binlog.fetch()).empty()) {
+      logger->log(binsrv::log_severity::info,
+                  "fetched " + std::to_string(portion.size()) +
+                      "-byte(s) data chunk from binlog");
+    }
+
     exit_code = EXIT_SUCCESS;
-  } catch (const std::exception &e) {
-    if (logger) {
-      logger->log(binsrv::log_severity::error,
-                  "std::exception caught: "s + e.what());
-    }
   } catch (...) {
-    if (logger) {
-      logger->log(binsrv::log_severity::info, "unhandled exception caught");
-    }
+    handle_std_exception(logger);
   }
 
   return exit_code;
