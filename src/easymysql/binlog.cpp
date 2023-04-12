@@ -6,10 +6,10 @@
 
 #include <mysql/mysql.h>
 
+#include "easymysql/binlog_deimpl_private.hpp"
 #include "easymysql/connection.hpp"
-#include "easymysql/core_error.hpp"
-
-#include "util/exception_helpers.hpp"
+#include "easymysql/connection_deimpl_private.hpp"
+#include "easymysql/core_error_helpers_private.hpp"
 
 namespace {
 
@@ -48,12 +48,9 @@ binlog::binlog(connection &conn, std::uint32_t server_id)
       "@master_binlog_checksum = 'NONE'"};
   conn_->execute_generic_query_noresult(crc_query);
 
-  auto *casted_conn_impl = static_cast<MYSQL *>(conn.impl_.get());
-  if (mysql_binlog_open(casted_conn_impl,
-                        static_cast<MYSQL_RPL *>(impl_.get())) != 0) {
-    util::exception_location().raise<core_error>(
-        static_cast<int>(mysql_errno(casted_conn_impl)),
-        mysql_error(casted_conn_impl));
+  auto *casted_conn_impl = connection_deimpl::get(conn.impl_);
+  if (mysql_binlog_open(casted_conn_impl, binlog_deimpl::get(impl_)) != 0) {
+    raise_core_error_from_connection(conn);
   }
 }
 
@@ -61,20 +58,18 @@ binlog::~binlog() {
   if (conn_ != nullptr) {
     assert(!conn_->is_empty());
     assert(!is_empty());
-    mysql_binlog_close(static_cast<MYSQL *>(conn_->impl_.get()),
-                       static_cast<MYSQL_RPL *>(impl_.get()));
+    mysql_binlog_close(connection_deimpl::get(conn_->impl_),
+                       binlog_deimpl::get(impl_));
   }
 }
 
 binlog_stream_span binlog::fetch() {
   assert(conn_ != nullptr);
   assert(!is_empty());
-  auto *casted_conn_impl = static_cast<MYSQL *>(conn_->impl_.get());
-  auto *casted_rpl_impl = static_cast<MYSQL_RPL *>(impl_.get());
+  auto *casted_conn_impl = connection_deimpl::get(conn_->impl_);
+  auto *casted_rpl_impl = binlog_deimpl::get(impl_);
   if (mysql_binlog_fetch(casted_conn_impl, casted_rpl_impl) != 0) {
-    util::exception_location().raise<core_error>(
-        static_cast<int>(mysql_errno(casted_conn_impl)),
-        mysql_error(casted_conn_impl));
+    raise_core_error_from_connection(*conn_);
   }
   return {casted_rpl_impl->buffer, casted_rpl_impl->size};
 }
