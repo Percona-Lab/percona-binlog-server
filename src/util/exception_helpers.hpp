@@ -10,8 +10,8 @@
 namespace util {
 
 template <std::derived_from<std::exception> Exception>
-class location_exception_adapter : public Exception,
-                                   public std::source_location {
+class [[nodiscard]] location_exception_adapter : public Exception,
+                                                 public std::source_location {
 public:
   using base_type = Exception;
   using mixin_type = std::source_location;

@@ -49,13 +49,19 @@ set(source_files
 
   src/util/exception_helpers.hpp
 
+  src/util/impl_helpers.hpp
+
+  src/easymysql/core_error_helpers_private.hpp
+  src/easymysql/core_error_helpers_private.cpp
   src/easymysql/core_error.hpp
   src/easymysql/core_error.cpp
 
+  src/easymysql/binlog_deimpl_private.hpp
   src/easymysql/binlog_fwd.hpp
   src/easymysql/binlog.hpp
   src/easymysql/binlog.cpp
 
+  src/easymysql/connection_deimpl_private.hpp
   src/easymysql/connection_fwd.hpp
   src/easymysql/connection.hpp
   src/easymysql/connection.cpp

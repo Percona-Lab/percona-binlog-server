@@ -15,6 +15,7 @@ namespace easymysql {
 class [[nodiscard]] connection {
   friend class library;
   friend class binlog;
+  friend struct raise_access;
 
 public:
   connection() = default;
