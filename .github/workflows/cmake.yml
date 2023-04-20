@@ -8,7 +8,7 @@ on:
 
 env:
   BOOST_MAJOR: 1
-  BOOST_MINOR: 81
+  BOOST_MINOR: 82
   BOOST_PATCH: 0
   BOOST_EXT: .tar.bz2
 
