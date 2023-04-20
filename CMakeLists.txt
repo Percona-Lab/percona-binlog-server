@@ -21,7 +21,7 @@ target_compile_options(binlog_server_compiler_flags INTERFACE
   "$<${msvc_cxx}:$<BUILD_INTERFACE:${msvc_warnings}>>"
 )
 
-find_package(Boost 1.81.0 EXACT REQUIRED)
+find_package(Boost 1.82.0 EXACT REQUIRED)
 
 find_package(MySQL REQUIRED)
 find_package(OpenSSL REQUIRED)
