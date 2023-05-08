@@ -1,11 +1,15 @@
 #include <cassert>
 #include <cstdint>
+#include <iomanip>
 #include <iostream>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <string_view>
 
+#include "binsrv/event_header.hpp"
 #include "binsrv/exception_handling_helpers.hpp"
+#include "binsrv/log_severity.hpp"
 #include "binsrv/ostream_logger.hpp"
 
 #include "easymysql/binlog.hpp"
@@ -14,6 +18,39 @@
 #include "easymysql/library.hpp"
 
 #include "util/command_line_helpers.hpp"
+#include "util/exception_helpers.hpp"
+
+void log_span_dump(binsrv::basic_logger &logger,
+                   easymysql::binlog_stream_span portion) {
+  static constexpr std::size_t bytes_per_dump_line = 16;
+  std::size_t offset = 0;
+  while (offset < std::size(portion)) {
+    std::ostringstream oss;
+    oss << '[';
+    oss << std::setfill('0') << std::hex;
+    auto sub = portion.subspan(
+        offset, std::min(bytes_per_dump_line, std::size(portion) - offset));
+    for (const std::uint8_t current_byte : sub) {
+      oss << ' ' << std::setw(2) << static_cast<std::uint16_t>(current_byte);
+    }
+    oss << " ]";
+    logger.log(binsrv::log_severity::trace, oss.str());
+    offset += bytes_per_dump_line;
+  }
+}
+
+void log_generic_event(binsrv::basic_logger &logger,
+                       const binsrv::event_header &generic_event) {
+  std::ostringstream oss;
+  oss << "ts: " << generic_event.get_readable_timestamp()
+      << ", type:" << generic_event.get_readable_type_code()
+      << ", server_id:" << generic_event.get_server_id()
+      << ", event size:" << generic_event.get_event_size()
+      << ", next event position:" << generic_event.get_next_event_position()
+      << ", flags: (" << generic_event.get_readable_flags() << ')';
+
+  logger.log(binsrv::log_severity::debug, oss.str());
+}
 
 int main(int argc, char *argv[]) {
   using namespace std::string_literals;
@@ -36,8 +73,8 @@ int main(int argc, char *argv[]) {
 
   try {
     const auto default_log_level = binsrv::log_severity::trace;
-    logger = std::make_shared<binsrv::ostream_logger>(std::cout);
-    logger->set_min_level(default_log_level);
+    logger =
+        std::make_shared<binsrv::ostream_logger>(default_log_level, std::cout);
     const auto log_level_label =
         binsrv::to_string_view(logger->get_min_level());
     // logging with "delimiter" level has the highest priority and empty label
@@ -96,9 +133,21 @@ int main(int argc, char *argv[]) {
 
     easymysql::binlog_stream_span portion;
     while (!(portion = binlog.fetch()).empty()) {
+      // Network streams are requested with COM_BINLOG_DUMP and
+      // prepend each Binlog Event with 00 OK-byte.
+      static constexpr unsigned char expected_event_prefix = '\0';
+      if (portion[0] != expected_event_prefix) {
+        util::exception_location().raise<std::invalid_argument>(
+            "unexpected event prefix");
+      }
+      portion = portion.subspan(1);
       logger->log(binsrv::log_severity::info,
-                  "fetched " + std::to_string(portion.size()) +
-                      "-byte(s) data chunk from binlog");
+                  "fetched " + std::to_string(std::size(portion)) +
+                      "-byte(s) event from binlog");
+
+      const binsrv::event_header generic_event{portion};
+      log_generic_event(*logger, generic_event);
+      log_span_dump(*logger, portion);
     }
 
     exit_code = EXIT_SUCCESS;

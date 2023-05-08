@@ -9,8 +9,8 @@ namespace binsrv {
 
 class [[nodiscard]] ostream_logger : public basic_logger {
 public:
-  explicit ostream_logger(std::ostream &stream)
-      : basic_logger{}, stream_{&stream} {}
+  ostream_logger(log_severity min_level, std::ostream &stream)
+      : basic_logger{min_level}, stream_{&stream} {}
 
 private:
   std::ostream *stream_;

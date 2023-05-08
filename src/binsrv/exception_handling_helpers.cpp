@@ -9,6 +9,7 @@
 #include <boost/lexical_cast.hpp>
 
 #include "binsrv/basic_logger.hpp"
+#include "binsrv/log_severity.hpp"
 
 namespace {
 
@@ -50,7 +51,7 @@ void handle_std_exception(const basic_logger_ptr &logger) {
     logger->log(log_severity::error, "std::exception caught: "s + e.what());
     handle_location_mixin(logger, e);
   } catch (...) {
-    logger->log(log_severity::info, "unhandled exception caught");
+    logger->log(log_severity::error, "unhandled exception caught");
   }
 }
 

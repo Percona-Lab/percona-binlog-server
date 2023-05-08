@@ -7,7 +7,12 @@
 #include <boost/date_time/posix_time/ptime.hpp>
 #include <boost/date_time/posix_time/time_formatters_limited.hpp>
 
+#include "binsrv/log_severity.hpp"
+
 namespace binsrv {
+
+basic_logger::basic_logger(log_severity min_level) noexcept
+    : min_level_{min_level} {}
 
 void basic_logger::log(log_severity level, std::string_view message) {
   if (level >= min_level_) {

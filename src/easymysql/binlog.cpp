@@ -33,6 +33,9 @@ binlog::binlog(connection &conn, std::uint32_t server_id)
                                         .file_name = nullptr,
                                         .start_position = magic_binlog_offset,
                                         .server_id = server_id,
+                                        // TODO: consider adding (or-ing)
+                                        // BINLOG_DUMP_NON_BLOCK and
+                                        // MYSQL_RPL_SKIP_HEARTBEAT to flags
                                         .flags = 0,
                                         .gtid_set_encoded_size = 0,
                                         .fix_gtid_set = nullptr,

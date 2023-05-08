@@ -55,7 +55,8 @@ connection_config::connection_config(std::string_view file_name)
   }
 
   std::string file_content(file_size, 'x');
-  if (!ifs.read(file_content.data(), static_cast<std::streamoff>(file_size))) {
+  if (!ifs.read(std::data(file_content),
+                static_cast<std::streamoff>(file_size))) {
     util::exception_location().raise<std::invalid_argument>(
         "cannot read configuration file content");
   }

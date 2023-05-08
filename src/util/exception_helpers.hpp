@@ -27,11 +27,10 @@ public:
   }
 };
 
-// deliberately without [[nodiscard]] as this class is supposed to be used
-// as a helper only
+// this class is supposed to be used as a helper only
 // e.g. exception_location().raise<std::invalid_argument>(
 //   "value cannot be zero")
-class exception_location {
+class [[nodiscard]] exception_location {
 public:
   explicit exception_location(
       std::source_location location = std::source_location::current())
