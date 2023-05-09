@@ -38,6 +38,19 @@ set(source_files
   src/binsrv/exception_handling_helpers.hpp
   src/binsrv/exception_handling_helpers.cpp
 
+  src/binsrv/event_flag_fwd.hpp
+  src/binsrv/event_flag.hpp
+
+  src/binsrv/event_header_fwd.hpp
+  src/binsrv/event_header.hpp
+  src/binsrv/event_header.cpp
+
+  src/binsrv/event_type_fwd.hpp
+  src/binsrv/event_type.hpp
+
+  src/binsrv/log_severity_fwd.hpp
+  src/binsrv/log_severity.hpp
+
   src/binsrv/ostream_logger.hpp
   src/binsrv/ostream_logger.cpp
 
@@ -48,6 +61,9 @@ set(source_files
   src/util/conversion_helpers.hpp
 
   src/util/exception_helpers.hpp
+
+  src/util/flag_set_fwd.hpp
+  src/util/flag_set.hpp
 
   src/util/impl_helpers.hpp
 

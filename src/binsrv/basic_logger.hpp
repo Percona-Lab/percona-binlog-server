@@ -3,36 +3,11 @@
 
 #include "binsrv/basic_logger_fwd.hpp"
 
-#include <algorithm>
-#include <array>
 #include <string_view>
-#include <type_traits>
+
+#include "binsrv/log_severity_fwd.hpp"
 
 namespace binsrv {
-
-// NOLINTBEGIN(cppcoreguidelines-macro-usage)
-#define BINSRV_BASIC_LOGGER_X_SEQUENCE()                                       \
-  BINSRV_BASIC_LOGGER_X_MACRO(trace), BINSRV_BASIC_LOGGER_X_MACRO(debug),      \
-      BINSRV_BASIC_LOGGER_X_MACRO(info), BINSRV_BASIC_LOGGER_X_MACRO(warning), \
-      BINSRV_BASIC_LOGGER_X_MACRO(error), BINSRV_BASIC_LOGGER_X_MACRO(fatal)
-
-#define BINSRV_BASIC_LOGGER_X_MACRO(X) X
-enum class log_severity { BINSRV_BASIC_LOGGER_X_SEQUENCE(), delimiter };
-#undef BINSRV_BASIC_LOGGER_X_MACRO
-
-#define BINSRV_BASIC_LOGGER_X_MACRO(X) #X##sv
-inline std::string_view to_string_view(log_severity level) noexcept {
-  using namespace std::string_view_literals;
-  static constexpr std::array labels{BINSRV_BASIC_LOGGER_X_SEQUENCE(), ""sv};
-  const auto index = static_cast<std::size_t>(
-      static_cast<std::underlying_type_t<log_severity>>(
-          std::min(log_severity::delimiter, level)));
-  // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index)
-  return labels[index];
-}
-#undef BINSRV_BASIC_LOGGER_X_MACRO
-#undef BINSRV_BASIC_LOGGER_X_SEQUENCE
-// NOLINTEND(cppcoreguidelines-macro-usage)
 
 class [[nodiscard]] basic_logger {
 public:
@@ -53,10 +28,10 @@ public:
   void log(log_severity level, std::string_view message);
 
 protected:
-  basic_logger() = default;
+  explicit basic_logger(log_severity min_level) noexcept;
 
 private:
-  log_severity min_level_{log_severity::info};
+  log_severity min_level_;
 
   virtual void do_log(std::string_view message) = 0;
 };
