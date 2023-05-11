@@ -18,6 +18,9 @@ inline command_line_arg_view to_command_line_agg_view(
 [[nodiscard]] std::string
 extract_executable_name(util::command_line_arg_view cmd_args);
 
+[[nodiscard]] std::string
+get_readable_command_line_arguments(util::command_line_arg_view cmd_args);
+
 } // namespace util
 
 #endif // UTIL_COMMAND_LINE_HELPERS_HPP

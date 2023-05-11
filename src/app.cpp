@@ -59,11 +59,11 @@ int main(int argc, char *argv[]) {
 
   const auto cmd_args = util::to_command_line_agg_view(argc, argv);
   const auto number_of_cmd_args = std::size(cmd_args);
+  const auto executable_name = util::extract_executable_name(cmd_args);
 
   if (number_of_cmd_args !=
           easymysql::connection_config::expected_number_of_arguments + 1 &&
       number_of_cmd_args != 2) {
-    auto executable_name = util::extract_executable_name(cmd_args);
     std::cerr << "usage: " << executable_name
               << " <host> <port> <user> <password>\n"
               << "       " << executable_name << " <json_config_file>\n";
@@ -78,6 +78,11 @@ int main(int argc, char *argv[]) {
     const auto log_level_label =
         binsrv::to_string_view(logger->get_min_level());
     // logging with "delimiter" level has the highest priority and empty label
+    logger->log(binsrv::log_severity::delimiter,
+                '"' + executable_name + '"' +
+                    " started with the following command line arguments:");
+    logger->log(binsrv::log_severity::delimiter,
+                util::get_readable_command_line_arguments(cmd_args));
     logger->log(binsrv::log_severity::delimiter,
                 "logging level set to \""s + std::string{log_level_label} +
                     '"');
