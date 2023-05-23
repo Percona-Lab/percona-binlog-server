@@ -19,6 +19,7 @@
 
 #include "util/command_line_helpers.hpp"
 #include "util/exception_helpers.hpp"
+#include "util/nv_tuple.hpp"
 
 void log_span_dump(binsrv::basic_logger &logger,
                    easymysql::binlog_stream_span portion) {
@@ -61,8 +62,7 @@ int main(int argc, char *argv[]) {
   const auto number_of_cmd_args = std::size(cmd_args);
   const auto executable_name = util::extract_executable_name(cmd_args);
 
-  if (number_of_cmd_args !=
-          easymysql::connection_config::expected_number_of_arguments + 1 &&
+  if (number_of_cmd_args != easymysql::connection_config::size + 1 &&
       number_of_cmd_args != 2) {
     std::cerr << "usage: " << executable_name
               << " <host> <port> <user> <password>\n"
@@ -92,12 +92,12 @@ int main(int argc, char *argv[]) {
       logger->log(binsrv::log_severity::info,
                   "Reading connection configuration from the JSON file.");
       config = std::make_shared<easymysql::connection_config>(cmd_args[1]);
-    } else if (number_of_cmd_args ==
-               easymysql::connection_config::expected_number_of_arguments + 1) {
+    } else if (number_of_cmd_args == easymysql::connection_config::size + 1) {
       logger->log(binsrv::log_severity::info,
                   "Reading connection configuration from the command line "
-                  "parameters.");
-      config = std::make_shared<easymysql::connection_config>(cmd_args);
+                  "arguments.");
+      config =
+          std::make_shared<easymysql::connection_config>(cmd_args.subspan(1U));
     } else {
       assert(false);
     }
@@ -145,7 +145,7 @@ int main(int argc, char *argv[]) {
         util::exception_location().raise<std::invalid_argument>(
             "unexpected event prefix");
       }
-      portion = portion.subspan(1);
+      portion = portion.subspan(1U);
       logger->log(binsrv::log_severity::info,
                   "fetched " + std::to_string(std::size(portion)) +
                       "-byte(s) event from binlog");

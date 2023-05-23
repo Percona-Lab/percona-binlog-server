@@ -29,11 +29,11 @@ connection::connection(const connection_config &config)
   }
   auto *casted_impl = connection_deimpl::get(impl_);
   if (mysql_real_connect(casted_impl,
-                         /*        host */ config.get_host().c_str(),
-                         /*        user */ config.get_user().c_str(),
-                         /*    password */ config.get_password().c_str(),
+                         /*        host */ config.get<"host">().c_str(),
+                         /*        user */ config.get<"user">().c_str(),
+                         /*    password */ config.get<"password">().c_str(),
                          /*          db */ nullptr,
-                         /*        port */ config.get_port(),
+                         /*        port */ config.get<"port">(),
                          /* unix socket */ nullptr,
                          /*       flags */ 0) == nullptr) {
     raise_core_error_from_connection(*this);
