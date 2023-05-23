@@ -27,12 +27,12 @@ read_fixed_int_from_span(easymysql::binlog_stream_span portion) noexcept {
 }
 
 template <std::integral T>
-bool extract_int_fixed_int_from_stream(easymysql::binlog_stream_span &remainder,
-                                       T &value) noexcept {
+bool extract_fixed_int_from_stream(easymysql::binlog_stream_span &remainder,
+                                   T &value) noexcept {
   if (std::size(remainder) < sizeof(T)) {
     return false;
   }
-  value = read_fixed_int_from_span<T>(remainder.subspan(0, sizeof(T)));
+  value = read_fixed_int_from_span<T>(remainder.subspan(0U, sizeof(T)));
   remainder = remainder.subspan(sizeof(T));
   return true;
 }
@@ -66,12 +66,12 @@ event_header::event_header(easymysql::binlog_stream_span portion) {
    */
   auto remainder = portion;
   auto result =
-      extract_int_fixed_int_from_stream(remainder, timestamp_) &&
-      extract_int_fixed_int_from_stream(remainder, type_code_) &&
-      extract_int_fixed_int_from_stream(remainder, server_id_) &&
-      extract_int_fixed_int_from_stream(remainder, event_size_) &&
-      extract_int_fixed_int_from_stream(remainder, next_event_position_) &&
-      extract_int_fixed_int_from_stream(remainder, flags_);
+      extract_fixed_int_from_stream(remainder, timestamp_) &&
+      extract_fixed_int_from_stream(remainder, type_code_) &&
+      extract_fixed_int_from_stream(remainder, server_id_) &&
+      extract_fixed_int_from_stream(remainder, event_size_) &&
+      extract_fixed_int_from_stream(remainder, next_event_position_) &&
+      extract_fixed_int_from_stream(remainder, flags_);
   if (!result) {
     util::exception_location().raise<std::invalid_argument>(
         "invalid event header");

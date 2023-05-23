@@ -27,7 +27,7 @@ get_readable_command_line_arguments(util::command_line_arg_view cmd_args) {
   if (cmd_args.empty()) {
     return res;
   }
-  const auto shifted_cmd_args = cmd_args.subspan(1);
+  const auto shifted_cmd_args = cmd_args.subspan(1U);
 
   bool first = true;
   for (const auto *arg : shifted_cmd_args) {

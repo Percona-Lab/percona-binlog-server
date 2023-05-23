@@ -60,12 +60,18 @@ set(source_files
 
   src/util/conversion_helpers.hpp
 
+  src/util/ct_string.hpp
+
   src/util/exception_helpers.hpp
 
   src/util/flag_set_fwd.hpp
   src/util/flag_set.hpp
 
   src/util/impl_helpers.hpp
+
+  src/util/nv_tuple.hpp
+  src/util/nv_tuple_from_command_line.hpp
+  src/util/nv_tuple_from_json.hpp
 
   src/easymysql/core_error_helpers_private.hpp
   src/easymysql/core_error_helpers_private.cpp
