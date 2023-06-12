@@ -35,7 +35,7 @@ jobs:
         run: clang-format-16 --version
 
       - name: Check formatting with git clang-format-16
-        run: git clang-format-16 --diff HEAD~
+        run: git clang-format-16 --diff --binary=clang-format-16 HEAD~
 
   build:
     # The CMake configure and build commands are platform agnostic and should work equally well on Windows or Mac.

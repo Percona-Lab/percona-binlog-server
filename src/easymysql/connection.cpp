@@ -11,7 +11,7 @@
 #include "easymysql/core_error_helpers_private.hpp"
 
 #include "util/conversion_helpers.hpp"
-#include "util/exception_helpers.hpp"
+#include "util/exception_location_helpers.hpp"
 
 namespace easymysql {
 

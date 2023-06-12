@@ -6,7 +6,7 @@
 #include "easymysql/connection_deimpl_private.hpp"
 #include "easymysql/core_error.hpp"
 
-#include "util/exception_helpers.hpp"
+#include "util/exception_location_helpers.hpp"
 
 namespace easymysql {
 

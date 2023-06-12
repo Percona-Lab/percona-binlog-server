@@ -35,6 +35,9 @@ set(source_files
   src/binsrv/basic_logger.hpp
   src/binsrv/basic_logger.cpp
 
+  src/binsrv/cout_logger.hpp
+  src/binsrv/cout_logger.cpp
+
   src/binsrv/exception_handling_helpers.hpp
   src/binsrv/exception_handling_helpers.cpp
 
@@ -48,11 +51,21 @@ set(source_files
   src/binsrv/event_type_fwd.hpp
   src/binsrv/event_type.hpp
 
+  src/binsrv/file_logger.hpp
+  src/binsrv/file_logger.cpp
+
   src/binsrv/log_severity_fwd.hpp
   src/binsrv/log_severity.hpp
 
-  src/binsrv/ostream_logger.hpp
-  src/binsrv/ostream_logger.cpp
+  src/binsrv/logger_config_fwd.hpp
+  src/binsrv/logger_config.hpp
+
+  src/binsrv/logger_factory.hpp
+  src/binsrv/logger_factory.cpp
+
+  src/binsrv/master_config_fwd.hpp
+  src/binsrv/master_config.hpp
+  src/binsrv/master_config.cpp
 
   src/util/command_line_helpers_fwd.hpp
   src/util/command_line_helpers.hpp
@@ -60,15 +73,21 @@ set(source_files
 
   src/util/conversion_helpers.hpp
 
+  src/util/composite_name_fwd.hpp
+  src/util/composite_name.hpp
+
   src/util/ct_string.hpp
 
-  src/util/exception_helpers.hpp
+  src/util/exception_location_helpers.hpp
 
   src/util/flag_set_fwd.hpp
   src/util/flag_set.hpp
 
   src/util/impl_helpers.hpp
 
+  src/util/mixin_exception_adapter.hpp
+
+  src/util/nv_tuple_fwd.hpp
   src/util/nv_tuple.hpp
   src/util/nv_tuple_from_command_line.hpp
   src/util/nv_tuple_from_json.hpp
@@ -100,7 +119,7 @@ set(source_files
 add_executable(binlog_server ${source_files})
 target_link_libraries(binlog_server
   PUBLIC
-     binlog_server_compiler_flags
+    binlog_server_compiler_flags
   PRIVATE
     Boost::headers MySQL::client OpenSSL::Crypto OpenSSL::SSL zstd::libzstd_shared ZLIB::ZLIB
 )
