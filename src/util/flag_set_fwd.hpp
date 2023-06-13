@@ -6,7 +6,7 @@
 namespace util {
 
 template <typename E>
-requires std::is_enum_v<E>
+  requires std::is_enum_v<E>
 class flag_set;
 
 } // namespace util

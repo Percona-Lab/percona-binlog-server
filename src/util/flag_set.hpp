@@ -12,7 +12,7 @@
 namespace util {
 
 template <typename E>
-requires std::is_enum_v<E>
+  requires std::is_enum_v<E>
 class [[nodiscard]] flag_set {
 public:
   using element_type = E;
@@ -65,7 +65,7 @@ private:
 };
 
 template <typename E>
-requires std::is_enum_v<E>
+  requires std::is_enum_v<E>
 [[nodiscard]] flag_set<E> operator|(flag_set<E> first,
                                     flag_set<E> second) noexcept {
   auto res = first;
@@ -74,7 +74,7 @@ requires std::is_enum_v<E>
 }
 
 template <typename E>
-requires std::is_enum_v<E>
+  requires std::is_enum_v<E>
 [[nodiscard]] flag_set<E> operator&(flag_set<E> first,
                                     flag_set<E> second) noexcept {
   auto res = first;
@@ -83,7 +83,7 @@ requires std::is_enum_v<E>
 }
 
 template <typename E>
-requires std::is_enum_v<E>
+  requires std::is_enum_v<E>
 [[nodiscard]] std::string to_string(flag_set<E> flags) {
   auto bits = flags.get_bits();
   auto mask = static_cast<decltype(bits)>(1);

@@ -5,6 +5,8 @@
 
 #include <algorithm>
 #include <array>
+#include <istream>
+#include <ostream>
 #include <string_view>
 #include <type_traits>
 
@@ -41,6 +43,37 @@ inline std::string_view to_string_view(log_severity level) noexcept {
 }
 #undef BINSRV_LOG_SEVERITY_X_SEQUENCE
 // NOLINTEND(cppcoreguidelines-macro-usage)
+
+template <typename Char, typename Traits>
+  requires std::same_as<Char, char>
+std::basic_ostream<Char, Traits> &
+operator<<(std::basic_ostream<Char, Traits> &output, log_severity level) {
+  return output << to_string_view(level);
+}
+
+template <typename Char, typename Traits>
+  requires std::same_as<Char, char>
+std::basic_istream<Char, Traits> &
+operator>>(std::basic_istream<Char, Traits> &input, log_severity &level) {
+  std::string level_str;
+  input >> level_str;
+  if (!input) {
+    return input;
+  }
+  using index_type = std::underlying_type_t<log_severity>;
+  index_type index = 0;
+  const auto max_index = static_cast<index_type>(log_severity::delimiter);
+  while (index < max_index &&
+         to_string_view(static_cast<log_severity>(index)) != level_str) {
+    ++index;
+  }
+  if (index < max_index) {
+    level = static_cast<log_severity>(index);
+  } else {
+    input.setstate(std::ios_base::failbit);
+  }
+  return input;
+}
 
 } // namespace binsrv
 

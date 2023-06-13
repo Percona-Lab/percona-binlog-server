@@ -10,7 +10,7 @@
 #include "binsrv/event_flag.hpp"
 #include "binsrv/event_type.hpp"
 
-#include "util/exception_helpers.hpp"
+#include "util/exception_location_helpers.hpp"
 
 namespace {
 
