@@ -2,6 +2,7 @@
 
 #include <memory>
 
+#include "binsrv/basic_logger_fwd.hpp"
 #include "binsrv/cout_logger.hpp"
 #include "binsrv/file_logger.hpp"
 #include "binsrv/logger_config.hpp"

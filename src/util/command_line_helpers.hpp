@@ -1,7 +1,7 @@
 #ifndef UTIL_COMMAND_LINE_HELPERS_HPP
 #define UTIL_COMMAND_LINE_HELPERS_HPP
 
-#include "util/command_line_helpers_fwd.hpp"
+#include "util/command_line_helpers_fwd.hpp" // IWYU pragma: export
 
 #include <iterator>
 

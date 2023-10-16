@@ -1,7 +1,7 @@
 #ifndef EASYMYSQL_BINLOG_HPP
 #define EASYMYSQL_BINLOG_HPP
 
-#include "easymysql/binlog_fwd.hpp"
+#include "easymysql/binlog_fwd.hpp" // IWYU pragma: export
 
 #include <cstdint>
 #include <memory>

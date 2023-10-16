@@ -5,7 +5,8 @@
 #include <string>
 #include <string_view>
 
-#include "binsrv/basic_logger.hpp"
+#include "binsrv/basic_logger.hpp" // IWYU pragma: export
+#include "binsrv/log_severity_fwd.hpp"
 
 namespace binsrv {
 

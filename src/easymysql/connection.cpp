@@ -1,7 +1,9 @@
 #include "easymysql/connection.hpp"
 
 #include <cassert>
+#include <cstdint>
 #include <stdexcept>
+#include <string_view>
 
 #include <mysql/mysql.h>
 

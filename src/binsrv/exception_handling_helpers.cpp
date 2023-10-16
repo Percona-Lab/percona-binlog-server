@@ -1,6 +1,7 @@
 #include "binsrv/exception_handling_helpers.hpp"
 
 #include <cassert>
+#include <exception>
 #include <memory>
 #include <source_location>
 #include <string>

@@ -1,11 +1,11 @@
 #ifndef BINSRV_MASTER_CONFIG_HPP
 #define BINSRV_MASTER_CONFIG_HPP
 
-#include "binsrv/master_config_fwd.hpp"
+#include "binsrv/master_config_fwd.hpp" // IWYU pragma: export
 
-#include "binsrv/logger_config.hpp"
+#include "binsrv/logger_config.hpp" // IWYU pragma: export
 
-#include "easymysql/connection_config.hpp"
+#include "easymysql/connection_config.hpp" // IWYU pragma: export
 
 #include "util/command_line_helpers_fwd.hpp"
 #include "util/nv_tuple.hpp"

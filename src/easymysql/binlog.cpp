@@ -3,6 +3,7 @@
 #include <cassert>
 #include <cstdint>
 #include <memory>
+#include <string_view>
 
 #include <mysql/mysql.h>
 

@@ -1,7 +1,7 @@
 #ifndef UTIL_FLAG_SET_HPP
 #define UTIL_FLAG_SET_HPP
 
-#include "util/flag_set_fwd.hpp"
+#include "util/flag_set_fwd.hpp" // IWYU pragma: export
 
 #include <bit>
 #include <cassert>

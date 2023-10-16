@@ -1,7 +1,14 @@
 #include "binsrv/event_header.hpp"
 
 #include <cassert>
-#include <concepts>
+// probably a bug in IWYU: <concepts> is required by std::integral
+// TODO: check if the same bug exust in clang-17
+#include <concepts> // IWYU pragma: keep
+#include <cstring>
+#include <stdexcept>
+#include <string>
+#include <string_view>
+#include <type_traits>
 
 #include <boost/date_time/posix_time/conversion.hpp>
 #include <boost/date_time/posix_time/time_formatters.hpp>
@@ -10,7 +17,10 @@
 #include "binsrv/event_flag.hpp"
 #include "binsrv/event_type.hpp"
 
+#include "easymysql/binlog_fwd.hpp"
+
 #include "util/exception_location_helpers.hpp"
+#include "util/flag_set.hpp"
 
 namespace {
 

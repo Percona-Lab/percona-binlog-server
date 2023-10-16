@@ -1,12 +1,20 @@
 #include "binsrv/master_config.hpp"
 
+#include <cstddef>
 #include <filesystem>
 #include <fstream>
+#include <ios>
+#include <stdexcept>
+#include <string>
+#include <string_view>
 
-#include <boost/json/src.hpp>
+#include <boost/json/parse.hpp>
+#include <boost/json/src.hpp> // IWYU pragma: keep
 
-#include "binsrv/log_severity.hpp"
+// Needed for log_template's operator <<
+#include "binsrv/log_severity.hpp" // IWYU pragma: keep
 
+#include "util/command_line_helpers_fwd.hpp"
 #include "util/exception_location_helpers.hpp"
 #include "util/nv_tuple_from_command_line.hpp"
 #include "util/nv_tuple_from_json.hpp"

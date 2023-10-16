@@ -1,5 +1,7 @@
 #include "easymysql/core_error_helpers_private.hpp"
 
+#include <source_location>
+
 #include <mysql/mysql.h>
 
 #include "easymysql/connection.hpp"
