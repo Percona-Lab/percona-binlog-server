@@ -1,7 +1,7 @@
 #ifndef BINSRV_EVENT_HEADER_HPP
 #define BINSRV_EVENT_HEADER_HPP
 
-#include "binsrv/event_header_fwd.hpp"
+#include "binsrv/event_header_fwd.hpp" // IWYU pragma: export
 
 #include <cstdint>
 #include <ctime>
@@ -10,6 +10,7 @@
 
 #include "binsrv/event_flag_fwd.hpp"
 #include "binsrv/event_type_fwd.hpp"
+
 #include "easymysql/binlog_fwd.hpp"
 
 namespace binsrv {

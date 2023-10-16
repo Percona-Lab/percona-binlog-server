@@ -1,6 +1,11 @@
 #include "binsrv/file_logger.hpp"
 
 #include <filesystem>
+#include <stdexcept>
+#include <string>
+#include <string_view>
+
+#include "binsrv/log_severity_fwd.hpp"
 
 #include "util/exception_location_helpers.hpp"
 
@@ -15,7 +20,8 @@ file_logger::file_logger(log_severity min_level, std::string_view file_name)
 }
 
 void file_logger::do_log(std::string_view message) {
-  stream_ << message << std::endl;
+  stream_ << message << '\n';
+  stream_.flush();
 }
 
 } // namespace binsrv

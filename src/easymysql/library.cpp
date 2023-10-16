@@ -1,8 +1,13 @@
 #include "easymysql/library.hpp"
 
+#include <cstdint>
+#include <stdexcept>
+#include <string_view>
+
 #include <mysql/mysql.h>
 
 #include "easymysql/connection.hpp"
+#include "easymysql/connection_config_fwd.hpp"
 
 #include "util/conversion_helpers.hpp"
 #include "util/exception_location_helpers.hpp"

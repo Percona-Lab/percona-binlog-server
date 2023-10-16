@@ -1,7 +1,7 @@
 #ifndef BINSRV_BASIC_LOGGER_HPP
 #define BINSRV_BASIC_LOGGER_HPP
 
-#include "binsrv/basic_logger_fwd.hpp"
+#include "binsrv/basic_logger_fwd.hpp" // IWYU pragma: export
 
 #include <string_view>
 

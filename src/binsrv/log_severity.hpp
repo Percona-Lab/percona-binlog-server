@@ -1,7 +1,7 @@
 #ifndef BINSRV_LOG_SEVERITY_HPP
 #define BINSRV_LOG_SEVERITY_HPP
 
-#include "binsrv/log_severity_fwd.hpp"
+#include "binsrv/log_severity_fwd.hpp" // IWYU pragma: export
 
 #include <algorithm>
 #include <array>

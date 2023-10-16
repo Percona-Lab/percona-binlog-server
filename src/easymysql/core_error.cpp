@@ -1,6 +1,7 @@
 #include "easymysql/core_error.hpp"
 
 #include <string>
+#include <system_error>
 
 namespace easymysql {
 

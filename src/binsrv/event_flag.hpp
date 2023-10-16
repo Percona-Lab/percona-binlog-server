@@ -1,7 +1,7 @@
 #ifndef BINSRV_EVENT_FLAG_HPP
 #define BINSRV_EVENT_FLAG_HPP
 
-#include "binsrv/event_flag_fwd.hpp"
+#include "binsrv/event_flag_fwd.hpp" // IWYU pragma: export
 
 #include <algorithm>
 #include <array>

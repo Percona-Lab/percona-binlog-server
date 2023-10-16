@@ -1,7 +1,7 @@
 #ifndef BINSRV_EVENT_TYPE_HPP
 #define BINSRV_EVENT_TYPE_HPP
 
-#include "binsrv/event_type_fwd.hpp"
+#include "binsrv/event_type_fwd.hpp" // IWYU pragma: export
 
 #include <algorithm>
 #include <array>

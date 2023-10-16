@@ -1,7 +1,7 @@
 #ifndef EASYMYSQL_LIBRARY_HPP
 #define EASYMYSQL_LIBRARY_HPP
 
-#include "easymysql/library_fwd.hpp"
+#include "easymysql/library_fwd.hpp" // IWYU pragma: export
 
 #include <cstdint>
 #include <string_view>

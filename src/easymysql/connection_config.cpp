@@ -1,5 +1,6 @@
 #include "easymysql/connection_config.hpp"
 
+#include <string>
 namespace easymysql {
 
 std::string connection_config::get_connection_string() const {

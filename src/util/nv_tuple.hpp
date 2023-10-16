@@ -1,7 +1,7 @@
 #ifndef UTIL_NV_TUPLE_HPP
 #define UTIL_NV_TUPLE_HPP
 
-#include "util/nv_tuple_fwd.hpp"
+#include "util/nv_tuple_fwd.hpp" // IWYU pragma: export
 
 #include <algorithm>
 #include <cassert>

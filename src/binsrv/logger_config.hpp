@@ -1,7 +1,7 @@
 #ifndef BINSRV_LOGGER_CONFIG_HPP
 #define BINSRV_LOGGER_CONFIG_HPP
 
-#include "binsrv/logger_config_fwd.hpp"
+#include "binsrv/logger_config_fwd.hpp" // IWYU pragma: export
 
 #include <string>
 

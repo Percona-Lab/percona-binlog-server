@@ -1,7 +1,7 @@
 #ifndef EASYMYSQL_CONNECTION_HPP
 #define EASYMYSQL_CONNECTION_HPP
 
-#include "easymysql/connection_fwd.hpp"
+#include "easymysql/connection_fwd.hpp" // IWYU pragma: export
 
 #include <memory>
 #include <string_view>

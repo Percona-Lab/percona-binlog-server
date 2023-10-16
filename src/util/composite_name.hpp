@@ -1,7 +1,7 @@
 #ifndef UTIL_COMPOSIT_NAME_HPP
 #define UTIL_COMPOSIT_NAME_HPP
 
-#include "util/composite_name_fwd.hpp"
+#include "util/composite_name_fwd.hpp" // IWYU pragma: export
 
 #include <cassert>
 #include <cstddef>
