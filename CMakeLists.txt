@@ -24,9 +24,6 @@ target_compile_options(binlog_server_compiler_flags INTERFACE
 find_package(Boost 1.82.0 EXACT REQUIRED)
 
 find_package(MySQL REQUIRED)
-find_package(OpenSSL REQUIRED)
-find_package(zstd REQUIRED)
-find_package(ZLIB REQUIRED)
 
 set(source_files
   src/app.cpp
@@ -121,7 +118,7 @@ target_link_libraries(binlog_server
   PUBLIC
     binlog_server_compiler_flags
   PRIVATE
-    Boost::headers MySQL::client OpenSSL::Crypto OpenSSL::SSL zstd::libzstd_shared ZLIB::ZLIB
+    Boost::headers MySQL::client
 )
 # for some reason it is not possible to propagate CXX_EXTENSIONS and
 # CXX_STANDARD_REQUIRED via interface library (binlog_server_compiler_flags)
