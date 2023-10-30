@@ -66,6 +66,7 @@ jobs:
             build_type: "Debug",
             cc: "clang-16",
             cxx: "clang++-16",
+            libcxx_cmake_flags: "-DWITH_STDLIB_LIBCXX=ON",
             label: "debug_clang16"
           }
         - {
@@ -73,6 +74,7 @@ jobs:
             build_type: "RelWithDebInfo",
             cc: "clang-16",
             cxx: "clang++-16",
+            libcxx_cmake_flags: "-DWITH_STDLIB_LIBCXX=ON",
             label: "relwithdebinfo_clang16"
           }
 
@@ -92,7 +94,7 @@ jobs:
         wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc
         echo deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-16 main | sudo tee /etc/apt/sources.list.d/llvm.list
         sudo apt-get update
-        sudo apt-get install clang-16 lld-16 clang-tidy-16
+        sudo apt-get install clang-16 lld-16 clang-tidy-16 libc++-16-dev libc++1-16 libc++abi-16-dev libc++abi1-16
 
     - name: Info CC compiler
       run: ${{matrix.config.cc}} --version
@@ -130,6 +132,7 @@ jobs:
           -DCMAKE_BUILD_TYPE=${{matrix.config.build_type}}  \
           -DCMAKE_C_COMPILER=${{matrix.config.cc}} \
           -DCMAKE_CXX_COMPILER=${{matrix.config.cxx}} \
+          ${{matrix.config.libcxx_cmake_flags}} \
           -DBOOST_ROOT=${{runner.temp}}/deps/${{format('boost_{0}_{1}_{2}', env.BOOST_MAJOR, env.BOOST_MINOR, env.BOOST_PATCH)}} \
           -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 
