@@ -21,6 +21,29 @@ target_compile_options(binlog_server_compiler_flags INTERFACE
   "$<${msvc_cxx}:$<BUILD_INTERFACE:${msvc_warnings}>>"
 )
 
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  if(CMAKE_SYSTEM_NAME MATCHES "Darwin")
+    set(WITH_STDLIB_LIBCXX_DEFAULT ON)
+  else()
+    set(WITH_STDLIB_LIBCXX_DEFAULT OFF)
+  endif()
+  option(WITH_STDLIB_LIBCXX "Use libc++ standard library" ${WITH_STDLIB_LIBCXX_DEFAULT})
+
+  if(WITH_STDLIB_LIBCXX)
+    message(STATUS "Using libc++ standard library")
+    set(libcxx_options "-stdlib=libc++")
+  else()
+    message(STATUS "Using libstdc++ standard library")
+    set(libcxx_options "-stdlib=libstdc++")
+  endif()
+  target_compile_options(binlog_server_compiler_flags INTERFACE
+    "$<${clang_cxx}:$<BUILD_INTERFACE:${libcxx_options}>>"
+  )
+  target_link_options(binlog_server_compiler_flags INTERFACE
+    "$<${clang_cxx}:$<BUILD_INTERFACE:${libcxx_options}>>"
+  )
+endif()
+
 find_package(Boost 1.83.0 EXACT REQUIRED)
 
 find_package(MySQL REQUIRED)
