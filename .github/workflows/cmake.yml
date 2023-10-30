@@ -27,15 +27,15 @@ jobs:
       - name: Install dependencies on ubuntu
         run: |
           wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc
-          echo deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-16 main | sudo tee /etc/apt/sources.list.d/llvm.list
+          echo deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-17 main | sudo tee /etc/apt/sources.list.d/llvm.list
           sudo apt-get update
-          sudo apt-get install clang-format-16
+          sudo apt-get install clang-format-17
 
       - name: Info Clang Format
-        run: clang-format-16 --version
+        run: clang-format-17 --version
 
-      - name: Check formatting with git clang-format-16
-        run: git clang-format-16 --diff --binary=clang-format-16 HEAD~
+      - name: Check formatting with git clang-format-17
+        run: git clang-format-17 --diff --binary=clang-format-17 HEAD~
 
   build:
     # The CMake configure and build commands are platform agnostic and should work equally well on Windows or Mac.
@@ -62,20 +62,20 @@ jobs:
             label: "relwithdebinfo_gcc12"
           }
         - {
-            name: "Clang 16 Debug",
+            name: "Clang 17 Debug",
             build_type: "Debug",
-            cc: "clang-16",
-            cxx: "clang++-16",
+            cc: "clang-17",
+            cxx: "clang++-17",
             libcxx_cmake_flags: "-DWITH_STDLIB_LIBCXX=ON",
-            label: "debug_clang16"
+            label: "debug_clang17"
           }
         - {
-            name: "Clang 16 RelWithDebInfo",
+            name: "Clang 17 RelWithDebInfo",
             build_type: "RelWithDebInfo",
-            cc: "clang-16",
-            cxx: "clang++-16",
+            cc: "clang-17",
+            cxx: "clang++-17",
             libcxx_cmake_flags: "-DWITH_STDLIB_LIBCXX=ON",
-            label: "relwithdebinfo_clang16"
+            label: "relwithdebinfo_clang17"
           }
 
     steps:
@@ -92,9 +92,9 @@ jobs:
       if: startsWith(matrix.config.name, 'Clang')
       run: |
         wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc
-        echo deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-16 main | sudo tee /etc/apt/sources.list.d/llvm.list
+        echo deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-17 main | sudo tee /etc/apt/sources.list.d/llvm.list
         sudo apt-get update
-        sudo apt-get install clang-16 lld-16 clang-tidy-16 libc++-16-dev libc++1-16 libc++abi-16-dev libc++abi1-16
+        sudo apt-get install clang-17 lld-17 clang-tidy-17 libc++-17-dev libc++1-17 libc++abi-17-dev libc++abi1-17
 
     - name: Info CC compiler
       run: ${{matrix.config.cc}} --version
@@ -145,12 +145,12 @@ jobs:
 
     - name: Info Clang Tidy
       if: startsWith(matrix.config.name, 'Clang')
-      run: clang-tidy-16 --version
+      run: clang-tidy-17 --version
 
     - name: Clang Tidy
       if: startsWith(matrix.config.name, 'Clang')
       # Run Clang Tidy
-      run: run-clang-tidy-16 -header-filter=.* -j=2 -use-color -p=${{github.workspace}}/../build-${{matrix.config.label}}
+      run: run-clang-tidy-17 -header-filter=.* -j=2 -use-color -p=${{github.workspace}}/../build-${{matrix.config.label}}
 
     - name: Test
       working-directory: ${{github.workspace}}/../build-${{matrix.config.label}}
