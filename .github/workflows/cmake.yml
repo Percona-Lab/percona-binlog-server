@@ -48,18 +48,18 @@ jobs:
       matrix:
         config:
         - {
-            name: "GCC 12 Debug",
+            name: "GCC 13 Debug",
             build_type: "Debug",
-            cc: "gcc-12",
-            cxx: "g++-12",
-            label: "debug_gcc12"
+            cc: "gcc-13",
+            cxx: "g++-13",
+            label: "debug_gcc13"
           }
         - {
-            name: "GCC 12 RelWithDebInfo",
+            name: "GCC 13 RelWithDebInfo",
             build_type: "RelWithDebInfo",
-            cc: "gcc-12",
-            cxx: "g++-12",
-            label: "relwithdebinfo_gcc12"
+            cc: "gcc-13",
+            cxx: "g++-13",
+            label: "relwithdebinfo_gcc13"
           }
         - {
             name: "Clang 17 Debug",
@@ -95,6 +95,9 @@ jobs:
         echo deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-17 main | sudo tee /etc/apt/sources.list.d/llvm.list
         sudo apt-get update
         sudo apt-get install clang-17 lld-17 clang-tidy-17 libc++-17-dev libc++1-17 libc++abi-17-dev libc++abi1-17
+        sudo add-apt-repository ppa:ubuntu-toolchain-r/test
+        sudo apt-get update
+        sudo apt-get install g++-13
 
     - name: Info CC compiler
       run: ${{matrix.config.cc}} --version

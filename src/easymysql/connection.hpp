@@ -3,6 +3,7 @@
 
 #include "easymysql/connection_fwd.hpp" // IWYU pragma: export
 
+#include <cstdint>
 #include <memory>
 #include <string_view>
 
