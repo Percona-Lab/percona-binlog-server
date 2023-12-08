@@ -26,7 +26,7 @@ master_config::master_config(util::command_line_arg_view arguments) {
 }
 
 master_config::master_config(std::string_view file_name) {
-  static constexpr std::size_t max_file_size = 1048576;
+  static constexpr std::size_t max_file_size{1048576U};
 
   const std::filesystem::path file_path{file_name};
   std::ifstream ifs{file_path};
@@ -35,7 +35,7 @@ master_config::master_config(std::string_view file_name) {
         "cannot open configuration file");
   }
   auto file_size = std::filesystem::file_size(file_path);
-  if (file_size == 0) {
+  if (file_size == 0U) {
     util::exception_location().raise<std::invalid_argument>(
         "configuration file is empty");
   }

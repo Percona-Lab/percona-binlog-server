@@ -9,6 +9,8 @@
 
 #include "easymysql/connection_fwd.hpp"
 
+#include "util/byte_span_fwd.hpp"
+
 namespace easymysql {
 
 class [[nodiscard]] binlog {
@@ -28,7 +30,7 @@ public:
 
   // returns empty span on EOF
   // throws an exception on error
-  binlog_stream_span fetch();
+  util::const_byte_span fetch();
 
 private:
   binlog(connection &conn, std::uint32_t server_id);

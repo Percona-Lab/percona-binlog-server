@@ -8,7 +8,7 @@ namespace util {
 std::string extract_executable_name(util::command_line_arg_view cmd_args) {
   std::string res;
   if (!cmd_args.empty()) {
-    const std::filesystem::path executable_path{cmd_args[0]};
+    const std::filesystem::path executable_path{cmd_args[0U]};
     auto filename = executable_path.filename();
     res = filename.string();
   }

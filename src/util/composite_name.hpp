@@ -13,9 +13,9 @@ namespace util {
 template <typename StringLikeType> class [[nodiscard]] composite_name {
 public:
   using element_type = StringLikeType;
-  static constexpr char delimiter = '.';
+  static constexpr char delimiter{'.'};
 
-  composite_name() : elements_{}, total_length_{0} {}
+  composite_name() : elements_{}, total_length_{0U} {}
   explicit composite_name(const element_type &element)
       : elements_{1U, element}, total_length_{std::size(element)} {}
 

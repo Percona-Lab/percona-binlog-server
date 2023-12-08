@@ -22,8 +22,8 @@ private:
       >;
 
 public:
-  static constexpr std::size_t flattened_size = impl_type::flattened_size;
-  static constexpr std::size_t depth = impl_type::depth;
+  static constexpr std::size_t flattened_size{impl_type::flattened_size};
+  static constexpr std::size_t depth{impl_type::depth};
 
   explicit master_config(std::string_view file_name);
 
