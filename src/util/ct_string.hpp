@@ -22,9 +22,9 @@ template <std::size_t N> struct ct_string {
   [[nodiscard]] constexpr const char *c_str() const noexcept {
     return std::cbegin(data);
   }
-  [[nodiscard]] constexpr std::size_t size() const noexcept { return N - 1; }
+  [[nodiscard]] constexpr std::size_t size() const noexcept { return N - 1U; }
   [[nodiscard]] constexpr std::string_view sv() const noexcept {
-    return {std::cbegin(data), N - 1};
+    return {std::cbegin(data), N - 1U};
   }
   // NOLINTBEGIN(cppcoreguidelines-avoid-c-arrays,hicpp-avoid-c-arrays,modernize-avoid-c-arrays)
   char data[N] = {}; // NOLINT(misc-non-private-member-variables-in-classes)

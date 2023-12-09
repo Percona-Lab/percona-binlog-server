@@ -27,7 +27,7 @@ void nv_tuple_from_command_line_helper(string_view_composite_name &label,
   if (!boost::conversion::try_lexical_convert(arguments[argument_index], obj)) {
     util::exception_location().raise<std::invalid_argument>(
         "unable to extract \"" + label.str() + "\" at position " +
-        std::to_string(argument_index + 1) + " from the command line");
+        std::to_string(argument_index + 1U) + " from the command line");
   }
   ++argument_index;
 }
@@ -62,7 +62,7 @@ void nv_tuple_from_command_line(util::command_line_arg_view arguments,
 
   string_view_composite_name label;
   label.reserve(nv_tuple_type::depth);
-  std::size_t argument_index = 0;
+  std::size_t argument_index{0U};
 
   detail::nv_tuple_from_command_line_helper(label, argument_index, arguments,
                                             obj);

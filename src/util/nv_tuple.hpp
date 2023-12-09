@@ -24,7 +24,7 @@ namespace util {
 // NOLINTNEXTLINE(bugprone-exception-escape)
 template <ct_string CTS, typename T> struct nv {
   using type = T;
-  static constexpr decltype(CTS) name = CTS;
+  static constexpr decltype(CTS) name{CTS};
 
   type value;
 };
@@ -38,7 +38,7 @@ template <named_value... NVPack> struct nv_tuple : NVPack... {
   static constexpr std::size_t size = sizeof...(NVPack);
 
   // clang-format off
-  static constexpr std::size_t flattened_size = (
+  static constexpr std::size_t flattened_size{(
     []<typename T>(T) constexpr -> std::size_t {
       if constexpr (is_derived_from_named_value_tuple_v<typename T::type>) {
         return T::type::flattened_size;
@@ -47,11 +47,11 @@ template <named_value... NVPack> struct nv_tuple : NVPack... {
       }
     }(std::type_identity<typename NVPack::type>{})
     + ... + 0U
-  );
+  )};
   // clang-format on
 
   // clang-format off
-  static constexpr std::size_t depth = std::max({
+  static constexpr std::size_t depth{std::max({
     []<typename T>(T) constexpr -> std::size_t {
         if constexpr (is_derived_from_named_value_tuple_v<typename T::type>) {
           return 1U + T::type::depth;
@@ -59,7 +59,7 @@ template <named_value... NVPack> struct nv_tuple : NVPack... {
           return 1U;
         }
       }(std::type_identity<typename NVPack::type>{})...
-  });
+  })};
   // clang-format on
 
   template <std::size_t Index>
@@ -76,7 +76,7 @@ template <named_value... NVPack> struct nv_tuple : NVPack... {
 
   // clang-format off
   template <ct_string CTS>
-  static constexpr std::size_t name_to_index_v =
+  static constexpr std::size_t name_to_index_v{
     // we use immediately invoked lambda here to calculate the index
     // of the element in the NVPack whose name is equal to CTS
     []<std::size_t... IndexPack>(std::index_sequence<IndexPack...>)
@@ -84,25 +84,25 @@ template <named_value... NVPack> struct nv_tuple : NVPack... {
       // here we use a fold expression to calculate the sum of all the indexes
       // that correspond to an element with name equal to CTS
       // pseudo code:
-      // std::size_t res = 0;
-      // for constexpr (std::size_t i = 0; i < sizeof...(NVPack); ++i)
-      //   if constexpr (index_to_base<i>::name == CTS) res += (i + 1);
-      // return res == 0 ? size : res - 1;
+      // std::size_t res{0U};
+      // for constexpr (std::size_t i{0U}; i < sizeof...(NVPack); ++i)
+      //   if constexpr (index_to_base<i>::name == CTS) res += (i + 1U);
+      // return res == 0U ? size : res - 1U;
       const std::size_t res = (
         (index_to_base<IndexPack>::name == CTS ? IndexPack + 1U : 0U)
         + ... + 0U
       );
-      return res == 0 ? size : res - 1;
-    }(std::index_sequence_for<NVPack...>{});
+      return res == 0U ? size : res - 1U;
+    }(std::index_sequence_for<NVPack...>{})};
   // clang-format on
 
   template <ct_string CTS> [[nodiscard]] const auto &get() const noexcept {
-    static constexpr std::size_t found_index = name_to_index_v<CTS>;
+    static constexpr std::size_t found_index{name_to_index_v<CTS>};
     static_assert(found_index < size, "unknown nv_tuple element name");
     return get<found_index>();
   }
   template <ct_string CTS> [[nodiscard]] auto &get() noexcept {
-    static constexpr std::size_t found_index = name_to_index_v<CTS>;
+    static constexpr std::size_t found_index{name_to_index_v<CTS>};
     static_assert(found_index < size, "unknown nv_tuple element name");
     return get<found_index>();
   }

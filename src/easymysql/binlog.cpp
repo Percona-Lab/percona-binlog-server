@@ -3,6 +3,7 @@
 #include <cassert>
 #include <cstdint>
 #include <memory>
+#include <span>
 #include <string_view>
 
 #include <mysql/mysql.h>
@@ -12,9 +13,11 @@
 #include "easymysql/connection_deimpl_private.hpp"
 #include "easymysql/core_error_helpers_private.hpp"
 
+#include "util/byte_span_fwd.hpp"
+
 namespace {
 
-constexpr std::uint64_t magic_binlog_offset = 4ULL;
+constexpr std::uint64_t magic_binlog_offset{4ULL};
 
 } // anonymous namespace
 
@@ -30,18 +33,18 @@ void binlog::rpl_deleter::operator()(void *ptr) const noexcept {
 }
 
 binlog::binlog(connection &conn, std::uint32_t server_id)
-    : conn_{&conn}, impl_{new MYSQL_RPL{.file_name_length = 0,
+    : conn_{&conn}, impl_{new MYSQL_RPL{.file_name_length = 0U,
                                         .file_name = nullptr,
                                         .start_position = magic_binlog_offset,
                                         .server_id = server_id,
                                         // TODO: consider adding (or-ing)
                                         // BINLOG_DUMP_NON_BLOCK and
                                         // MYSQL_RPL_SKIP_HEARTBEAT to flags
-                                        .flags = 0,
-                                        .gtid_set_encoded_size = 0,
+                                        .flags = 0U,
+                                        .gtid_set_encoded_size = 0U,
                                         .fix_gtid_set = nullptr,
                                         .gtid_set_arg = nullptr,
-                                        .size = 0,
+                                        .size = 0U,
                                         .buffer = nullptr
 
                     }} {
@@ -67,7 +70,7 @@ binlog::~binlog() {
   }
 }
 
-binlog_stream_span binlog::fetch() {
+util::const_byte_span binlog::fetch() {
   assert(conn_ != nullptr);
   assert(!is_empty());
   auto *casted_conn_impl = connection_deimpl::get(conn_->impl_);
@@ -75,7 +78,8 @@ binlog_stream_span binlog::fetch() {
   if (mysql_binlog_fetch(casted_conn_impl, casted_rpl_impl) != 0) {
     raise_core_error_from_connection(*conn_);
   }
-  return {casted_rpl_impl->buffer, casted_rpl_impl->size};
+  return std::as_bytes(
+      std::span{casted_rpl_impl->buffer, casted_rpl_impl->size});
 }
 
 } // namespace easymysql

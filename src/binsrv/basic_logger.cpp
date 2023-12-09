@@ -16,8 +16,8 @@ basic_logger::basic_logger(log_severity min_level) noexcept
 
 void basic_logger::log(log_severity level, std::string_view message) {
   if (level >= min_level_) {
-    static constexpr auto timestamp_length =
-        std::size("YYYY-MM-DDTHH:MM:SS.fffffffff") - 1;
+    static constexpr auto timestamp_length{
+        std::size("YYYY-MM-DDTHH:MM:SS.fffffffff") - 1U};
     const auto timestamp = boost::posix_time::microsec_clock::universal_time();
     ;
     const auto level_label = to_string_view(level);

@@ -10,6 +10,8 @@
 #include <string_view>
 #include <type_traits>
 
+#include "util/conversion_helpers.hpp"
+
 namespace binsrv {
 
 // NOLINTBEGIN(cppcoreguidelines-macro-usage)
@@ -35,9 +37,8 @@ inline std::string_view to_string_view(log_severity level) noexcept {
 #define BINSRV_LOG_SEVERITY_X_MACRO(X) #X##sv
   static constexpr std::array labels{BINSRV_LOG_SEVERITY_X_SEQUENCE(), ""sv};
 #undef BINSRV_LOG_SEVERITY_X_MACRO
-  const auto index = static_cast<std::size_t>(
-      static_cast<std::underlying_type_t<log_severity>>(
-          std::min(log_severity::delimiter, level)));
+  const auto index{
+      util::enum_to_index(std::min(log_severity::delimiter, level))};
   // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index)
   return labels[index];
 }
@@ -60,15 +61,14 @@ operator>>(std::basic_istream<Char, Traits> &input, log_severity &level) {
   if (!input) {
     return input;
   }
-  using index_type = std::underlying_type_t<log_severity>;
-  index_type index = 0;
-  const auto max_index = static_cast<index_type>(log_severity::delimiter);
-  while (index < max_index &&
-         to_string_view(static_cast<log_severity>(index)) != level_str) {
+  std::size_t index{0U};
+  const auto max_index = util::enum_to_index(log_severity::delimiter);
+  while (index < max_index && to_string_view(util::index_to_enum<log_severity>(
+                                  index)) != level_str) {
     ++index;
   }
   if (index < max_index) {
-    level = static_cast<log_severity>(index);
+    level = util::index_to_enum<log_severity>(index);
   } else {
     input.setstate(std::ios_base::failbit);
   }

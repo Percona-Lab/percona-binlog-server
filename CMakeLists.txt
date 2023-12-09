@@ -49,8 +49,68 @@ find_package(Boost 1.83.0 EXACT REQUIRED)
 find_package(MySQL REQUIRED)
 
 set(source_files
+  # main application files
   src/app.cpp
 
+  # binlog event data structure files
+  src/binsrv/event/checksum_algorithm_type_fwd.hpp
+  src/binsrv/event/checksum_algorithm_type.hpp
+
+  src/binsrv/event/code_type_fwd.hpp
+  src/binsrv/event/code_type.hpp
+
+  src/binsrv/event/common_header_fwd.hpp
+  src/binsrv/event/common_header.hpp
+  src/binsrv/event/common_header.cpp
+
+  src/binsrv/event/empty_body_fwd.hpp
+  src/binsrv/event/empty_body.hpp
+  src/binsrv/event/empty_body.cpp
+
+  src/binsrv/event/empty_post_header_fwd.hpp
+  src/binsrv/event/empty_post_header.hpp
+  src/binsrv/event/empty_post_header.cpp
+
+  src/binsrv/event/event_fwd.hpp
+  src/binsrv/event/event.hpp
+  src/binsrv/event/event.cpp
+
+  src/binsrv/event/flag_type_fwd.hpp
+  src/binsrv/event/flag_type.hpp
+
+  src/binsrv/event/footer_fwd.hpp
+  src/binsrv/event/footer.hpp
+  src/binsrv/event/footer.cpp
+
+  src/binsrv/event/format_description_body_impl_fwd.hpp
+  src/binsrv/event/format_description_body_impl.hpp
+  src/binsrv/event/format_description_body_impl.cpp
+
+  src/binsrv/event/format_description_post_header_impl_fwd.hpp
+  src/binsrv/event/format_description_post_header_impl.hpp
+  src/binsrv/event/format_description_post_header_impl.cpp
+
+  src/binsrv/event/generic_body_fwd.hpp
+  src/binsrv/event/generic_body.hpp
+
+  src/binsrv/event/generic_post_header_fwd.hpp
+  src/binsrv/event/generic_post_header.hpp
+
+  src/binsrv/event/rotate_body_impl_fwd.hpp
+  src/binsrv/event/rotate_body_impl.hpp
+  src/binsrv/event/rotate_body_impl.cpp
+
+  src/binsrv/event/rotate_post_header_impl_fwd.hpp
+  src/binsrv/event/rotate_post_header_impl.hpp
+  src/binsrv/event/rotate_post_header_impl.cpp
+
+  src/binsrv/event/unknown_body_fwd.hpp
+  src/binsrv/event/unknown_body.hpp
+
+  src/binsrv/event/unknown_post_header_fwd.hpp
+  src/binsrv/event/unknown_post_header.hpp
+
+  # billog files
   src/binsrv/basic_logger_fwd.hpp
   src/binsrv/basic_logger.hpp
   src/binsrv/basic_logger.cpp
@@ -60,16 +120,6 @@ set(source_files
 
   src/binsrv/exception_handling_helpers.hpp
   src/binsrv/exception_handling_helpers.cpp
-
-  src/binsrv/event_flag_fwd.hpp
-  src/binsrv/event_flag.hpp
-
-  src/binsrv/event_header_fwd.hpp
-  src/binsrv/event_header.hpp
-  src/binsrv/event_header.cpp
-
-  src/binsrv/event_type_fwd.hpp
-  src/binsrv/event_type.hpp
 
   src/binsrv/file_logger.hpp
   src/binsrv/file_logger.cpp
@@ -86,6 +136,11 @@ set(source_files
   src/binsrv/master_config_fwd.hpp
   src/binsrv/master_config.hpp
   src/binsrv/master_config.cpp
+
+  # various utility files
+  src/util/byte_span_fwd.hpp
+  src/util/byte_span.hpp
+  src/util/byte_span_extractors.hpp
 
   src/util/command_line_helpers_fwd.hpp
   src/util/command_line_helpers.hpp
@@ -112,6 +167,9 @@ set(source_files
   src/util/nv_tuple_from_command_line.hpp
   src/util/nv_tuple_from_json.hpp
 
+  src/util/redirectable.hpp
+
+  # mysql wrapper library files
   src/easymysql/core_error_helpers_private.hpp
   src/easymysql/core_error_helpers_private.cpp
   src/easymysql/core_error.hpp
