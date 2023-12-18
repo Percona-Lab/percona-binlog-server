@@ -11,7 +11,6 @@
 
 namespace binsrv {
 
-// NOLINTNEXTLINE(bugprone-exception-escape)
 struct [[nodiscard]] logger_config
     : util::nv_tuple<
           // clang-format off

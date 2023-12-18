@@ -96,6 +96,14 @@ set(source_files
   src/binsrv/event/generic_post_header_fwd.hpp
   src/binsrv/event/generic_post_header.hpp
 
+  src/binsrv/event/protocol_traits_fwd.hpp
+  src/binsrv/event/protocol_traits.hpp
+  src/binsrv/event/protocol_traits.cpp
+
+  src/binsrv/event/reader_context_fwd.hpp
+  src/binsrv/event/reader_context.hpp
+  src/binsrv/event/reader_context.cpp
+
   src/binsrv/event/rotate_body_impl_fwd.hpp
   src/binsrv/event/rotate_body_impl.hpp
   src/binsrv/event/rotate_body_impl.cpp

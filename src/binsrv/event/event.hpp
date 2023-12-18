@@ -22,29 +22,22 @@
 #include "binsrv/event/format_description_post_header_impl.hpp" // IWYU pragma: export
 #include "binsrv/event/generic_body.hpp"            // IWYU pragma: export
 #include "binsrv/event/generic_post_header.hpp"     // IWYU pragma: export
+#include "binsrv/event/reader_context_fwd.hpp"
 #include "binsrv/event/rotate_body_impl.hpp"        // IWYU pragma: export
 #include "binsrv/event/rotate_post_header_impl.hpp" // IWYU pragma: export
 #include "binsrv/event/unknown_body.hpp"            // IWYU pragma: export
 #include "binsrv/event/unknown_post_header.hpp"     // IWYU pragma: export
 
 #include "util/byte_span_fwd.hpp"
-#include "util/conversion_helpers.hpp"
 
 namespace binsrv::event {
 
-using optional_format_description_post_header =
-    std::optional<generic_post_header<code_type::format_description>>;
-using optional_format_description_body =
-    std::optional<generic_body<code_type::format_description>>;
-
 class [[nodiscard]] event {
 private:
-  static constexpr std::size_t number_of_events{
-      util::enum_to_index(code_type::delimiter)};
-
   // here we create an index sequence (std::index_sequence) specialized
   // with the following std::size_t constant pack: 0 .. <number_of_events>
-  using code_index_sequence = std::make_index_sequence<number_of_events>;
+  using code_index_sequence =
+      std::make_index_sequence<default_number_of_events>;
   // almost all boost::mp11 algorithms accept lists of types (rather than
   // lists of constants), so we convert std::index_sequence into
   // boost::mp11::mp_list of std::integral_constant types
@@ -72,8 +65,8 @@ private:
   using post_header_variant =
       boost::mp11::mp_rename<unique_post_header_type_list, std::variant>;
 
-  // identical techniqure is used to obtain the std::variant of all possible
-  // unique event bodyies
+  // identical technique is used to obtain the std::variant of all possible
+  // unique event bodies
   template <typename Index>
   using index_to_body_mf =
       generic_body<util::index_to_enum<code_type>(Index::value)>;
@@ -86,17 +79,26 @@ private:
   using optional_footer = std::optional<footer>;
 
 public:
-  event(util::const_byte_span portion,
-        const optional_format_description_post_header &fde_post_header,
-        const optional_format_description_body &fde_body);
+  event(reader_context &context, util::const_byte_span portion);
 
   [[nodiscard]] const common_header &get_common_header() const noexcept {
     return common_header_;
   }
-  [[nodiscard]] const post_header_variant &get_post_header() const noexcept {
+  [[nodiscard]] const post_header_variant &
+  get_generic_post_header() const noexcept {
     return post_header_;
   }
-  [[nodiscard]] const body_variant &get_body() const noexcept { return body_; }
+  template <code_type Code> [[nodiscard]] const auto &get_post_header() const {
+    return std::get<generic_post_header<Code>>(get_generic_post_header());
+  }
+
+  [[nodiscard]] const body_variant &get_generic_body() const noexcept {
+    return body_;
+  }
+  template <code_type Code> [[nodiscard]] const auto &get_body() const {
+    return std::get<generic_body<Code>>(get_generic_body());
+  }
+
   [[nodiscard]] const optional_footer &get_footer() const noexcept {
     return footer_;
   }

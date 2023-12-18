@@ -16,12 +16,6 @@
 
 namespace util {
 
-// most probably due to a bug in the bugprone-exception-escape
-// clanng-tidy rule logic, the exception that may potentially come from the
-// special functions of both nv and nv_tuple class templates is not properly
-// handled
-
-// NOLINTNEXTLINE(bugprone-exception-escape)
 template <ct_string CTS, typename T> struct nv {
   using type = T;
   static constexpr decltype(CTS) name{CTS};
@@ -29,7 +23,6 @@ template <ct_string CTS, typename T> struct nv {
   type value;
 };
 
-// NOLINTNEXTLINE(bugprone-exception-escape)
 template <named_value... NVPack> struct nv_tuple : NVPack... {
   // TODO: add constraint to make sure that we have only uniqie names in the
   //       NVPack
