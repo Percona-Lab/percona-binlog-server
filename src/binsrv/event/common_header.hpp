@@ -10,6 +10,7 @@
 
 #include "binsrv/event/code_type_fwd.hpp"
 #include "binsrv/event/flag_type_fwd.hpp"
+#include "binsrv/event/protocol_traits_fwd.hpp"
 
 #include "util/byte_span_fwd.hpp"
 
@@ -17,7 +18,7 @@ namespace binsrv::event {
 
 class [[nodiscard]] common_header {
 public:
-  static constexpr std::size_t size_in_bytes{19U};
+  static constexpr std::size_t size_in_bytes{default_common_header_length};
 
   explicit common_header(util::const_byte_span portion);
 

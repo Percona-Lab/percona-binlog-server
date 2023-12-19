@@ -13,6 +13,8 @@
 #include "binsrv/event/flag_type.hpp"
 #include "binsrv/event/generic_body.hpp"
 #include "binsrv/event/generic_post_header.hpp"
+#include "binsrv/event/protocol_traits_fwd.hpp"
+#include "binsrv/event/reader_context.hpp"
 
 #include "util/byte_span_fwd.hpp"
 #include "util/conversion_helpers.hpp"
@@ -20,9 +22,7 @@
 
 namespace binsrv::event {
 
-event::event(util::const_byte_span portion,
-             const optional_format_description_post_header &fde_post_header,
-             const optional_format_description_body &fde_body)
+event::event(reader_context &context, util::const_byte_span portion)
     : common_header_{
           [](util::const_byte_span event_portion) -> util::const_byte_span {
             if (std::size(event_portion) <
@@ -42,13 +42,13 @@ event::event(util::const_byte_span portion,
     // format_description_events always include event footers with checksums
     footer_size = footer::size_in_bytes;
   } else {
-    if (fde_body) {
+    if (context.has_fde_processed()) {
       // if format_description event has already been encountered, we determine
       // whether there is a footer in the event from it
-      footer_size =
-          (fde_body->get_checksum_algorithm() == checksum_algorithm_type::crc32
-               ? footer::size_in_bytes
-               : 0U);
+      footer_size = (context.get_current_checksum_algorithm() ==
+                             checksum_algorithm_type::crc32
+                         ? footer::size_in_bytes
+                         : 0U);
     } else {
       // we get in this branch only for the very first artificial rotate event
       // and in this case it does not include the footer
@@ -63,10 +63,10 @@ event::event(util::const_byte_span portion,
         "header");
   }
   std::size_t post_header_size{0U};
-  if (fde_post_header) {
+  if (context.has_fde_processed()) {
     // if format_description event has already been encountered in the stream,
     // we take post-header length from it
-    post_header_size = fde_post_header->get_post_header_length(type_code);
+    post_header_size = context.get_current_post_header_length(type_code);
   } else {
     // we expect that we can receive only 2 events before there is a
     // format_description event we can refer to: rotate (with artificial
@@ -112,6 +112,7 @@ event::event(util::const_byte_span portion,
         footer_size);
     footer_.emplace(footer_portion);
   };
+  context.process_event(*this);
 }
 
 void event::emplace_post_header(code_type code, util::const_byte_span portion) {
@@ -126,7 +127,7 @@ void event::emplace_post_header(code_type code, util::const_byte_span portion) {
   // then, we define an alias for a container that can store
   // '<number_of_events>' such member function pointers
   using emplace_function_container =
-      std::array<emplace_function, number_of_events>;
+      std::array<emplace_function, default_number_of_events>;
   // after that we declare a constexpr instance of such array and initialize it
   // with immediately invoked lambda
   static constexpr emplace_function_container emplace_functions{
@@ -168,7 +169,7 @@ void event::emplace_body(code_type code, util::const_byte_span portion) {
   // here we use the same technique as in 'emplace_post_header()'
   using emplace_function = void (event::*)(util::const_byte_span);
   using emplace_function_container =
-      std::array<emplace_function, number_of_events>;
+      std::array<emplace_function, default_number_of_events>;
   static constexpr emplace_function_container emplace_functions{
       []<std::size_t... IndexPack>(
           std::index_sequence<IndexPack...>) -> emplace_function_container {

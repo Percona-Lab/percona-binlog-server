@@ -1,7 +1,5 @@
 #include "binsrv/event/format_description_post_header_impl.hpp"
 
-#include <cstddef>
-#include <iterator>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -16,7 +14,6 @@
 
 #include "util/byte_span.hpp"
 #include "util/byte_span_extractors.hpp"
-#include "util/conversion_helpers.hpp"
 #include "util/exception_location_helpers.hpp"
 
 namespace binsrv::event {
@@ -49,11 +46,6 @@ generic_post_header_impl<code_type::format_description>::
                 "mismatch in "
                 "generic_post_header_impl<code_type::format_description>::"
                 "server_version_length");
-  static_assert(number_of_events ==
-                    util::enum_to_index(code_type::delimiter) - 1U,
-                "mismatch in "
-                "generic_post_header_impl<code_type::format_description>::"
-                "number_of_events");
 
   // TODO: initialize size_in_bytes directly based on the sum of fields
   // widths instead of this static_assert
@@ -101,19 +93,6 @@ generic_post_header_impl<code_type::format_description>::get_server_version()
     code_type::format_description>::get_readable_create_timestamp() const {
   return boost::posix_time::to_simple_string(
       boost::posix_time::from_time_t(get_create_timestamp()));
-}
-
-[[nodiscard]] std::size_t
-generic_post_header_impl<code_type::format_description>::get_post_header_length(
-    code_type code) const noexcept {
-  // here the very first "unknown" code is not included in the array by the
-  // spec
-  const auto index{util::enum_to_index(code)};
-  if (index == 0U || index >= util::enum_to_index(code_type::delimiter)) {
-    return 0U;
-  }
-  // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index)
-  return static_cast<std::size_t>(post_header_lengths_[index - 1U]);
 }
 
 } // namespace binsrv::event

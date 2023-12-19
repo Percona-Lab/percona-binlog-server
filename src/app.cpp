@@ -20,6 +20,7 @@
 
 #include "binsrv/event/code_type.hpp"
 #include "binsrv/event/event.hpp"
+#include "binsrv/event/reader_context.hpp"
 
 #include "easymysql/binlog.hpp"
 #include "easymysql/connection.hpp"
@@ -220,8 +221,8 @@ int main(int argc, char *argv[]) {
     static constexpr std::byte expected_event_packet_prefix{'\0'};
 
     util::const_byte_span portion;
-    binsrv::event::optional_format_description_post_header fde_post_header{};
-    binsrv::event::optional_format_description_body fde_body{};
+
+    binsrv::event::reader_context context{};
 
     while (!(portion = binlog.fetch()).empty()) {
       if (portion[0] != expected_event_packet_prefix) {
@@ -233,24 +234,19 @@ int main(int argc, char *argv[]) {
                   "fetched " + std::to_string(std::size(portion)) +
                       "-byte(s) event from binlog");
 
-      const binsrv::event::event generic_event{portion, fde_post_header,
-                                               fde_body};
+      const binsrv::event::event current_event{context, portion};
 
-      log_event_common_header(*logger, generic_event.get_common_header());
-      if (generic_event.get_common_header().get_type_code() ==
+      log_event_common_header(*logger, current_event.get_common_header());
+      if (current_event.get_common_header().get_type_code() ==
           binsrv::event::code_type::format_description) {
-        const auto &local_fde_post_header =
-            std::get<binsrv::event::generic_post_header<
-                binsrv::event::code_type::format_description>>(
-                generic_event.get_post_header());
-        const auto &local_fde_body = std::get<binsrv::event::generic_body<
-            binsrv::event::code_type::format_description>>(
-            generic_event.get_body());
+        const auto &local_fde_post_header = current_event.get_post_header<
+            binsrv::event::code_type::format_description>();
+        const auto &local_fde_body =
+            current_event
+                .get_body<binsrv::event::code_type::format_description>();
 
         log_format_description_event(*logger, local_fde_post_header,
                                      local_fde_body);
-        fde_post_header = local_fde_post_header;
-        fde_body = local_fde_body;
       }
       log_span_dump(*logger, portion);
     }
