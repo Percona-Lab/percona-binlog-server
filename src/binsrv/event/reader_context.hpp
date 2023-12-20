@@ -19,13 +19,9 @@ public:
     return fde_processed_;
   }
   [[nodiscard]] checksum_algorithm_type
-  get_current_checksum_algorithm() const noexcept {
-    return checksum_algorithm_;
-  }
+  get_current_checksum_algorithm() const noexcept;
   [[nodiscard]] std::size_t
-  get_current_post_header_length(code_type code) const noexcept {
-    return get_post_header_length_for_code(post_header_lengths_, code);
-  }
+  get_current_post_header_length(code_type code) const noexcept;
 
 private:
   bool fde_processed_{false};

@@ -3,12 +3,16 @@
 
 #include "binsrv/event/unknown_post_header_fwd.hpp" // IWYU pragma: export
 
+#include <cstddef>
+
 #include "util/byte_span_fwd.hpp"
 
 namespace binsrv::event {
 
 class [[nodiscard]] unknown_post_header {
 public:
+  static constexpr std::size_t size_in_bytes{~static_cast<std::size_t>(0U)};
+
   // this class will be used as the first type of the event post header
   // variant, so it needs to be default constructible
   unknown_post_header() noexcept = default;
