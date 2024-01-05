@@ -22,12 +22,16 @@ public:
   get_current_checksum_algorithm() const noexcept;
   [[nodiscard]] std::size_t
   get_current_post_header_length(code_type code) const noexcept;
+  [[nodiscard]] std::uint32_t get_current_position() const noexcept {
+    return position_;
+  }
 
 private:
   bool fde_processed_{false};
   // NOLINTNEXTLINE(cppcoreguidelines-use-default-member-init,modernize-use-default-member-init)
   checksum_algorithm_type checksum_algorithm_;
   post_header_length_container post_header_lengths_{};
+  std::uint32_t position_{0ULL};
 
   void process_event(const event &current_event);
 };

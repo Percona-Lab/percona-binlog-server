@@ -35,10 +35,10 @@ event::event(reader_context &context, util::const_byte_span portion)
           }(portion)} {
   // TODO: rework with direct member initialization
 
-  const auto type_code = common_header_.get_type_code();
+  const auto code = common_header_.get_type_code();
 
   std::size_t footer_size{0U};
-  if (type_code == code_type::format_description) {
+  if (code == code_type::format_description) {
     // format_description_events always include event footers with checksums
     footer_size = footer::size_in_bytes;
   } else {
@@ -66,28 +66,27 @@ event::event(reader_context &context, util::const_byte_span portion)
   if (context.has_fde_processed()) {
     // if format_description event has already been encountered in the stream,
     // we take post-header length from it
-    post_header_size = context.get_current_post_header_length(type_code);
+    post_header_size = context.get_current_post_header_length(code);
   } else {
     // we expect that we can receive only 2 events before there is a
     // format_description event we can refer to: rotate (with artificial
     // flag) and format description event itself
-    switch (type_code) {
+    post_header_size = get_expected_post_header_length(code);
+    switch (code) {
     case code_type::rotate:
       if (!common_header_.get_flags().has_element(flag_type::artificial)) {
         util::exception_location().raise<std::logic_error>(
             "rotate event without preceding format_description event must have "
             "'artificial' flag set");
       }
-      post_header_size = generic_post_header<code_type::rotate>::size_in_bytes;
       break;
     case code_type::format_description:
-      post_header_size =
-          generic_post_header<code_type::format_description>::size_in_bytes;
       break;
     default:
       util::exception_location().raise<std::logic_error>(
           "this type of event must be preceded by a format_description event");
     }
+    assert(post_header_size != unspecified_post_header_length);
   }
 
   const std::size_t group_size =
@@ -100,11 +99,11 @@ event::event(reader_context &context, util::const_byte_span portion)
 
   const auto post_header_portion =
       portion.subspan(common_header::size_in_bytes, post_header_size);
-  emplace_post_header(type_code, post_header_portion);
+  emplace_post_header(code, post_header_portion);
 
   const auto body_portion = portion.subspan(
       common_header::size_in_bytes + post_header_size, body_size);
-  emplace_body(type_code, body_portion);
+  emplace_body(code, body_portion);
 
   if (footer_size != 0U) {
     const auto footer_portion = portion.subspan(

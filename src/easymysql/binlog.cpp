@@ -15,12 +15,6 @@
 
 #include "util/byte_span_fwd.hpp"
 
-namespace {
-
-constexpr std::uint64_t magic_binlog_offset{4ULL};
-
-} // anonymous namespace
-
 namespace easymysql {
 
 void binlog::rpl_deleter::operator()(void *ptr) const noexcept {
@@ -32,10 +26,11 @@ void binlog::rpl_deleter::operator()(void *ptr) const noexcept {
   }
 }
 
-binlog::binlog(connection &conn, std::uint32_t server_id)
-    : conn_{&conn}, impl_{new MYSQL_RPL{.file_name_length = 0U,
-                                        .file_name = nullptr,
-                                        .start_position = magic_binlog_offset,
+binlog::binlog(connection &conn, std::uint32_t server_id,
+               std::string_view file_name, std::uint64_t position)
+    : conn_{&conn}, impl_{new MYSQL_RPL{.file_name_length = file_name.size(),
+                                        .file_name = file_name.data(),
+                                        .start_position = position,
                                         .server_id = server_id,
                                         // TODO: consider adding (or-ing)
                                         // BINLOG_DUMP_NON_BLOCK and

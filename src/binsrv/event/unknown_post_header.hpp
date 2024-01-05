@@ -5,13 +5,15 @@
 
 #include <cstddef>
 
+#include "binsrv/event/protocol_traits_fwd.hpp"
+
 #include "util/byte_span_fwd.hpp"
 
 namespace binsrv::event {
 
 class [[nodiscard]] unknown_post_header {
 public:
-  static constexpr std::size_t size_in_bytes{~static_cast<std::size_t>(0U)};
+  static constexpr std::size_t size_in_bytes{unspecified_post_header_length};
 
   // this class will be used as the first type of the event post header
   // variant, so it needs to be default constructible
