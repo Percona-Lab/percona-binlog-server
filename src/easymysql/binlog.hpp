@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <memory>
 #include <span>
+#include <string_view>
 
 #include "easymysql/connection_fwd.hpp"
 
@@ -33,7 +34,8 @@ public:
   util::const_byte_span fetch();
 
 private:
-  binlog(connection &conn, std::uint32_t server_id);
+  binlog(connection &conn, std::uint32_t server_id, std::string_view file_name,
+         std::uint64_t position);
 
   connection *conn_{nullptr};
   struct rpl_deleter {

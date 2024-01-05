@@ -38,7 +38,9 @@ public:
   [[nodiscard]] std::string_view get_server_connection_info() const noexcept;
   [[nodiscard]] std::string_view get_character_set_name() const noexcept;
 
-  [[nodiscard]] binlog create_binlog(std::uint32_t server_id);
+  [[nodiscard]] binlog create_binlog(std::uint32_t server_id,
+                                     std::string_view file_name,
+                                     std::uint64_t position);
   void execute_generic_query_noresult(std::string_view query);
 
 private:

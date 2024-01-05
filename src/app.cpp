@@ -20,6 +20,7 @@
 
 #include "binsrv/event/code_type.hpp"
 #include "binsrv/event/event.hpp"
+#include "binsrv/event/protocol_traits_fwd.hpp"
 #include "binsrv/event/reader_context.hpp"
 
 #include "easymysql/binlog.hpp"
@@ -205,7 +206,9 @@ int main(int argc, char *argv[]) {
     logger->log(binsrv::log_severity::info, msg);
 
     static constexpr std::uint32_t default_server_id{0U};
-    auto binlog = connection.create_binlog(default_server_id);
+    auto binlog =
+        connection.create_binlog(default_server_id, std::string_view{},
+                                 binsrv::event::magic_binlog_offset);
     logger->log(binsrv::log_severity::info, "opened binary log connection");
 
     // TODO: make sure we write 'Binlog File Header' [ 0xFE 'bin’]` to the

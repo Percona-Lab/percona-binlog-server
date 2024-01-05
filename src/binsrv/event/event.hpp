@@ -60,10 +60,6 @@ private:
   // here we remove all the duplicates from the type list above
   using unique_post_header_type_list =
       boost::mp11::mp_unique<post_header_type_list>;
-  // and finally we rename the type list (with unique types) into
-  // std::variant
-  using post_header_variant =
-      boost::mp11::mp_rename<unique_post_header_type_list, std::variant>;
 
   // identical technique is used to obtain the std::variant of all possible
   // unique event bodies
@@ -73,12 +69,37 @@ private:
   using body_type_list =
       boost::mp11::mp_transform<index_to_body_mf, wrapped_code_index_sequence>;
   using unique_body_type_list = boost::mp11::mp_unique<body_type_list>;
+
+public:
+  // here we rename the type list (with unique types) into
+  // std::variant
+  using post_header_variant =
+      boost::mp11::mp_rename<unique_post_header_type_list, std::variant>;
   using body_variant =
       boost::mp11::mp_rename<unique_body_type_list, std::variant>;
 
   using optional_footer = std::optional<footer>;
 
-public:
+  // here we use a trick with immediately invoked lambda to initialize a
+  // constexpr array which would have expected post header lengths for all
+  // event codes based on generic_post_header<xxx>::size_in_bytes
+
+  // we ignore the very first element in the code_type enum
+  // (code_type::unknown) since the post header length for this value is
+  // simply not included into FDE post header
+  static constexpr post_header_length_container expected_post_header_lengths{
+      []<std::size_t... IndexPack>(
+          std::index_sequence<IndexPack...>) -> post_header_length_container {
+        return {static_cast<encoded_post_header_length_type>(
+            generic_post_header<util::index_to_enum<code_type>(
+                IndexPack + 1U)>::size_in_bytes)...};
+      }(std::make_index_sequence<default_number_of_events - 1U>{})};
+
+  [[nodiscard]] static std::size_t
+  get_expected_post_header_length(code_type code) noexcept {
+    return get_post_header_length_for_code(expected_post_header_lengths, code);
+  }
+
   event(reader_context &context, util::const_byte_span portion);
 
   [[nodiscard]] const common_header &get_common_header() const noexcept {

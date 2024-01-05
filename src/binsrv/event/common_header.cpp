@@ -77,8 +77,6 @@ common_header::common_header(util::const_byte_span portion) {
         "invalid event code in event header");
   }
   // TODO: check if flags are valid (all the bits have corresponding enum)
-  // TODO: check that events with 'artificial' flag set have timestamp == 0
-  //       and next_event_position == 0
 }
 
 [[nodiscard]] std::string common_header::get_readable_timestamp() const {

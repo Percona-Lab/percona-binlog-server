@@ -69,9 +69,11 @@ std::string_view connection::get_character_set_name() const noexcept {
   return {mysql_character_set_name(connection_deimpl::get_const_casted(impl_))};
 }
 
-binlog connection::create_binlog(std::uint32_t server_id) {
+binlog connection::create_binlog(std::uint32_t server_id,
+                                 std::string_view file_name,
+                                 std::uint64_t position) {
   assert(!is_empty());
-  return {*this, server_id};
+  return {*this, server_id, file_name, position};
 }
 
 void connection::execute_generic_query_noresult(std::string_view query) {
