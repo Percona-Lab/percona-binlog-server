@@ -24,7 +24,7 @@ common_header::common_header(util::const_byte_span portion) {
   // TODO: rework with direct member initialization
 
   /*
-    https://github.com/mysql/mysql-server/blob/mysql-8.0.35/libbinlogevents/src/binlog_event.cpp#L197
+    https://github.com/mysql/mysql-server/blob/mysql-8.0.36/libbinlogevents/src/binlog_event.cpp#L197
 
     The first 19 bytes in the header is as follows:
       +============================================+

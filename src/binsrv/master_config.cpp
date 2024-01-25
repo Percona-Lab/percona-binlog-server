@@ -11,7 +11,7 @@
 #include <boost/json/parse.hpp>
 #include <boost/json/src.hpp> // IWYU pragma: keep
 
-// Needed for log_template's operator <<
+// Needed for log_severity's operator <<
 #include "binsrv/log_severity.hpp" // IWYU pragma: keep
 
 #include "util/command_line_helpers_fwd.hpp"

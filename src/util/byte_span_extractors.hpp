@@ -3,9 +3,7 @@
 
 #include <array>
 #include <cassert>
-// probably a bug in IWYU: <concepts> is required by std::integral
-// TODO: check if the same bug exust in clang-17
-#include <concepts> // IWYU pragma: keep
+#include <concepts>
 #include <cstddef>
 #include <cstring>
 

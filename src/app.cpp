@@ -14,12 +14,14 @@
 
 #include "binsrv/basic_logger.hpp"
 #include "binsrv/exception_handling_helpers.hpp"
+#include "binsrv/filesystem_storage.hpp"
 #include "binsrv/log_severity.hpp"
 #include "binsrv/logger_factory.hpp"
 #include "binsrv/master_config.hpp"
 
 #include "binsrv/event/code_type.hpp"
 #include "binsrv/event/event.hpp"
+#include "binsrv/event/flag_type.hpp"
 #include "binsrv/event/protocol_traits_fwd.hpp"
 #include "binsrv/event/reader_context.hpp"
 
@@ -76,7 +78,8 @@ void log_event_common_header(
       << ", server id:" << common_header.get_server_id_raw()
       << ", event size:" << common_header.get_event_size_raw()
       << ", next event position:" << common_header.get_next_event_position_raw()
-      << ", flags: (" << common_header.get_readable_flags() << ')';
+      << ", flags: " << common_header.get_flags_raw() << " ("
+      << common_header.get_readable_flags() << ')';
 
   logger.log(binsrv::log_severity::debug, oss.str());
 }
@@ -174,6 +177,15 @@ int main(int argc, char *argv[]) {
                 "logging level set to \""s + std::string{log_level_label} +
                     '"');
 
+    std::string msg;
+    const auto &storage_config = config->root().get<"storage">();
+    binsrv::filesystem_storage storage(storage_config.get<"path">());
+    logger->log(binsrv::log_severity::info,
+                "created filesystem binlog storage");
+    msg = "filesystem binlog storage root path: ";
+    msg += storage.get_root_path();
+    logger->log(binsrv::log_severity::info, msg);
+
     const auto &connection_config = config->root().get<"connection">();
     logger->log(binsrv::log_severity::info,
                 "mysql connection string: " +
@@ -182,7 +194,7 @@ int main(int argc, char *argv[]) {
     const easymysql::library mysql_lib;
     logger->log(binsrv::log_severity::info, "initialized mysql client library");
 
-    std::string msg = "mysql client version: ";
+    msg = "mysql client version: ";
     msg += mysql_lib.get_readable_client_version();
     logger->log(binsrv::log_severity::info, msg);
 
@@ -211,8 +223,6 @@ int main(int argc, char *argv[]) {
                                  binsrv::event::magic_binlog_offset);
     logger->log(binsrv::log_severity::info, "opened binary log connection");
 
-    // TODO: make sure we write 'Binlog File Header' [ 0xFE 'bin’]` to the
-    //       beginning of the binlog file
     // TODO: The first event is either a START_EVENT_V3 or a
     //       FORMAT_DESCRIPTION_EVENT while the last event is either a
     //       STOP_EVENT or ROTATE_EVENT. For Binlog Version 4 (current one)
@@ -237,21 +247,44 @@ int main(int argc, char *argv[]) {
                   "fetched " + std::to_string(std::size(portion)) +
                       "-byte(s) event from binlog");
 
+      // TODO: just for redirection to another byte stream we need to parse
+      //       the ROTATE and FORMAT_DESCRIPTION events only, every other one
+      //       can be just considered as a data portion (unless we want to do
+      //       basic integrity checks like event sizes / position and CRC)
       const binsrv::event::event current_event{context, portion};
 
-      log_event_common_header(*logger, current_event.get_common_header());
-      if (current_event.get_common_header().get_type_code() ==
-          binsrv::event::code_type::format_description) {
-        const auto &local_fde_post_header = current_event.get_post_header<
+      const auto &current_common_header = current_event.get_common_header();
+      log_event_common_header(*logger, current_common_header);
+
+      const auto code = current_common_header.get_type_code();
+      if (code == binsrv::event::code_type::format_description) {
+        const auto &current_fde_post_header = current_event.get_post_header<
             binsrv::event::code_type::format_description>();
-        const auto &local_fde_body =
+        const auto &current_fde_body =
             current_event
                 .get_body<binsrv::event::code_type::format_description>();
 
-        log_format_description_event(*logger, local_fde_post_header,
-                                     local_fde_body);
+        log_format_description_event(*logger, current_fde_post_header,
+                                     current_fde_body);
       }
       log_span_dump(*logger, portion);
+
+      switch (code) {
+      case binsrv::event::code_type::rotate:
+        if (current_common_header.get_flags().has_element(
+                binsrv::event::flag_type::artificial)) {
+          const auto &current_rotate_body =
+              current_event.get_body<binsrv::event::code_type::rotate>();
+
+          storage.open_binlog(current_rotate_body.get_binlog());
+        } else {
+          storage.write_event(portion);
+          storage.close_binlog();
+        }
+        break;
+      default:
+        storage.write_event(portion);
+      }
     }
 
     exit_code = EXIT_SUCCESS;

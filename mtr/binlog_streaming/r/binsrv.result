@@ -1,0 +1,81 @@
+*** Flushing binary logs at the very beginning of the test.
+FLUSH BINARY LOGS;
+
+*** Determining the first fresh binary log name.
+
+*** Purging all binary logs before the first fresh one.
+PURGE BINARY LOGS TO '<FIRST_BINLOG>';
+
+*** Creating a simple table and filling it with some data.
+CREATE TABLE t1(id INT UNSIGNED NOT NULL AUTO_INCREMENT, PRIMARY KEY(id)) ENGINE=InnoDB;
+INSERT INTO t1 VALUES(DEFAULT);
+
+*** Flushing the first binary log and switching to the second one.
+FLUSH BINARY LOGS;
+
+*** Determining the second binary log name.
+
+*** Filling the table with some more data and dropping the table.
+INSERT INTO t1 VALUES(DEFAULT);
+DROP TABLE t1;
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+SET @storage_path = '<BINSRV_STORAGE_PATH>';
+SET @log_path = '<BINSRV_LOG_PATH>';
+SET @delimiter_pos = INSTR(USER(), '@');
+SET @connection_user = SUBSTRING(USER(), 1, @delimiter_pos - 1);
+SET @connection_host = SUBSTRING(USER(), @delimiter_pos + 1);
+SET @connection_host = IF(@connection_host = 'localhost', '127.0.0.1', @connection_host);
+SET @binsrv_config_json = JSON_OBJECT(
+'logger', JSON_OBJECT(
+'level', 'trace',
+'file', @log_path
+),
+'connection', JSON_OBJECT(
+'host', @connection_host,
+'port', @@global.port,
+'user', @connection_user,
+'password', ''
+  ),
+'storage', JSON_OBJECT(
+'path', @storage_path
+)
+);
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+
+*** Executing the Binlog Server utility to download all binlog data
+*** from the server to the <BINSRV_STORAGE_PATH> directory (second
+*** binlog is still open / in use).
+
+*** Comparing server and downloaded versions of the first binlog file.
+
+*** Patching the server version of the second binlog file to clear the
+*** LOG_EVENT_BINLOG_IN_USE_F (currently in use) flag.
+
+*** Comparing server and downloaded versions of the second binlog file.
+
+*** Cleaning up the Binlog Server utility storage directory.
+
+*** FLUSHING the binlog one more time to make sure that the second one
+*** is no longer open.
+FLUSH BINARY LOGS;
+
+*** Executing the Binlog Server utility one more time (the second
+*** binlog is no longer open / in use).
+
+*** Comparing server and downloaded versions of the first binlog file
+*** one more time.
+
+*** Comparing server and downloaded versions of the second binlog file
+*** (without patching) one more time.
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.

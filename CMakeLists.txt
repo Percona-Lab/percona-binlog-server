@@ -132,6 +132,10 @@ set(source_files
   src/binsrv/file_logger.hpp
   src/binsrv/file_logger.cpp
 
+  src/binsrv/filesystem_storage_fwd.hpp
+  src/binsrv/filesystem_storage.hpp
+  src/binsrv/filesystem_storage.cpp
+
   src/binsrv/log_severity_fwd.hpp
   src/binsrv/log_severity.hpp
 
@@ -144,6 +148,9 @@ set(source_files
   src/binsrv/master_config_fwd.hpp
   src/binsrv/master_config.hpp
   src/binsrv/master_config.cpp
+
+  src/binsrv/storage_config_fwd.hpp
+  src/binsrv/storage_config.hpp
 
   # various utility files
   src/util/byte_span_fwd.hpp

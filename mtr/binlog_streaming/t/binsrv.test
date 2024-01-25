@@ -1,0 +1,182 @@
+# make sure that $BINSRV environment variable is set to the absolute path
+# of the Binlog Server utility before running this test
+if (!$BINSRV) {
+  --skip \$BINSRV environment variable must be set
+}
+
+# in case of --repeat=N, we need to start from a fresh binary log to make
+# this test deterministic
+--echo *** Flushing binary logs at the very beginning of the test.
+FLUSH BINARY LOGS;
+
+--echo
+--echo *** Determining the first fresh binary log name.
+--let $first_binlog = query_get_value(SHOW MASTER STATUS, File, 1)
+--replace_result $first_binlog <FIRST_BINLOG>
+
+--echo
+--echo *** Purging all binary logs before the first fresh one.
+--replace_result $first_binlog <FIRST_BINLOG>
+eval PURGE BINARY LOGS TO '$first_binlog';
+
+--echo
+--echo *** Creating a simple table and filling it with some data.
+CREATE TABLE t1(id INT UNSIGNED NOT NULL AUTO_INCREMENT, PRIMARY KEY(id)) ENGINE=InnoDB;
+INSERT INTO t1 VALUES(DEFAULT);
+
+--echo
+--echo *** Flushing the first binary log and switching to the second one.
+FLUSH BINARY LOGS;
+
+--echo
+--echo *** Determining the second binary log name.
+--let $second_binlog = query_get_value(SHOW MASTER STATUS, File, 1)
+
+--echo
+--echo *** Filling the table with some more data and dropping the table.
+INSERT INTO t1 VALUES(DEFAULT);
+DROP TABLE t1;
+
+--echo
+--echo *** Generating a configuration file in JSON format for the Binlog
+--echo *** Server utility.
+--let $binsrv_storage_path = $MYSQL_TMP_DIR/storage
+--replace_result $binsrv_storage_path <BINSRV_STORAGE_PATH>
+eval SET @storage_path = '$binsrv_storage_path';
+
+--let $binsrv_log_path = $MYSQL_TMP_DIR/binsrv.log
+--replace_result $binsrv_log_path <BINSRV_LOG_PATH>
+eval SET @log_path = '$binsrv_log_path';
+
+SET @delimiter_pos = INSTR(USER(), '@');
+SET @connection_user = SUBSTRING(USER(), 1, @delimiter_pos - 1);
+SET @connection_host = SUBSTRING(USER(), @delimiter_pos + 1);
+SET @connection_host = IF(@connection_host = 'localhost', '127.0.0.1', @connection_host);
+
+eval SET @binsrv_config_json = JSON_OBJECT(
+  'logger', JSON_OBJECT(
+    'level', 'trace',
+    'file', @log_path
+  ),
+  'connection', JSON_OBJECT(
+     'host', @connection_host,
+     'port', @@global.port,
+     'user', @connection_user,
+     'password', ''
+  ),
+  'storage', JSON_OBJECT(
+     'path', @storage_path
+  )
+);
+
+--let $binsrv_config_file_path = $MYSQL_TMP_DIR/binsrv_config.json
+--let $write_var = `SELECT @binsrv_config_json`
+--let $write_to_file = $binsrv_config_file_path
+--source include/write_var_to_file.inc
+
+--echo
+--echo *** Determining binlog file directory from the server.
+--disable_query_log
+SET @path_separator = '/';
+--source include/check_windows.inc
+if ($have_windows) {
+  SET @path_separator = '\\';
+}
+--let $binlog_base_dir = `SELECT LEFT(@@global.log_bin_basename, CHAR_LENGTH(@@global.log_bin_basename) - CHAR_LENGTH(SUBSTRING_INDEX(@@global.log_bin_basename, @path_separator, -1)))`
+--enable_query_log
+
+
+--echo
+--echo *** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+--echo *** binlog files downloaded via the Binlog Server utility.
+--mkdir $binsrv_storage_path
+
+--echo
+--echo *** Executing the Binlog Server utility to download all binlog data
+--echo *** from the server to the <BINSRV_STORAGE_PATH> directory (second
+--echo *** binlog is still open / in use).
+--exec $BINSRV $binsrv_config_file_path > /dev/null 2>&1
+
+# At this point we have 2 binlog files $first_binlog (already closed/rotedted
+# by the server) and $second_binlog (currently open).
+
+# The former can be compared as is.
+--echo
+--echo *** Comparing server and downloaded versions of the first binlog file.
+--diff_files $binlog_base_dir/$first_binlog $binsrv_storage_path/$first_binlog
+
+# Because the latter from the server is currently open for writing, it has one
+# additional bit (LOG_EVENT_BINLOG_IN_USE_F = 0x1) set in the flags field of the
+# common header section of the very first format description event.
+# The expected offset of this change is 21 (4 bytes for magic binlog header
+# "\xFEbin" + 17, the offset of the 'flags' field in the common header).
+# So, here we create a copy of the second binlog file, patch this byte and
+# perform diff on this patched copy.
+
+--echo
+--echo *** Patching the server version of the second binlog file to clear the
+--echo *** LOG_EVENT_BINLOG_IN_USE_F (currently in use) flag.
+--let PATCHED_BINLOG_FILE = $MYSQL_TMP_DIR/$second_binlog.patched
+--copy_file $binlog_base_dir/$second_binlog $PATCHED_BINLOG_FILE
+
+--perl
+  use strict;
+  use warnings;
+  use constant MAGIC_OFFSET => 21;
+  my $binlog_file_perl = $ENV{'PATCHED_BINLOG_FILE'};
+
+  open(my $fh, '+<:raw', $binlog_file_perl) or die "Failed to open file: $!";
+
+  seek($fh, MAGIC_OFFSET, 0);
+  my $byte;
+  read($fh, $byte, 1);
+
+  $byte = ord($byte) & 0xFE;
+
+  seek($fh, MAGIC_OFFSET, 0);
+  print $fh pack('C', $byte);
+
+  close($fh);
+EOF
+
+--echo
+--echo *** Comparing server and downloaded versions of the second binlog file.
+--diff_files $PATCHED_BINLOG_FILE $binsrv_storage_path/$second_binlog
+--remove_file $PATCHED_BINLOG_FILE
+
+--echo
+--echo *** Cleaning up the Binlog Server utility storage directory.
+--force-rmdir $binsrv_storage_path
+--mkdir $binsrv_storage_path
+
+--echo
+--echo *** FLUSHING the binlog one more time to make sure that the second one
+--echo *** is no longer open.
+FLUSH BINARY LOGS;
+
+--echo
+--echo *** Executing the Binlog Server utility one more time (the second
+--echo *** binlog is no longer open / in use).
+--exec $BINSRV $binsrv_config_file_path > /dev/null 2>&1
+
+--echo
+--echo *** Comparing server and downloaded versions of the first binlog file
+--echo *** one more time.
+--diff_files $binlog_base_dir/$first_binlog $binsrv_storage_path/$first_binlog
+
+--echo
+--echo *** Comparing server and downloaded versions of the second binlog file
+--echo *** (without patching) one more time.
+--diff_files $binlog_base_dir/$second_binlog $binsrv_storage_path/$second_binlog
+
+--echo
+--echo *** Removing the Binlog Server utility storage directory.
+--force-rmdir $binsrv_storage_path
+
+--echo
+--echo *** Removing the Binlog Server utility log file.
+--remove_file $binsrv_log_path
+
+--echo
+--echo *** Removing the Binlog Server utility configuration file.
+--remove_file $binsrv_config_file_path

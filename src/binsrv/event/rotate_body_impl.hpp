@@ -20,7 +20,9 @@ public:
     return binlog_;
   }
 
-  [[nodiscard]] std::string_view get_binlog() noexcept { return {binlog_}; }
+  [[nodiscard]] std::string_view get_binlog() const noexcept {
+    return {binlog_};
+  }
 
 private:
   binlog_storage binlog_{};
