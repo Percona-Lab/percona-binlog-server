@@ -12,7 +12,7 @@ namespace binsrv::event {
 
 // NOLINTBEGIN(cppcoreguidelines-macro-usage)
 // Event type codes copied from
-// https://github.com/mysql/mysql-server/blob/mysql-8.0.35/libbinlogevents/include/binlog_event.h#L274
+// https://github.com/mysql/mysql-server/blob/mysql-8.0.36/libbinlogevents/include/binlog_event.h#L274
 // clang-format off
 #define BINSRV_EVENT_CODE_TYPE_XY_SEQUENCE() \
   BINSRV_EVENT_CODE_TYPE_XY_MACRO(unknown            ,  0), \

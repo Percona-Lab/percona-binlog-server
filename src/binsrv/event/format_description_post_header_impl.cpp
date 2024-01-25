@@ -23,7 +23,7 @@ generic_post_header_impl<code_type::format_description>::
   // TODO: rework with direct member initialization
 
   /*
-    https://github.com/mysql/mysql-server/blob/mysql-8.0.35/libbinlogevents/include/control_events.h#L286
+    https://github.com/mysql/mysql-server/blob/mysql-8.0.36/libbinlogevents/include/control_events.h#L286
 
     +=====================================+
     | event  | binlog_version   19 : 2    | = 4
@@ -84,7 +84,7 @@ generic_post_header_impl<code_type::format_description>::get_server_version()
   auto result{util::as_string_view(server_version_)};
   auto position{result.find('\0')};
   if (position != std::string_view::npos) {
-    result.remove_suffix(result.size() - position);
+    result.remove_suffix(std::size(result) - position);
   }
   return result;
 }

@@ -54,6 +54,15 @@ void reader_context::process_event(const event &current_event) {
           "unexpected next event position on the event common header");
     }
     if (code == code_type::rotate) {
+      // position in non-artificial rotate event post header must be equal to
+      // magic_binlog_offset (4)
+      if (current_event.get_post_header<code_type::rotate>()
+              .get_position_id_raw() != magic_binlog_offset) {
+        util::exception_location().raise<std::logic_error>(
+            "unexpected position in an non-artificial rotate event post "
+            "header");
+      }
+
       // normal (non-artificial) event is expected to be the last event in
       // binlog - so we reset the current position here
       position_ = 0U;

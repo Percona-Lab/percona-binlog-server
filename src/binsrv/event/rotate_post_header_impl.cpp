@@ -18,7 +18,7 @@ generic_post_header_impl<code_type::rotate>::generic_post_header_impl(
   // TODO: rework with direct member initialization
 
   /*
-    https://github.com/mysql/mysql-server/blob/mysql-8.0.35/libbinlogevents/include/control_events.h#L53
+    https://github.com/mysql/mysql-server/blob/mysql-8.0.36/libbinlogevents/include/control_events.h#L53
 
     <table>
     <caption>Post-Header for Rotate_event</caption>

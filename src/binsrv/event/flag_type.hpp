@@ -14,9 +14,17 @@ namespace binsrv::event {
 
 // NOLINTBEGIN(cppcoreguidelines-macro-usage)
 // Event flags copied from
-// https://github.com/mysql/mysql-server/blob/mysql-8.0.35/sql/log_event.h#L246
+// https://github.com/mysql/mysql-server/blob/mysql-8.0.36/sql/log_event.h#L246
+// 'binlog_in_use' flag is copied from
+// https://github.com/mysql/mysql-server/blob/mysql-8.0.36/libbinlogevents/include/binlog_event.h#L269
+// This flag is used as a marker in the common header section of the very
+// first format description event that this particular binlog is currently in
+// use. It us cleared(rewritten) by the server when the binary log is
+// closed).
+// Events received via network stream should never have this flag set.
 // clang-format off
 #define BINSRV_EVENT_FLAG_TYPE_XY_SEQUENCE() \
+  BINSRV_EVENT_FLAG_TYPE_XY_MACRO(binlog_in_use  , 0x001U), \
   BINSRV_EVENT_FLAG_TYPE_XY_MACRO(thread_specific, 0x004U), \
   BINSRV_EVENT_FLAG_TYPE_XY_MACRO(suppress_use   , 0x008U), \
   BINSRV_EVENT_FLAG_TYPE_XY_MACRO(artificial     , 0x020U), \

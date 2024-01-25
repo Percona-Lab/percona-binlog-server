@@ -8,5 +8,8 @@
     "port": 3306,
     "user": "root",
     "password": ""
+  },
+  "storage": {
+    "path": "./storage"
   }
 }

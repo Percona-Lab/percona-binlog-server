@@ -4,6 +4,7 @@
 #include "binsrv/master_config_fwd.hpp" // IWYU pragma: export
 
 #include "binsrv/logger_config.hpp" // IWYU pragma: export
+#include "binsrv/storage_config.hpp" // IWYU pragma: export
 
 #include "easymysql/connection_config.hpp" // IWYU pragma: export
 
@@ -17,7 +18,8 @@ private:
   using impl_type = util::nv_tuple<
       // clang-format off
       util::nv<"logger"    , logger_config>,
-      util::nv<"connection", easymysql::connection_config>
+      util::nv<"connection", easymysql::connection_config>,
+      util::nv<"storage"   , storage_config>
       // clang-format on
       >;
 

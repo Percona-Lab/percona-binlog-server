@@ -1,0 +1,9 @@
+In order to test Binlog Server Utility using MySQL Test Run (MTR) do the
+following:
+1. Create a symbolic link in 'mysql-test/suites' (in the MySQL Server source
+   tree) pointing to 'mtr/binlog_streaming' (in this source tree).
+   ln -s <this_source_tree_path>/mtr/binlog_streaming \
+         <mysql_source_tree_path>/mysql-test/suites/binlog_streaming
+2. Set 'BINSRV' enviroment variable pointing to the 'binlog_server' binary
+   and run MTR.
+   BINSRV=<build_directory_path>/binlog_server ./mysql-test/mtr --suite=binlog_streaming
