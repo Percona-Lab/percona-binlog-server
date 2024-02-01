@@ -35,7 +35,7 @@ master_config::master_config(std::string_view file_name) {
         "cannot open configuration file");
   }
   auto file_size = std::filesystem::file_size(file_path);
-  if (file_size == 0U) {
+  if (file_size == 0ULL) {
     util::exception_location().raise<std::invalid_argument>(
         "configuration file is empty");
   }

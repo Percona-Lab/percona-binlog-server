@@ -79,7 +79,7 @@ binlog connection::create_binlog(std::uint32_t server_id,
 void connection::execute_generic_query_noresult(std::string_view query) {
   assert(!is_empty());
   auto *casted_impl = connection_deimpl::get(impl_);
-  if (mysql_real_query(casted_impl, std::data(query), std::size(query)) != 0U) {
+  if (mysql_real_query(casted_impl, std::data(query), std::size(query)) != 0) {
     raise_core_error_from_connection(*this);
   }
 }
