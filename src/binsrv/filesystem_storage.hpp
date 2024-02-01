@@ -16,6 +16,7 @@ namespace binsrv {
 class [[nodiscard]] filesystem_storage {
 public:
   static constexpr std::string_view default_binlog_index_name{"binlog.index"};
+  static constexpr std::string_view default_binlog_index_entry_path{"."};
 
   explicit filesystem_storage(std::string_view root_path);
 
@@ -29,6 +30,12 @@ public:
 
   [[nodiscard]] const std::filesystem::path &get_root_path() const noexcept {
     return root_path_;
+  }
+  [[nodiscard]] std::string_view get_binlog_name() const noexcept {
+    return binlog_names_.empty() ? std::string_view{} : binlog_names_.back();
+  }
+  [[nodiscard]] std::uint64_t get_position() const noexcept {
+    return position_;
   }
 
   [[nodiscard]] static bool
@@ -44,7 +51,10 @@ private:
   using binlog_name_container = std::vector<std::string>;
   binlog_name_container binlog_names_;
   std::ofstream ofs_;
+  std::uint64_t position_{0ULL};
 
+  [[nodiscard]] std::filesystem::path get_index_path() const;
+  void load_binlog_index(const std::filesystem::path &index_path);
   void append_to_binlog_index(std::string_view binlog_name);
 };
 

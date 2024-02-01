@@ -15,9 +15,8 @@ FLUSH BINARY LOGS;
 
 *** Determining the second binary log name.
 
-*** Filling the table with some more data and dropping the table.
+*** Filling the table with some more data.
 INSERT INTO t1 VALUES(DEFAULT);
-DROP TABLE t1;
 
 *** Generating a configuration file in JSON format for the Binlog
 *** Server utility.
@@ -59,14 +58,17 @@ SET @binsrv_config_json = JSON_OBJECT(
 
 *** Comparing server and downloaded versions of the second binlog file.
 
-*** Cleaning up the Binlog Server utility storage directory.
+*** Filling the table with some more data and dropping the table.
+INSERT INTO t1 VALUES(DEFAULT);
+DROP TABLE t1;
 
 *** FLUSHING the binlog one more time to make sure that the second one
 *** is no longer open.
 FLUSH BINARY LOGS;
 
 *** Executing the Binlog Server utility one more time (the second
-*** binlog is no longer open / in use).
+*** binlog is no longer open / in use). Here we should also continue
+*** streaming binlog events from the last saved position.
 
 *** Comparing server and downloaded versions of the first binlog file
 *** one more time.

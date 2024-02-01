@@ -31,7 +31,7 @@ private:
   // NOLINTNEXTLINE(cppcoreguidelines-use-default-member-init,modernize-use-default-member-init)
   checksum_algorithm_type checksum_algorithm_;
   post_header_length_container post_header_lengths_{};
-  std::uint32_t position_{0ULL};
+  std::uint32_t position_{0U};
 
   void process_event(const event &current_event);
 };

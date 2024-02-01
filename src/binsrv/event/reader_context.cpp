@@ -20,9 +20,22 @@ reader_context::reader_context()
 
 void reader_context::process_event(const event &current_event) {
   const auto &common_header{current_event.get_common_header()};
-  const auto code = common_header.get_type_code();
-  if (code == code_type::rotate &&
-      common_header.get_flags().has_element(flag_type::artificial)) {
+  const auto code{common_header.get_type_code()};
+  const auto is_artificial{
+      common_header.get_flags().has_element(flag_type::artificial)};
+  const auto is_pseudo{common_header.get_next_event_position_raw() == 0U};
+  // artificial rotate events must always have enext event position and
+  // timestamp setto 0
+  if (code == code_type::rotate && is_artificial) {
+    if (common_header.get_timestamp_raw() != 0U) {
+      util::exception_location().raise<std::logic_error>(
+          "non-zero timestamp found in an artificial rotate event");
+    }
+    if (!is_pseudo) {
+      util::exception_location().raise<std::logic_error>(
+          "non-zero next event position found in an artificial rotate event");
+    }
+
     // we expect an artificial rotate event to be the very first event in the
     // newly-created binlog file
     if (position_ != 0U) {
@@ -31,45 +44,44 @@ void reader_context::process_event(const event &current_event) {
           "file");
     }
 
-    // check if next event position and timestamp are set  0
-    if (common_header.get_timestamp_raw() != 0U) {
+    position_ = static_cast<std::uint32_t>(
+        current_event.get_post_header<code_type::rotate>()
+            .get_position_id_raw());
+  }
+  if (!is_artificial && !is_pseudo) {
+    // every non-artificial event must be preceded by the FDE
+    // (the exception is FDE itself)
+    if (code != code_type::format_description && !fde_processed_) {
+      // TODO: this check should be performed just after the common header is
+      //       parsed to make sure we rely on proper post_header lengths
       util::exception_location().raise<std::logic_error>(
-          "non-zero timestamp found in an artificial rotate event");
+          "a non-artificial event encountered before format description event");
     }
-    if (common_header.get_next_event_position_raw() != 0U) {
-      util::exception_location().raise<std::logic_error>(
-          "non-zero next event position found in an artificial rotate event");
-    }
-    position_ = static_cast<std::uint32_t>(magic_binlog_offset);
-
-  } else {
-    // every other event (including non-artificial rotate event) are
-    // processed the usual way
 
     // check if common_header.next_event_position matches current position
     // plus common_header.event_size
     if (position_ + common_header.get_event_size_raw() !=
         common_header.get_next_event_position_raw()) {
       util::exception_location().raise<std::logic_error>(
-          "unexpected next event position on the event common header");
+          "unexpected next event position in the event common header");
     }
-    if (code == code_type::rotate) {
-      // position in non-artificial rotate event post header must be equal to
-      // magic_binlog_offset (4)
-      if (current_event.get_post_header<code_type::rotate>()
-              .get_position_id_raw() != magic_binlog_offset) {
-        util::exception_location().raise<std::logic_error>(
-            "unexpected position in an non-artificial rotate event post "
-            "header");
-      }
+    // simply advance current position
+    position_ = common_header.get_next_event_position_raw();
+  }
 
-      // normal (non-artificial) event is expected to be the last event in
-      // binlog - so we reset the current position here
-      position_ = 0U;
-    } else {
-      // for every other event we simply advance current position
-      position_ = common_header.get_next_event_position_raw();
+  if (code == code_type::rotate && !is_artificial) {
+    // position in non-artificial rotate event post header must be equal to
+    // magic_binlog_offset (4)
+    if (current_event.get_post_header<code_type::rotate>()
+            .get_position_id_raw() != magic_binlog_offset) {
+      util::exception_location().raise<std::logic_error>(
+          "unexpected position in an non-artificial rotate event post "
+          "header");
     }
+
+    // normal (non-artificial) event is expected to be the last event in
+    // binlog - so we reset the current position here
+    position_ = 0U;
   }
 
   // TODO: add some kind of state machine where the expected sequence of events

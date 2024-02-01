@@ -35,6 +35,8 @@
 #include "util/exception_location_helpers.hpp"
 #include "util/nv_tuple.hpp"
 
+namespace {
+
 void log_span_dump(binsrv::basic_logger &logger,
                    util::const_byte_span portion) {
   static constexpr std::size_t bytes_per_dump_line{16U};
@@ -78,7 +80,7 @@ void log_event_common_header(
       << ", server id:" << common_header.get_server_id_raw()
       << ", event size:" << common_header.get_event_size_raw()
       << ", next event position:" << common_header.get_next_event_position_raw()
-      << ", flags: " << common_header.get_flags_raw() << " ("
+      << ", flags:" << common_header.get_flags_raw() << " ("
       << common_header.get_readable_flags() << ')';
 
   logger.log(binsrv::log_severity::debug, oss.str());
@@ -110,6 +112,72 @@ void log_format_description_event(
 
   logger.log(binsrv::log_severity::debug, oss.str());
 }
+
+void receive_binlog_events(binsrv::basic_logger &logger,
+                           easymysql::binlog &binlog,
+                           binsrv::filesystem_storage &storage) {
+  // Network streams are requested with COM_BINLOG_DUMP and
+  // each Binlog Event response is prepended with 00 OK-byte.
+  static constexpr std::byte expected_event_packet_prefix{'\0'};
+
+  util::const_byte_span portion;
+
+  binsrv::event::reader_context context{};
+
+  while (!(portion = binlog.fetch()).empty()) {
+    if (portion[0] != expected_event_packet_prefix) {
+      util::exception_location().raise<std::invalid_argument>(
+          "unexpected event prefix");
+    }
+    portion = portion.subspan(1U);
+    logger.log(binsrv::log_severity::info,
+               "fetched " + std::to_string(std::size(portion)) +
+                   "-byte(s) event from binlog");
+
+    // TODO: just for redirection to another byte stream we need to parse
+    //       the ROTATE and FORMAT_DESCRIPTION events only, every other one
+    //       can be just considered as a data portion (unless we want to do
+    //       basic integrity checks like event sizes / position and CRC)
+    const binsrv::event::event current_event{context, portion};
+
+    const auto &current_common_header = current_event.get_common_header();
+    log_event_common_header(logger, current_common_header);
+
+    const auto code = current_common_header.get_type_code();
+    if (code == binsrv::event::code_type::format_description) {
+      const auto &current_fde_post_header =
+          current_event
+              .get_post_header<binsrv::event::code_type::format_description>();
+      const auto &current_fde_body =
+          current_event
+              .get_body<binsrv::event::code_type::format_description>();
+
+      log_format_description_event(logger, current_fde_post_header,
+                                   current_fde_body);
+    }
+    log_span_dump(logger, portion);
+
+    const auto is_artificial{current_common_header.get_flags().has_element(
+        binsrv::event::flag_type::artificial)};
+    const auto is_pseudo{current_common_header.get_next_event_position_raw() ==
+                         0U};
+
+    if (code == binsrv::event::code_type::rotate && is_artificial) {
+      const auto &current_rotate_body =
+          current_event.get_body<binsrv::event::code_type::rotate>();
+
+      storage.open_binlog(current_rotate_body.get_binlog());
+    }
+    if (!is_artificial && !is_pseudo) {
+      storage.write_event(portion);
+    }
+    if (code == binsrv::event::code_type::rotate && !is_artificial) {
+      storage.close_binlog();
+    }
+  }
+}
+
+} // anonymous namespace
 
 int main(int argc, char *argv[]) {
   using namespace std::string_literals;
@@ -186,6 +254,21 @@ int main(int argc, char *argv[]) {
     msg += storage.get_root_path();
     logger->log(binsrv::log_severity::info, msg);
 
+    const auto last_binlog_name{storage.get_binlog_name()};
+    // if storage position is detected to be 0 (empty data directory), we
+    // start streaming from the position magic_binlog_offset (4)
+    const auto last_binlog_position{
+        std::max(binsrv::event::magic_binlog_offset, storage.get_position())};
+    if (last_binlog_name.empty()) {
+      msg = "filesystem binlog storage initialized on an empty directory";
+    } else {
+      msg = "filesystem binlog storage initialized at \"";
+      msg += last_binlog_name;
+      msg += "\":";
+      msg += std::to_string(last_binlog_position);
+    }
+    logger->log(binsrv::log_severity::info, msg);
+
     const auto &connection_config = config->root().get<"connection">();
     logger->log(binsrv::log_severity::info,
                 "mysql connection string: " +
@@ -218,74 +301,11 @@ int main(int argc, char *argv[]) {
     logger->log(binsrv::log_severity::info, msg);
 
     static constexpr std::uint32_t default_server_id{0U};
-    auto binlog =
-        connection.create_binlog(default_server_id, std::string_view{},
-                                 binsrv::event::magic_binlog_offset);
+    auto binlog = connection.create_binlog(default_server_id, last_binlog_name,
+                                           last_binlog_position);
     logger->log(binsrv::log_severity::info, "opened binary log connection");
 
-    // TODO: The first event is either a START_EVENT_V3 or a
-    //       FORMAT_DESCRIPTION_EVENT while the last event is either a
-    //       STOP_EVENT or ROTATE_EVENT. For Binlog Version 4 (current one)
-    //       only FORMAT_DESCRIPTION_EVENT / ROTATE_EVENT pair should be
-    //       acceptable.
-
-    // Network streams are requested with COM_BINLOG_DUMP and
-    // each Binlog Event response is prepended with 00 OK-byte.
-    static constexpr std::byte expected_event_packet_prefix{'\0'};
-
-    util::const_byte_span portion;
-
-    binsrv::event::reader_context context{};
-
-    while (!(portion = binlog.fetch()).empty()) {
-      if (portion[0] != expected_event_packet_prefix) {
-        util::exception_location().raise<std::invalid_argument>(
-            "unexpected event prefix");
-      }
-      portion = portion.subspan(1U);
-      logger->log(binsrv::log_severity::info,
-                  "fetched " + std::to_string(std::size(portion)) +
-                      "-byte(s) event from binlog");
-
-      // TODO: just for redirection to another byte stream we need to parse
-      //       the ROTATE and FORMAT_DESCRIPTION events only, every other one
-      //       can be just considered as a data portion (unless we want to do
-      //       basic integrity checks like event sizes / position and CRC)
-      const binsrv::event::event current_event{context, portion};
-
-      const auto &current_common_header = current_event.get_common_header();
-      log_event_common_header(*logger, current_common_header);
-
-      const auto code = current_common_header.get_type_code();
-      if (code == binsrv::event::code_type::format_description) {
-        const auto &current_fde_post_header = current_event.get_post_header<
-            binsrv::event::code_type::format_description>();
-        const auto &current_fde_body =
-            current_event
-                .get_body<binsrv::event::code_type::format_description>();
-
-        log_format_description_event(*logger, current_fde_post_header,
-                                     current_fde_body);
-      }
-      log_span_dump(*logger, portion);
-
-      switch (code) {
-      case binsrv::event::code_type::rotate:
-        if (current_common_header.get_flags().has_element(
-                binsrv::event::flag_type::artificial)) {
-          const auto &current_rotate_body =
-              current_event.get_body<binsrv::event::code_type::rotate>();
-
-          storage.open_binlog(current_rotate_body.get_binlog());
-        } else {
-          storage.write_event(portion);
-          storage.close_binlog();
-        }
-        break;
-      default:
-        storage.write_event(portion);
-      }
-    }
+    receive_binlog_events(*logger, binlog, storage);
 
     exit_code = EXIT_SUCCESS;
   } catch (...) {

@@ -33,9 +33,8 @@ FLUSH BINARY LOGS;
 --let $second_binlog = query_get_value(SHOW MASTER STATUS, File, 1)
 
 --echo
---echo *** Filling the table with some more data and dropping the table.
+--echo *** Filling the table with some more data.
 INSERT INTO t1 VALUES(DEFAULT);
-DROP TABLE t1;
 
 --echo
 --echo *** Generating a configuration file in JSON format for the Binlog
@@ -145,9 +144,9 @@ EOF
 --remove_file $PATCHED_BINLOG_FILE
 
 --echo
---echo *** Cleaning up the Binlog Server utility storage directory.
---force-rmdir $binsrv_storage_path
---mkdir $binsrv_storage_path
+--echo *** Filling the table with some more data and dropping the table.
+INSERT INTO t1 VALUES(DEFAULT);
+DROP TABLE t1;
 
 --echo
 --echo *** FLUSHING the binlog one more time to make sure that the second one
@@ -156,7 +155,8 @@ FLUSH BINARY LOGS;
 
 --echo
 --echo *** Executing the Binlog Server utility one more time (the second
---echo *** binlog is no longer open / in use).
+--echo *** binlog is no longer open / in use). Here we should also continue
+--echo *** streaming binlog events from the last saved position.
 --exec $BINSRV $binsrv_config_file_path > /dev/null 2>&1
 
 --echo
