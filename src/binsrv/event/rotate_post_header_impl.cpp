@@ -1,6 +1,7 @@
 #include "binsrv/event/rotate_post_header_impl.hpp"
 
 #include <iterator>
+#include <ostream>
 #include <stdexcept>
 
 #include <boost/align/align_up.hpp>
@@ -55,6 +56,12 @@ generic_post_header_impl<code_type::rotate>::generic_post_header_impl(
 
   auto remainder = portion;
   util::extract_fixed_int_from_byte_span(remainder, position_);
+}
+
+std::ostream &
+operator<<(std::ostream &output,
+           const generic_post_header_impl<code_type::rotate> &obj) {
+  return output << "position: " << obj.get_position_raw();
 }
 
 } // namespace binsrv::event

@@ -1,6 +1,7 @@
 #include "binsrv/event/format_description_body_impl.hpp"
 
 #include <iterator>
+#include <ostream>
 #include <stdexcept>
 #include <string_view>
 
@@ -49,6 +50,13 @@ generic_body_impl<code_type::format_description>::generic_body_impl(
     code_type::format_description>::get_readable_checksum_algorithm()
     const noexcept {
   return to_string_view(get_checksum_algorithm());
+}
+
+std::ostream &
+operator<<(std::ostream &output,
+           const generic_body_impl<code_type::format_description> &obj) {
+  return output << "checksum algorithm: "
+                << obj.get_readable_checksum_algorithm();
 }
 
 } // namespace binsrv::event

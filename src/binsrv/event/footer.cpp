@@ -1,9 +1,16 @@
 #include "binsrv/event/footer.hpp"
 
+#include <iomanip>
+#include <ios>
 #include <iterator>
+#include <ostream>
 #include <stdexcept>
 
+#include <boost/io_fwd.hpp>
+
 #include <boost/align/align_up.hpp>
+
+#include <boost/io/ios_state.hpp>
 
 #include "util/byte_span_extractors.hpp"
 #include "util/byte_span_fwd.hpp"
@@ -30,6 +37,14 @@ footer::footer(util::const_byte_span portion) {
 
   auto remainder = portion;
   util::extract_fixed_int_from_byte_span(remainder, crc_);
+}
+
+std::ostream &operator<<(std::ostream &output, const footer &obj) {
+  const boost::io::ios_flags_saver flag_saver(output);
+  const boost::io::ios_fill_saver fill_saver(output);
+  return output << "crc: " << std::hex << std::showbase << std::setfill('0')
+                << std::setw(sizeof(obj.get_crc_raw()) * 2)
+                << obj.get_crc_raw();
 }
 
 } // namespace binsrv::event

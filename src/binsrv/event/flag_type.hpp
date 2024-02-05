@@ -49,9 +49,9 @@ inline std::string_view to_string_view(flag_type code) noexcept {
   static constexpr std::array labels{BINSRV_EVENT_FLAG_TYPE_XY_SEQUENCE(),
                                      nv_pair{flag_type::delimiter, ""sv}};
 #undef BINSRV_EVENT_FLAG_TYPE_XY_MACRO
-  return std::ranges::find(labels, std::min(flag_type::delimiter, code),
-                           &nv_pair::first)
-      ->second;
+  // NOLINTNEXTLINE(llvm-qualified-auto,readability-qualified-auto)
+  const auto fnd{std::ranges::find(labels, code, &nv_pair::first)};
+  return fnd == std::end(labels) ? ""sv : fnd->second;
 }
 #undef BINSRV_EVENT_FLAG_TYPE_XY_SEQUENCE
 // NOLINTEND(cppcoreguidelines-macro-usage)

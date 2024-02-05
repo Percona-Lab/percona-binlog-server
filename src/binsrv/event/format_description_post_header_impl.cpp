@@ -1,5 +1,6 @@
 #include "binsrv/event/format_description_post_header_impl.hpp"
 
+#include <ostream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -11,6 +12,7 @@
 #include <boost/date_time/posix_time/time_formatters.hpp>
 
 #include "binsrv/event/code_type.hpp"
+#include "binsrv/event/protocol_traits.hpp"
 
 #include "util/byte_span.hpp"
 #include "util/byte_span_extractors.hpp"
@@ -93,6 +95,19 @@ generic_post_header_impl<code_type::format_description>::get_server_version()
     code_type::format_description>::get_readable_create_timestamp() const {
   return boost::posix_time::to_simple_string(
       boost::posix_time::from_time_t(get_create_timestamp()));
+}
+
+std::ostream &
+operator<<(std::ostream &output,
+           const generic_post_header_impl<code_type::format_description> &obj) {
+  output << "binlog version: " << obj.get_binlog_version_raw()
+         << ", server version: " << obj.get_server_version()
+         << ", create timestamp: " << obj.get_readable_create_timestamp()
+         << ", common header length: " << obj.get_common_header_length()
+         << "\npost-header lengths: {\n";
+  print_post_header_lengths(output, obj.get_post_header_lengths_raw());
+  output << "\n}";
+  return output;
 }
 
 } // namespace binsrv::event

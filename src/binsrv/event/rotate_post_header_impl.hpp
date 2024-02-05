@@ -16,7 +16,7 @@ public:
 
   explicit generic_post_header_impl(util::const_byte_span portion);
 
-  [[nodiscard]] std::uint64_t get_position_id_raw() const noexcept {
+  [[nodiscard]] std::uint64_t get_position_raw() const noexcept {
     return position_;
   }
 

@@ -1,5 +1,6 @@
 #include "binsrv/event/empty_body.hpp"
 
+#include <iosfwd>
 #include <iterator>
 #include <stdexcept>
 
@@ -13,6 +14,10 @@ empty_body::empty_body(util::const_byte_span portion) {
     util::exception_location().raise<std::invalid_argument>(
         "invalid event empty body length");
   }
+}
+
+std::ostream &operator<<(std::ostream &output, const empty_body & /* obj */) {
+  return output;
 }
 
 } // namespace binsrv::event

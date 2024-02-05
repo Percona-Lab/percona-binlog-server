@@ -45,8 +45,7 @@ void reader_context::process_event(const event &current_event) {
     }
 
     position_ = static_cast<std::uint32_t>(
-        current_event.get_post_header<code_type::rotate>()
-            .get_position_id_raw());
+        current_event.get_post_header<code_type::rotate>().get_position_raw());
   }
   if (!is_artificial && !is_pseudo) {
     // every non-artificial event must be preceded by the FDE
@@ -72,8 +71,8 @@ void reader_context::process_event(const event &current_event) {
   if (code == code_type::rotate && !is_artificial) {
     // position in non-artificial rotate event post header must be equal to
     // magic_binlog_offset (4)
-    if (current_event.get_post_header<code_type::rotate>()
-            .get_position_id_raw() != magic_binlog_offset) {
+    if (current_event.get_post_header<code_type::rotate>().get_position_raw() !=
+        magic_binlog_offset) {
       util::exception_location().raise<std::logic_error>(
           "unexpected position in an non-artificial rotate event post "
           "header");

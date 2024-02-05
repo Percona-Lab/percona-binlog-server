@@ -2,9 +2,14 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <iomanip>
+#include <ios>
 #include <iterator>
+#include <ostream>
 #include <stdexcept>
 #include <string>
+
+#include <boost/io/ios_state.hpp>
 
 #include "binsrv/event/code_type.hpp"
 
@@ -32,6 +37,34 @@ get_post_header_length_for_code(const post_header_length_container &storage,
                                unspecified_post_header_length)
              ? unspecified_post_header_length
              : static_cast<std::size_t>(encoded_length);
+}
+
+std::ostream &
+print_post_header_lengths(std::ostream &output,
+                          const post_header_length_container &obj) {
+  const boost::io::ios_flags_saver saver(output);
+  const auto max_index = util::enum_to_index(code_type::delimiter);
+  // starting from 1 here as the very first "unknown" code is not included
+  // in this array
+  for (std::size_t index{1U}; index < max_index; ++index) {
+    if (index != 1U) {
+      output << '\n';
+    }
+    const auto current_code{util::index_to_enum<code_type>(index)};
+    const auto label{to_string_view(current_code)};
+
+    static constexpr std::size_t alignment_width{19U};
+    if (label.empty()) {
+      std::string generated_label{"<unused code "};
+      generated_label += std::to_string(index);
+      generated_label += '>';
+      output << std::left << std::setw(alignment_width) << generated_label;
+    } else {
+      output << std::left << std::setw(alignment_width) << label;
+    }
+    output << " => " << get_post_header_length_for_code(obj, current_code);
+  }
+  return output;
 }
 
 void validate_post_header_lengths(

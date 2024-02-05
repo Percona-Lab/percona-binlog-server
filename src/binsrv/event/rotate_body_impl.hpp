@@ -12,6 +12,8 @@ namespace binsrv::event {
 
 template <> class [[nodiscard]] generic_body_impl<code_type::rotate> {
 public:
+  // TODO: change this to a container with larger buffer for SBO to avoid
+  //       memory allocations (e.g. boost::container::small_vector)
   using binlog_storage = std::string;
 
   explicit generic_body_impl(util::const_byte_span portion);
