@@ -1,5 +1,6 @@
 #include "binsrv/event/empty_post_header.hpp"
 
+#include <iosfwd>
 #include <iterator>
 #include <stdexcept>
 
@@ -13,6 +14,11 @@ empty_post_header::empty_post_header(util::const_byte_span portion) {
     util::exception_location().raise<std::invalid_argument>(
         "invalid event empty post header length");
   }
+}
+
+std::ostream &operator<<(std::ostream &output,
+                         const empty_post_header & /* obj */) {
+  return output;
 }
 
 } // namespace binsrv::event

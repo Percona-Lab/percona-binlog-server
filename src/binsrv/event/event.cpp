@@ -3,10 +3,12 @@
 #include <array>
 #include <cassert>
 #include <cstddef>
+#include <ostream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <utility>
+#include <variant>
 
 #include "binsrv/event/checksum_algorithm_type.hpp"
 #include "binsrv/event/code_type.hpp"
@@ -180,6 +182,24 @@ void event::emplace_body(code_type code, util::const_byte_span portion) {
   assert(function_index < util::enum_to_index(code_type::delimiter));
   // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index)
   (this->*emplace_functions[function_index])(portion);
+}
+
+std::ostream &operator<<(std::ostream &output, const event &obj) {
+  output << "| common header | " << obj.get_common_header() << " |";
+
+  auto generic_printer{
+      [&output](const auto &alternative) { output << alternative; }};
+  output << "\n| post header   | ";
+  std::visit(generic_printer, obj.get_generic_post_header());
+
+  output << " |\n| body          | ";
+  std::visit(generic_printer, obj.get_generic_body());
+  output << " |";
+  const auto &footer{obj.get_footer()};
+  if (footer) {
+    output << "\n| footer        | " << *footer << " |";
+  }
+  return output;
 }
 
 } // namespace binsrv::event

@@ -21,6 +21,10 @@ using post_header_length_container =
 get_post_header_length_for_code(const post_header_length_container &storage,
                                 code_type code) noexcept;
 
+std::ostream &
+print_post_header_lengths(std::ostream &output,
+                          const post_header_length_container &obj);
+
 void validate_post_header_lengths(
     const post_header_length_container &runtime,
     const post_header_length_container &hardcoded);

@@ -114,9 +114,11 @@ set(source_files
 
   src/binsrv/event/unknown_body_fwd.hpp
   src/binsrv/event/unknown_body.hpp
+  src/binsrv/event/unknown_body.cpp
 
   src/binsrv/event/unknown_post_header_fwd.hpp
   src/binsrv/event/unknown_post_header.hpp
+  src/binsrv/event/unknown_post_header.cpp
 
   # billog files
   src/binsrv/basic_logger_fwd.hpp

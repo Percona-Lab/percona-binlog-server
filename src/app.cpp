@@ -12,6 +12,8 @@
 #include <string>
 #include <string_view>
 
+#include <boost/lexical_cast.hpp>
+
 #include "binsrv/basic_logger.hpp"
 #include "binsrv/exception_handling_helpers.hpp"
 #include "binsrv/filesystem_storage.hpp"
@@ -71,48 +73,6 @@ void log_span_dump(binsrv::basic_logger &logger,
   }
 }
 
-void log_event_common_header(
-    binsrv::basic_logger &logger,
-    const binsrv::event::common_header &common_header) {
-  std::ostringstream oss;
-  oss << "ts: " << common_header.get_readable_timestamp()
-      << ", type:" << common_header.get_readable_type_code()
-      << ", server id:" << common_header.get_server_id_raw()
-      << ", event size:" << common_header.get_event_size_raw()
-      << ", next event position:" << common_header.get_next_event_position_raw()
-      << ", flags:" << common_header.get_flags_raw() << " ("
-      << common_header.get_readable_flags() << ')';
-
-  logger.log(binsrv::log_severity::debug, oss.str());
-}
-
-void log_format_description_event(
-    binsrv::basic_logger &logger,
-    const binsrv::event::generic_post_header<
-        binsrv::event::code_type::format_description> &post_header,
-    const binsrv::event::generic_body<
-        binsrv::event::code_type::format_description> &body) {
-  std::ostringstream oss;
-  oss << '\n'
-      << "  binlog version    : " << post_header.get_binlog_version_raw()
-      << '\n'
-      << "  server version    : " << post_header.get_server_version() << '\n'
-      << "  create timestamp  : " << post_header.get_readable_create_timestamp()
-      << '\n'
-      << "  header length     : " << post_header.get_common_header_length()
-      << '\n'
-      << "  checksum algorithm: " << body.get_readable_checksum_algorithm()
-      << '\n'
-      << "  post-header length for ROTATE: "
-      << post_header.get_post_header_length(binsrv::event::code_type::rotate)
-      << '\n'
-      << "  post-header length for FDE   : "
-      << post_header.get_post_header_length(
-             binsrv::event::code_type::format_description);
-
-  logger.log(binsrv::log_severity::debug, oss.str());
-}
-
 void receive_binlog_events(binsrv::basic_logger &logger,
                            easymysql::binlog &binlog,
                            binsrv::filesystem_storage &storage) {
@@ -139,22 +99,12 @@ void receive_binlog_events(binsrv::basic_logger &logger,
     //       can be just considered as a data portion (unless we want to do
     //       basic integrity checks like event sizes / position and CRC)
     const binsrv::event::event current_event{context, portion};
+    logger.log(binsrv::log_severity::debug,
+               "Parsed event:\n" +
+                   boost::lexical_cast<std::string>(current_event));
 
     const auto &current_common_header = current_event.get_common_header();
-    log_event_common_header(logger, current_common_header);
-
     const auto code = current_common_header.get_type_code();
-    if (code == binsrv::event::code_type::format_description) {
-      const auto &current_fde_post_header =
-          current_event
-              .get_post_header<binsrv::event::code_type::format_description>();
-      const auto &current_fde_body =
-          current_event
-              .get_body<binsrv::event::code_type::format_description>();
-
-      log_format_description_event(logger, current_fde_post_header,
-                                   current_fde_body);
-    }
     log_span_dump(logger, portion);
 
     const auto is_artificial{current_common_header.get_flags().has_element(

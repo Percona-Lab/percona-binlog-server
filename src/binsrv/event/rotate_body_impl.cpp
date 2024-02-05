@@ -1,5 +1,7 @@
 #include "binsrv/event/rotate_body_impl.hpp"
 
+#include <ostream>
+
 #include "binsrv/event/code_type.hpp"
 
 #include "util/byte_span.hpp"
@@ -14,6 +16,11 @@ generic_body_impl<code_type::rotate>::generic_body_impl(
   // only one member for holding data of varying length
 
   binlog_.assign(util::as_string_view(portion));
+}
+
+std::ostream &operator<<(std::ostream &output,
+                         const generic_body_impl<code_type::rotate> &obj) {
+  return output << "binlog: " << obj.get_binlog();
 }
 
 } // namespace binsrv::event

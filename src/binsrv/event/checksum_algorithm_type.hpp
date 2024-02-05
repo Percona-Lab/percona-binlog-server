@@ -35,10 +35,9 @@ inline std::string_view to_string_view(checksum_algorithm_type code) noexcept {
       BINSRV_CHECKSUM_ALGORITHM_TYPE_XY_SEQUENCE(),
       nv_pair{checksum_algorithm_type::delimiter, ""sv}};
 #undef BINSRV_CHECKSUM_ALGORITHM_TYPE_XY_MACRO
-  return std::ranges::find(labels,
-                           std::min(checksum_algorithm_type::delimiter, code),
-                           &nv_pair::first)
-      ->second;
+  // NOLINTNEXTLINE(llvm-qualified-auto,readability-qualified-auto)
+  const auto fnd{std::ranges::find(labels, code, &nv_pair::first)};
+  return fnd == std::end(labels) ? ""sv : fnd->second;
 }
 #undef BINSRV_CHECKSUM_ALGORITHM_TYPE_XY_SEQUENCE
 // NOLINTEND(cppcoreguidelines-macro-usage)

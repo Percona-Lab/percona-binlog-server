@@ -1,5 +1,6 @@
 #include "binsrv/event/common_header.hpp"
 
+#include <ostream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -95,6 +96,16 @@ common_header::get_readable_type_code() const noexcept {
 
 [[nodiscard]] std::string common_header::get_readable_flags() const {
   return to_string(get_flags());
+}
+
+std::ostream &operator<<(std::ostream &output, const common_header &obj) {
+  return output << "ts: " << obj.get_readable_timestamp()
+                << ", type: " << obj.get_readable_type_code()
+                << ", server id: " << obj.get_server_id_raw()
+                << ", event size: " << obj.get_event_size_raw()
+                << ", next event position: "
+                << obj.get_next_event_position_raw()
+                << ", flags: " << obj.get_readable_flags();
 }
 
 } // namespace binsrv::event
