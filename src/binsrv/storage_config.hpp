@@ -12,6 +12,7 @@ namespace binsrv {
 // clang-format off
 struct [[nodiscard]] storage_config
     : util::nv_tuple<
+          util::nv<"type", std::string>,
           util::nv<"path", std::string>
       > {};
 // clang-format on

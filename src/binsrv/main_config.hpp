@@ -1,9 +1,9 @@
-#ifndef BINSRV_MASTER_CONFIG_HPP
-#define BINSRV_MASTER_CONFIG_HPP
+#ifndef BINSRV_MAIN_CONFIG_HPP
+#define BINSRV_MAIN_CONFIG_HPP
 
-#include "binsrv/master_config_fwd.hpp" // IWYU pragma: export
+#include "binsrv/main_config_fwd.hpp" // IWYU pragma: export
 
-#include "binsrv/logger_config.hpp" // IWYU pragma: export
+#include "binsrv/logger_config.hpp"  // IWYU pragma: export
 #include "binsrv/storage_config.hpp" // IWYU pragma: export
 
 #include "easymysql/connection_config.hpp" // IWYU pragma: export
@@ -13,7 +13,7 @@
 
 namespace binsrv {
 
-class [[nodiscard]] master_config {
+class [[nodiscard]] main_config {
 private:
   using impl_type = util::nv_tuple<
       // clang-format off
@@ -27,9 +27,9 @@ public:
   static constexpr std::size_t flattened_size{impl_type::flattened_size};
   static constexpr std::size_t depth{impl_type::depth};
 
-  explicit master_config(std::string_view file_name);
+  explicit main_config(std::string_view file_name);
 
-  explicit master_config(util::command_line_arg_view arguments);
+  explicit main_config(util::command_line_arg_view arguments);
 
   [[nodiscard]] const auto &root() const noexcept { return impl_; }
 
@@ -39,4 +39,4 @@ private:
 
 } // namespace binsrv
 
-#endif // BINSRV_MASTER_CONFIG_HPP
+#endif // BINSRV_MAIN_CONFIG_HPP

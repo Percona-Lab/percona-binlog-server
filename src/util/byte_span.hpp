@@ -18,6 +18,12 @@ inline std::string_view as_string_view(const_byte_span portion) noexcept {
           std::size(portion)};
 }
 
+inline const_byte_span as_const_byte_span(std::string_view portion) noexcept {
+  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+  return {reinterpret_cast<const std::byte *>(std::data(portion)),
+          std::size(portion)};
+}
+
 } // namespace util
 
 #endif // UTIL_BYTE_SPAN_HPP

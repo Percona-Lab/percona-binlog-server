@@ -38,6 +38,7 @@ SET @binsrv_config_json = JSON_OBJECT(
 'password', ''
   ),
 'storage', JSON_OBJECT(
+'type', 'fs',
 'path', @storage_path
 )
 );
