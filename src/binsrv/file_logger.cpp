@@ -14,7 +14,7 @@ namespace binsrv {
 file_logger::file_logger(log_severity min_level, std::string_view file_name)
     : basic_logger{min_level}, stream_{std::filesystem::path{file_name}} {
   if (!stream_.is_open()) {
-    util::exception_location().raise<std::invalid_argument>(
+    util::exception_location().raise<std::runtime_error>(
         "unable to create \"" + std::string(file_name) + "\" file for logging");
   }
 }

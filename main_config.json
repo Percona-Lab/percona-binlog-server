@@ -10,6 +10,7 @@
     "password": ""
   },
   "storage": {
+    "type": "fs",
     "path": "./storage"
   }
 }

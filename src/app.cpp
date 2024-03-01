@@ -11,15 +11,18 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <utility>
 
 #include <boost/lexical_cast.hpp>
 
 #include "binsrv/basic_logger.hpp"
+#include "binsrv/basic_storage_backend.hpp"
 #include "binsrv/exception_handling_helpers.hpp"
-#include "binsrv/filesystem_storage.hpp"
 #include "binsrv/log_severity.hpp"
 #include "binsrv/logger_factory.hpp"
-#include "binsrv/master_config.hpp"
+#include "binsrv/main_config.hpp"
+#include "binsrv/storage.hpp"
+#include "binsrv/storage_backend_factory.hpp"
 
 #include "binsrv/event/code_type.hpp"
 #include "binsrv/event/event.hpp"
@@ -75,7 +78,7 @@ void log_span_dump(binsrv::basic_logger &logger,
 
 void receive_binlog_events(binsrv::basic_logger &logger,
                            easymysql::binlog &binlog,
-                           binsrv::filesystem_storage &storage) {
+                           binsrv::storage &storage) {
   // Network streams are requested with COM_BINLOG_DUMP and
   // each Binlog Event response is prepended with 00 OK-byte.
   static constexpr std::byte expected_event_packet_prefix{'\0'};
@@ -86,7 +89,7 @@ void receive_binlog_events(binsrv::basic_logger &logger,
 
   while (!(portion = binlog.fetch()).empty()) {
     if (portion[0] != expected_event_packet_prefix) {
-      util::exception_location().raise<std::invalid_argument>(
+      util::exception_location().raise<std::runtime_error>(
           "unexpected event prefix");
     }
     portion = portion.subspan(1U);
@@ -138,7 +141,7 @@ int main(int argc, char *argv[]) {
   const auto number_of_cmd_args = std::size(cmd_args);
   const auto executable_name = util::extract_executable_name(cmd_args);
 
-  if (number_of_cmd_args != binsrv::master_config::flattened_size + 1 &&
+  if (number_of_cmd_args != binsrv::main_config::flattened_size + 1 &&
       number_of_cmd_args != 2) {
     std::cerr
         << "usage: " << executable_name
@@ -162,17 +165,16 @@ int main(int argc, char *argv[]) {
     logger->log(binsrv::log_severity::delimiter,
                 util::get_readable_command_line_arguments(cmd_args));
 
-    binsrv::master_config_ptr config;
+    binsrv::main_config_ptr config;
     if (number_of_cmd_args == 2U) {
       logger->log(binsrv::log_severity::delimiter,
                   "Reading connection configuration from the JSON file.");
-      config = std::make_shared<binsrv::master_config>(cmd_args[1]);
-    } else if (number_of_cmd_args ==
-               binsrv::master_config::flattened_size + 1) {
+      config = std::make_shared<binsrv::main_config>(cmd_args[1]);
+    } else if (number_of_cmd_args == binsrv::main_config::flattened_size + 1) {
       logger->log(binsrv::log_severity::delimiter,
                   "Reading connection configuration from the command line "
                   "arguments.");
-      config = std::make_shared<binsrv::master_config>(cmd_args.subspan(1U));
+      config = std::make_shared<binsrv::main_config>(cmd_args.subspan(1U));
     } else {
       assert(false);
     }
@@ -197,12 +199,18 @@ int main(int argc, char *argv[]) {
 
     std::string msg;
     const auto &storage_config = config->root().get<"storage">();
-    binsrv::filesystem_storage storage(storage_config.get<"path">());
-    logger->log(binsrv::log_severity::info,
-                "created filesystem binlog storage");
-    msg = "filesystem binlog storage root path: ";
-    msg += storage.get_root_path();
+    auto storage_backend{
+        binsrv::storage_backend_factory::create(storage_config)};
+    logger->log(binsrv::log_severity::info, "created binlog storage backend");
+    msg = "type: ";
+    msg += storage_config.get<"type">();
+    msg += ", path: ";
+    msg += storage_config.get<"path">();
     logger->log(binsrv::log_severity::info, msg);
+
+    binsrv::storage storage{std::move(storage_backend)};
+    logger->log(binsrv::log_severity::info,
+                "created binlog storage with the provided backend");
 
     const auto last_binlog_name{storage.get_binlog_name()};
     // if storage position is detected to be 0 (empty data directory), we
@@ -210,9 +218,9 @@ int main(int argc, char *argv[]) {
     const auto last_binlog_position{
         std::max(binsrv::event::magic_binlog_offset, storage.get_position())};
     if (last_binlog_name.empty()) {
-      msg = "filesystem binlog storage initialized on an empty directory";
+      msg = "binlog storage initialized on an empty directory";
     } else {
-      msg = "filesystem binlog storage initialized at \"";
+      msg = "binlog storage initialized at \"";
       msg += last_binlog_name;
       msg += "\":";
       msg += std::to_string(last_binlog_position);

@@ -120,10 +120,14 @@ set(source_files
   src/binsrv/event/unknown_post_header.hpp
   src/binsrv/event/unknown_post_header.cpp
 
-  # billog files
+  # binlog files
   src/binsrv/basic_logger_fwd.hpp
   src/binsrv/basic_logger.hpp
   src/binsrv/basic_logger.cpp
+
+  src/binsrv/basic_storage_backend_fwd.hpp
+  src/binsrv/basic_storage_backend.hpp
+  src/binsrv/basic_storage_backend.cpp
 
   src/binsrv/cout_logger.hpp
   src/binsrv/cout_logger.cpp
@@ -134,9 +138,8 @@ set(source_files
   src/binsrv/file_logger.hpp
   src/binsrv/file_logger.cpp
 
-  src/binsrv/filesystem_storage_fwd.hpp
-  src/binsrv/filesystem_storage.hpp
-  src/binsrv/filesystem_storage.cpp
+  src/binsrv/filesystem_storage_backend.hpp
+  src/binsrv/filesystem_storage_backend.cpp
 
   src/binsrv/log_severity_fwd.hpp
   src/binsrv/log_severity.hpp
@@ -147,9 +150,16 @@ set(source_files
   src/binsrv/logger_factory.hpp
   src/binsrv/logger_factory.cpp
 
-  src/binsrv/master_config_fwd.hpp
-  src/binsrv/master_config.hpp
-  src/binsrv/master_config.cpp
+  src/binsrv/main_config_fwd.hpp
+  src/binsrv/main_config.hpp
+  src/binsrv/main_config.cpp
+
+  src/binsrv/storage_fwd.hpp
+  src/binsrv/storage.hpp
+  src/binsrv/storage.cpp
+
+  src/binsrv/storage_backend_factory.hpp
+  src/binsrv/storage_backend_factory.cpp
 
   src/binsrv/storage_config_fwd.hpp
   src/binsrv/storage_config.hpp

@@ -1,6 +1,7 @@
 #ifndef BINSRV_EVENT_PROTOCOL_TRAITS_FWD_HPP
 #define BINSRV_EVENT_PROTOCOL_TRAITS_FWD_HPP
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -17,7 +18,8 @@ inline constexpr std::size_t unspecified_post_header_length{
 
 // https://github.com/mysql/mysql-server/blob/trunk/sql/log_event.h#L211
 // 4 bytes which all binlogs should begin with
-inline constexpr std::string_view magic_binlog_payload{"\xFE\x62\x69\x6E"};
+inline constexpr std::array<std::byte, 4> magic_binlog_payload{
+    std::byte{0xFE}, std::byte{0x62}, std::byte{0x69}, std::byte{0x6E}};
 inline constexpr std::uint64_t magic_binlog_offset{4ULL};
 
 } // namespace binsrv::event

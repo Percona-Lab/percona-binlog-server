@@ -43,7 +43,7 @@ INSERT INTO t1 VALUES(DEFAULT);
 --replace_result $binsrv_storage_path <BINSRV_STORAGE_PATH>
 eval SET @storage_path = '$binsrv_storage_path';
 
---let $binsrv_log_path = $MYSQL_TMP_DIR/binsrv.log
+--let $binsrv_log_path = $MYSQL_TMP_DIR/binsrv_utility.log
 --replace_result $binsrv_log_path <BINSRV_LOG_PATH>
 eval SET @log_path = '$binsrv_log_path';
 
@@ -64,6 +64,7 @@ eval SET @binsrv_config_json = JSON_OBJECT(
      'password', ''
   ),
   'storage', JSON_OBJECT(
+     'type', 'fs',
      'path', @storage_path
   )
 );

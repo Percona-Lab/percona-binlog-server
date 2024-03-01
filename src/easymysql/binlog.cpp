@@ -46,6 +46,8 @@ binlog::binlog(connection &conn, std::uint32_t server_id,
       }} {
   assert(!conn.is_empty());
 
+  // WL#2540: Replication event checksums
+  // https://dev.mysql.com/worklog/task/?id=2540
   static constexpr std::string_view crc_query{
       "SET @source_binlog_checksum = 'NONE', "
       "@master_binlog_checksum = 'NONE'"};
