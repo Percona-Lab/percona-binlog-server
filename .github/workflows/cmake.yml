@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-22.04
     name: Formatting checks
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 2
 
@@ -88,13 +88,16 @@ jobs:
     - name: Info df
       run: df -h
 
-    - name: Install dependencies on ubuntu
+    - name: Install Clang dependencies on ubuntu
       if: startsWith(matrix.config.name, 'Clang')
       run: |
         wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc
         echo deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-17 main | sudo tee /etc/apt/sources.list.d/llvm.list
         sudo apt-get update
         sudo apt-get install clang-17 lld-17 clang-tidy-17 libc++-17-dev libc++1-17 libc++abi-17-dev libc++abi1-17
+    - name: Install GCC dependencies on ubuntu
+      if: startsWith(matrix.config.name, 'GCC')
+      run: |
         sudo add-apt-repository ppa:ubuntu-toolchain-r/test
         sudo apt-get update
         sudo apt-get install g++-13
@@ -110,7 +113,7 @@ jobs:
 
     - name: Cache boost tarball
       id: cache-boost-tarball
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: ${{runner.temp}}/deps/${{format('boost_{0}_{1}_{2}{3}', env.BOOST_MAJOR, env.BOOST_MINOR, env.BOOST_PATCH, env.BOOST_EXT)}}
         key: boost-tarball
@@ -124,7 +127,7 @@ jobs:
       working-directory: ${{runner.temp}}/deps
       run: tar xf ${{format('boost_{0}_{1}_{2}{3}', env.BOOST_MAJOR, env.BOOST_MINOR, env.BOOST_PATCH, env.BOOST_EXT)}}
 
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
     - name: Configure CMake
       # Configure CMake in a 'build' subdirectory. `CMAKE_BUILD_TYPE` is only required if you are using a single-configuration generator such as make.
