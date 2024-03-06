@@ -52,14 +52,16 @@ jobs:
             build_type: "Debug",
             cc: "gcc-13",
             cxx: "g++-13",
-            label: "debug_gcc13"
+            label: "debug_gcc13",
+            run_mtr: true
           }
         - {
             name: "GCC 13 RelWithDebInfo",
             build_type: "RelWithDebInfo",
             cc: "gcc-13",
             cxx: "g++-13",
-            label: "relwithdebinfo_gcc13"
+            label: "relwithdebinfo_gcc13",
+            run_mtr: true
           }
         - {
             name: "Clang 17 Debug",
@@ -79,6 +81,10 @@ jobs:
           }
 
     steps:
+    - name: Get number of CPU cores
+      uses: SimenB/github-actions-cpu-cores@v2
+      id: cpu-cores
+
     - name: Info CPU
       run: cat /proc/cpuinfo
 
@@ -88,6 +94,15 @@ jobs:
     - name: Info df
       run: df -h
 
+    - name: Install MySQL client libraries
+      run: |
+        sudo apt-get install libmysqlclient-dev
+
+    - name: Install MySQL server and MTR
+      if: matrix.config.run_mtr
+      run: |
+        sudo apt-get install mysql-client mysql-server mysql-testsuite apparmor-utils
+
     - name: Install Clang dependencies on ubuntu
       if: startsWith(matrix.config.name, 'Clang')
       run: |
@@ -95,6 +110,7 @@ jobs:
         echo deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-17 main | sudo tee /etc/apt/sources.list.d/llvm.list
         sudo apt-get update
         sudo apt-get install clang-17 lld-17 clang-tidy-17 libc++-17-dev libc++1-17 libc++abi-17-dev libc++abi1-17
+
     - name: Install GCC dependencies on ubuntu
       if: startsWith(matrix.config.name, 'GCC')
       run: |
@@ -156,9 +172,23 @@ jobs:
     - name: Clang Tidy
       if: startsWith(matrix.config.name, 'Clang')
       # Run Clang Tidy
-      run: run-clang-tidy-17 -header-filter=.* -j=2 -use-color -p=${{github.workspace}}/../build-${{matrix.config.label}}
+      run: run-clang-tidy-17 -header-filter=.* -j=${{steps.cpu-cores.outputs.count}} -use-color -p=${{github.workspace}}/../build-${{matrix.config.label}}
 
-    - name: Test
+    - name: MTR tests
+      if: matrix.config.run_mtr
+      working-directory: /usr/lib/mysql-test
+      run: |
+        # Switching MySQL Server Apparmor profile to "complain" as we are creating a custom data directory
+        sudo aa-complain /usr/sbin/mysqld
+        # Linking the "binlog_streaming" from the source tree into the MTR suits directory on the system
+        sudo ln -s ${{github.workspace}}/mtr/binlog_streaming /usr/lib/mysql-test/suite/binlog_streaming
+        # Running MTR from the system package
+        BINSRV=${{github.workspace}}/../build-${{matrix.config.label}}/binlog_server ./mtr \
+          --client-bindir=/usr/lib/mysql-test/bin --vardir=${{github.workspace}}/../mtrvardir \
+          --force --max-test-fail=0 --retry=0 --nounit-tests --big-test --repeat=2 --parallel=${{steps.cpu-cores.outputs.count}} \
+          --suite=binlog_streaming
+
+    - name: CTest
       working-directory: ${{github.workspace}}/../build-${{matrix.config.label}}
       # Execute tests defined by the CMake configuration.
       # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
