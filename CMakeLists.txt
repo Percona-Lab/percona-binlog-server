@@ -44,6 +44,19 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   )
 endif()
 
+option(WITH_ASAN "Enable Address Sanitizer" OFF)
+if(WITH_ASAN)
+  # By default during the build time, on both GCC anf Clang, LeakSanitized is
+  # enabled by default when AddressSanitizer is enabled. However, in runtime
+  # it is enabled by default only on Linux platforms. Therefore, on MacOS,
+  # the executable needs to be run with 'ASAN_OPTIONS=detect_leaks=1'.
+  # Also AddressSanitizerUseAfterScope is also enabled by default both during
+  # the build time and in runtime, so there is no need to specify
+  # '-fsanitize-address-use-after-scope' explicitly or modify 'ASAN_OPTIONS'
+  target_compile_options(binlog_server_compiler_flags INTERFACE "-fsanitize=address")
+  target_link_options(binlog_server_compiler_flags INTERFACE "-fsanitize=address")
+endif()
+
 find_package(Boost 1.83.0 EXACT REQUIRED)
 
 find_package(MySQL REQUIRED)

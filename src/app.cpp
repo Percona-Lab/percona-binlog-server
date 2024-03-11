@@ -143,10 +143,11 @@ int main(int argc, char *argv[]) {
 
   if (number_of_cmd_args != binsrv::main_config::flattened_size + 1 &&
       number_of_cmd_args != 2) {
-    std::cerr
-        << "usage: " << executable_name
-        << " <logger_level> <logger_file> <host> <port> <user> <password>\n"
-        << "       " << executable_name << " <json_config_file>\n";
+    std::cerr << "usage: " << executable_name
+              << " <logger.level> <logger.file> <connection.host>"
+                 " <connection.port> <connection.user> <connection.password>"
+                 " <storage.type> <storage.path>\n"
+              << "       " << executable_name << " <json_config_file>\n";
     return exit_code;
   }
   binsrv::basic_logger_ptr logger;
