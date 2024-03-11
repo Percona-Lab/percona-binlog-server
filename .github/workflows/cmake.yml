@@ -64,12 +64,23 @@ jobs:
             run_mtr: true
           }
         - {
+            name: "GCC 13 ASan",
+            build_type: "Debug",
+            cc: "gcc-13",
+            cxx: "g++-13",
+            sanitizer_cmake_flags: "-DWITH_ASAN=ON",
+            label: "asan_gcc13",
+            run_mtr: true,
+            mtr_options: "--sanitize"
+          }
+        - {
             name: "Clang 17 Debug",
             build_type: "Debug",
             cc: "clang-17",
             cxx: "clang++-17",
             libcxx_cmake_flags: "-DWITH_STDLIB_LIBCXX=ON",
-            label: "debug_clang17"
+            label: "debug_clang17",
+            run_clang_tidy: true,
           }
         - {
             name: "Clang 17 RelWithDebInfo",
@@ -77,7 +88,19 @@ jobs:
             cc: "clang-17",
             cxx: "clang++-17",
             libcxx_cmake_flags: "-DWITH_STDLIB_LIBCXX=ON",
-            label: "relwithdebinfo_clang17"
+            label: "relwithdebinfo_clang17",
+            run_clang_tidy: true,
+          }
+        - {
+            name: "Clang 17 ASan",
+            build_type: "Debug",
+            cc: "clang-17",
+            cxx: "clang++-17",
+            libcxx_cmake_flags: "-DWITH_STDLIB_LIBCXX=ON",
+            sanitizer_cmake_flags: "-DWITH_ASAN=ON",
+            label: "asan_clang17",
+            run_mtr: true,
+            mtr_options: "--sanitize"
           }
 
     steps:
@@ -96,6 +119,7 @@ jobs:
 
     - name: Install MySQL client libraries
       run: |
+        sudo apt-get update
         sudo apt-get install libmysqlclient-dev
 
     - name: Install MySQL server and MTR
@@ -155,6 +179,7 @@ jobs:
           -DCMAKE_C_COMPILER=${{matrix.config.cc}} \
           -DCMAKE_CXX_COMPILER=${{matrix.config.cxx}} \
           ${{matrix.config.libcxx_cmake_flags}} \
+          ${{matrix.config.sanitizer_cmake_flags}} \
           -DBoost_ROOT=${{runner.temp}}/deps/${{format('boost_{0}_{1}_{2}', env.BOOST_MAJOR, env.BOOST_MINOR, env.BOOST_PATCH)}} \
           -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 
@@ -166,11 +191,11 @@ jobs:
       run: cmake --build ${{github.workspace}}/../build-${{matrix.config.label}} --config ${{matrix.config.build_type}} --parallel
 
     - name: Info Clang Tidy
-      if: startsWith(matrix.config.name, 'Clang')
+      if: matrix.config.run_clang_tidy
       run: clang-tidy-17 --version
 
     - name: Clang Tidy
-      if: startsWith(matrix.config.name, 'Clang')
+      if: matrix.config.run_clang_tidy
       # Run Clang Tidy
       run: run-clang-tidy-17 -header-filter=.* -j=${{steps.cpu-cores.outputs.count}} -use-color -p=${{github.workspace}}/../build-${{matrix.config.label}}
 
@@ -186,7 +211,7 @@ jobs:
         BINSRV=${{github.workspace}}/../build-${{matrix.config.label}}/binlog_server ./mtr \
           --client-bindir=/usr/lib/mysql-test/bin --vardir=${{github.workspace}}/../mtrvardir \
           --force --max-test-fail=0 --retry=0 --nounit-tests --big-test --repeat=2 --parallel=${{steps.cpu-cores.outputs.count}} \
-          --suite=binlog_streaming
+          --suite=binlog_streaming ${{matrix.config.mtr_options}}
 
     - name: CTest
       working-directory: ${{github.workspace}}/../build-${{matrix.config.label}}
