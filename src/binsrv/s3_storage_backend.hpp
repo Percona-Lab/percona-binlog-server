@@ -1,17 +1,16 @@
-#ifndef BINSRV_FILESYSTEM_STORAGE_BACKEND_HPP
-#define BINSRV_FILESYSTEM_STORAGE_BACKEND_HPP
+#ifndef BINSRV_S3_STORAGE_BACKEND_HPP
+#define BINSRV_S3_STORAGE_BACKEND_HPP
 
 #include <filesystem>
-#include <fstream>
 #include <string_view>
 
 #include "binsrv/basic_storage_backend.hpp" // IWYU pragma: export
 
 namespace binsrv {
 
-class [[nodiscard]] filesystem_storage_backend : public basic_storage_backend {
+class [[nodiscard]] s3_storage_backend : public basic_storage_backend {
 public:
-  explicit filesystem_storage_backend(std::string_view root_path);
+  explicit s3_storage_backend(std::string_view root_path);
 
   [[nodiscard]] const std::filesystem::path &get_root_path() const noexcept {
     return root_path_;
@@ -19,7 +18,11 @@ public:
 
 private:
   std::filesystem::path root_path_;
-  std::ofstream ofs_;
+  struct options_deleter {
+    void operator()(void *ptr) const noexcept;
+  };
+  using options_ptr = std::unique_ptr<void, options_deleter>;
+  options_ptr options_;
 
   [[nodiscard]] storage_object_name_container do_list_objects() override;
 
@@ -32,11 +35,8 @@ private:
   void do_close_stream() override;
 
   [[nodiscard]] std::string do_get_description() const override;
-
-  [[nodiscard]] std::filesystem::path
-  get_object_path(std::string_view name) const;
 };
 
 } // namespace binsrv
 
-#endif // BINSRV_FILESYSTEM_STORAGE_BACKEND_HPP
+#endif // BINSRV_S3_STORAGE_BACKEND_HPP

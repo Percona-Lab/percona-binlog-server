@@ -61,6 +61,9 @@ find_package(Boost 1.83.0 EXACT REQUIRED)
 
 find_package(MySQL REQUIRED)
 
+find_package(ZLIB REQUIRED)
+find_package(AWSSDK REQUIRED COMPONENTS s3-crt)
+
 set(source_files
   # main application files
   src/app.cpp
@@ -167,6 +170,9 @@ set(source_files
   src/binsrv/main_config.hpp
   src/binsrv/main_config.cpp
 
+  src/binsrv/s3_storage_backend.hpp
+  src/binsrv/s3_storage_backend.cpp
+
   src/binsrv/storage_fwd.hpp
   src/binsrv/storage.hpp
   src/binsrv/storage.cpp
@@ -240,6 +246,7 @@ target_link_libraries(binlog_server
     binlog_server_compiler_flags
   PRIVATE
     Boost::headers MySQL::client
+    aws-cpp-sdk-s3-crt
 )
 # for some reason it is not possible to propagate CXX_EXTENSIONS and
 # CXX_STANDARD_REQUIRED via interface library (binlog_server_compiler_flags)

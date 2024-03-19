@@ -28,6 +28,8 @@ public:
   void write_data_to_stream(util::const_byte_span data);
   void close_stream();
 
+  [[nodiscard]] std::string get_description() const;
+
 private:
   bool stream_opened_{false};
 
@@ -39,6 +41,8 @@ private:
   virtual void do_open_stream(std::string_view name) = 0;
   virtual void do_write_data_to_stream(util::const_byte_span data) = 0;
   virtual void do_close_stream() = 0;
+
+  [[nodiscard]] virtual std::string do_get_description() const = 0;
 };
 
 } // namespace binsrv
