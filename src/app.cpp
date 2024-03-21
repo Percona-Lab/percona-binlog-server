@@ -208,6 +208,9 @@ int main(int argc, char *argv[]) {
     msg += ", path: ";
     msg += storage_config.get<"path">();
     logger->log(binsrv::log_severity::info, msg);
+    msg = "description: ";
+    msg += storage_backend->get_description();
+    logger->log(binsrv::log_severity::info, msg);
 
     binsrv::storage storage{std::move(storage_backend)};
     logger->log(binsrv::log_severity::info,

@@ -7,6 +7,9 @@ on:
     branches: [ "main" ]
 
 env:
+  AWS_SDK_CPP_MAJOR: 1
+  AWS_SDK_CPP_MINOR: 11
+  AWS_SDK_CPP_PATCH: 286
   BOOST_MAJOR: 1
   BOOST_MINOR: 83
   BOOST_PATCH: 0
@@ -17,11 +20,15 @@ jobs:
     runs-on: ubuntu-22.04
     name: Formatting checks
     steps:
-      - uses: actions/checkout@v4
+      - name: Cheking out source tree
+        uses: actions/checkout@v4
         with:
-          fetch-depth: 2
+          path: src
+          fetch-depth: 0
+          fetch-tags: true
 
       - name: Check formatting with git diff --check
+        working-directory: ${{github.workspace}}/src
         run: git diff --check --color HEAD~
 
       - name: Install dependencies on ubuntu
@@ -35,6 +42,7 @@ jobs:
         run: clang-format-17 --version
 
       - name: Check formatting with git clang-format-17
+        working-directory: ${{github.workspace}}/src
         run: git clang-format-17 --diff --binary=clang-format-17 HEAD~
 
   build:
@@ -52,7 +60,7 @@ jobs:
             build_type: "Debug",
             cc: "gcc-13",
             cxx: "g++-13",
-            label: "debug_gcc13",
+            label: "Debug-gcc13",
             run_mtr: true
           }
         - {
@@ -60,7 +68,7 @@ jobs:
             build_type: "RelWithDebInfo",
             cc: "gcc-13",
             cxx: "g++-13",
-            label: "relwithdebinfo_gcc13",
+            label: "RelWithDebInfo-gcc13",
             run_mtr: true
           }
         - {
@@ -69,7 +77,8 @@ jobs:
             cc: "gcc-13",
             cxx: "g++-13",
             sanitizer_cmake_flags: "-DWITH_ASAN=ON",
-            label: "asan_gcc13",
+            aws_sanitizer_cmake_flags: "-DENABLE_ADDRESS_SANITIZER=ON",
+            label: "ASan-gcc13",
             run_mtr: true,
             mtr_options: "--sanitize"
           }
@@ -79,7 +88,8 @@ jobs:
             cc: "clang-17",
             cxx: "clang++-17",
             libcxx_cmake_flags: "-DWITH_STDLIB_LIBCXX=ON",
-            label: "debug_clang17",
+            aws_libcxx_cmake_flags: "-DCMAKE_CXX_FLAGS_INIT=-stdlib=libc++",
+            label: "Debug-clang17",
             run_clang_tidy: true,
           }
         - {
@@ -88,7 +98,8 @@ jobs:
             cc: "clang-17",
             cxx: "clang++-17",
             libcxx_cmake_flags: "-DWITH_STDLIB_LIBCXX=ON",
-            label: "relwithdebinfo_clang17",
+            aws_libcxx_cmake_flags: "-DCMAKE_CXX_FLAGS_INIT=-stdlib=libc++",
+            label: "RelWithDebInfo-clang17",
             run_clang_tidy: true,
           }
         - {
@@ -97,8 +108,10 @@ jobs:
             cc: "clang-17",
             cxx: "clang++-17",
             libcxx_cmake_flags: "-DWITH_STDLIB_LIBCXX=ON",
+            aws_libcxx_cmake_flags: "-DCMAKE_CXX_FLAGS_INIT=-stdlib=libc++",
             sanitizer_cmake_flags: "-DWITH_ASAN=ON",
-            label: "asan_clang17",
+            aws_sanitizer_cmake_flags: "-DENABLE_ADDRESS_SANITIZER=ON",
+            label: "ASan-clang17",
             run_mtr: true,
             mtr_options: "--sanitize"
           }
@@ -117,10 +130,15 @@ jobs:
     - name: Info df
       run: df -h
 
-    - name: Install MySQL client libraries
+    - name: Info GitHub directories
+      run: |
+        echo github.workspace: ${{github.workspace}}
+        echo runner.temp     : ${{runner.temp}}
+
+    - name: Install MySQL client libraries and CURL Development libraries
       run: |
         sudo apt-get update
-        sudo apt-get install libmysqlclient-dev
+        sudo apt-get install libmysqlclient-dev libcurl4-openssl-dev
 
     - name: Install MySQL server and MTR
       if: matrix.config.run_mtr
@@ -151,44 +169,100 @@ jobs:
     - name: Creating deps directory
       run: mkdir -p ${{runner.temp}}/deps
 
-    - name: Cache boost tarball
-      id: cache-boost-tarball
+    - name: Cache boost libraries
+      id: cache-boost-libraries
       uses: actions/cache@v4
       with:
-        path: ${{runner.temp}}/deps/${{format('boost_{0}_{1}_{2}{3}', env.BOOST_MAJOR, env.BOOST_MINOR, env.BOOST_PATCH, env.BOOST_EXT)}}
-        key: boost-tarball
+        path: ${{runner.temp}}/deps/${{format('boost_{0}_{1}_{2}', env.BOOST_MAJOR, env.BOOST_MINOR, env.BOOST_PATCH)}}
+        key: ${{format('boost-libraries-{0}-{1}-{2}', env.BOOST_MAJOR, env.BOOST_MINOR, env.BOOST_PATCH)}}
 
-    - name: Download boost libraries
-      if: steps.cache-boost-tarball.outputs.cache-hit != 'true'
+    - name: Download and unpack boost libraries
+      if: steps.cache-boost-libraries.outputs.cache-hit != 'true'
       working-directory: ${{runner.temp}}/deps
-      run: wget --quiet ${{format('https://boostorg.jfrog.io/artifactory/main/release/{0}.{1}.{2}/source/boost_{0}_{1}_{2}{3}', env.BOOST_MAJOR, env.BOOST_MINOR, env.BOOST_PATCH, env.BOOST_EXT)}}
+      run: |
+        wget --quiet ${{format('https://boostorg.jfrog.io/artifactory/main/release/{0}.{1}.{2}/source/boost_{0}_{1}_{2}{3}', env.BOOST_MAJOR, env.BOOST_MINOR, env.BOOST_PATCH, env.BOOST_EXT)}}
+        tar xf ${{format('boost_{0}_{1}_{2}{3}', env.BOOST_MAJOR, env.BOOST_MINOR, env.BOOST_PATCH, env.BOOST_EXT)}}
+        rm -f ${{format('boost_{0}_{1}_{2}{3}', env.BOOST_MAJOR, env.BOOST_MINOR, env.BOOST_PATCH, env.BOOST_EXT)}}
 
-    - name: Unpack boost libraries
-      working-directory: ${{runner.temp}}/deps
-      run: tar xf ${{format('boost_{0}_{1}_{2}{3}', env.BOOST_MAJOR, env.BOOST_MINOR, env.BOOST_PATCH, env.BOOST_EXT)}}
+    - name: Cache AWS SDK C++ libraries
+      id: cache-aws-sdk-cpp-libraries
+      uses: actions/cache@v4
+      with:
+        path: ${{runner.temp}}/deps/aws-sdk-cpp-install-${{matrix.config.label}}
+        key: ${{format('aws-cpp-sdk-libraries-{0}-{1}-{2}-{3}', env.AWS_SDK_CPP_MAJOR, env.AWS_SDK_CPP_MINOR, env.AWS_SDK_CPP_PATCH, matrix.config.label)}}
 
-    - uses: actions/checkout@v4
+    - name: Checking out AWS SDK C++ source tree
+      if: steps.cache-aws-sdk-cpp-libraries.outputs.cache-hit != 'true'
+      uses: actions/checkout@v4
+      with:
+        repository: aws/aws-sdk-cpp
+        ref: ${{format('{0}.{1}.{2}', env.AWS_SDK_CPP_MAJOR, env.AWS_SDK_CPP_MINOR, env.AWS_SDK_CPP_PATCH)}}
+        path: aws-sdk-cpp
+        submodules: recursive
+        fetch-tags: true
+
+    - name: Configure CMake for AWS SDK C++
+      if: steps.cache-aws-sdk-cpp-libraries.outputs.cache-hit != 'true'
+      run: |
+        cmake \
+          -B ${{github.workspace}}/aws-sdk-cpp-build-${{matrix.config.label}} \
+          -S ${{github.workspace}}/aws-sdk-cpp \
+          -DCMAKE_INSTALL_PREFIX=${{runner.temp}}/deps/aws-sdk-cpp-install-${{matrix.config.label}} \
+          -DCMAKE_BUILD_TYPE=${{matrix.config.build_type}}  \
+          -DCMAKE_C_COMPILER=${{matrix.config.cc}} \
+          -DCMAKE_CXX_COMPILER=${{matrix.config.cxx}} \
+          ${{matrix.config.aws_libcxx_cmake_flags}} \
+          ${{matrix.config.aws_sanitizer_cmake_flags}} \
+          -DCPP_STANDARD=20 \
+          -DENABLE_UNITY_BUILD=ON \
+          -DBUILD_SHARED_LIBS=OFF \
+          -DFORCE_SHARED_CRT=OFF \
+          -DENABLE_TESTING=OFF \
+          -DAUTORUN_UNIT_TESTS=OFF \
+          -DBUILD_ONLY=s3-crt
+
+    - name: CMake info for AWS SDK C++
+      if: steps.cache-aws-sdk-cpp-libraries.outputs.cache-hit != 'true'
+      run: cmake -L ${{github.workspace}}/aws-sdk-cpp-build-${{matrix.config.label}}
+
+    - name: Build for AWS SDK C++
+      if: steps.cache-aws-sdk-cpp-libraries.outputs.cache-hit != 'true'
+      run: cmake --build ${{github.workspace}}/aws-sdk-cpp-build-${{matrix.config.label}} --config ${{matrix.config.build_type}} --parallel
+
+    - name: Install for AWS SDK C++
+      if: steps.cache-aws-sdk-cpp-libraries.outputs.cache-hit != 'true'
+      run: cmake --install ${{github.workspace}}/aws-sdk-cpp-build-${{matrix.config.label}} --config ${{matrix.config.build_type}}
+
+    - name: Checking out source tree
+      uses: actions/checkout@v4
+      with:
+        path: src
+        fetch-depth: 0
+        fetch-tags: true
 
     - name: Configure CMake
       # Configure CMake in a 'build' subdirectory. `CMAKE_BUILD_TYPE` is only required if you are using a single-configuration generator such as make.
       # See https://cmake.org/cmake/help/latest/variable/CMAKE_BUILD_TYPE.html?highlight=cmake_build_type
       run: |
         cmake -Wdev -Werror=dev -Wdeprecated -Werror=deprecated \
-          -B ${{github.workspace}}/../build-${{matrix.config.label}} \
+          -B ${{github.workspace}}/build-${{matrix.config.label}} \
+          -S ${{github.workspace}}/src \
           -DCMAKE_BUILD_TYPE=${{matrix.config.build_type}}  \
           -DCMAKE_C_COMPILER=${{matrix.config.cc}} \
           -DCMAKE_CXX_COMPILER=${{matrix.config.cxx}} \
+          -DCPP_STANDARD=20 \
           ${{matrix.config.libcxx_cmake_flags}} \
           ${{matrix.config.sanitizer_cmake_flags}} \
+          -DCMAKE_PREFIX_PATH=${{runner.temp}}/deps/aws-sdk-cpp-install-${{matrix.config.label}} \
           -DBoost_ROOT=${{runner.temp}}/deps/${{format('boost_{0}_{1}_{2}', env.BOOST_MAJOR, env.BOOST_MINOR, env.BOOST_PATCH)}} \
           -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 
     - name: CMake info
-      run: cmake -L ${{github.workspace}}/..//build-${{matrix.config.label}}
+      run: cmake -L ${{github.workspace}}/build-${{matrix.config.label}}
 
     - name: Build
       # Build your program with the given configuration
-      run: cmake --build ${{github.workspace}}/../build-${{matrix.config.label}} --config ${{matrix.config.build_type}} --parallel
+      run: cmake --build ${{github.workspace}}/build-${{matrix.config.label}} --config ${{matrix.config.build_type}} --parallel
 
     - name: Info Clang Tidy
       if: matrix.config.run_clang_tidy
@@ -197,7 +271,7 @@ jobs:
     - name: Clang Tidy
       if: matrix.config.run_clang_tidy
       # Run Clang Tidy
-      run: run-clang-tidy-17 -header-filter=.* -j=${{steps.cpu-cores.outputs.count}} -use-color -p=${{github.workspace}}/../build-${{matrix.config.label}}
+      run: run-clang-tidy-17 -header-filter=.* -j=${{steps.cpu-cores.outputs.count}} -use-color -p=${{github.workspace}}/build-${{matrix.config.label}}
 
     - name: MTR tests
       if: matrix.config.run_mtr
@@ -206,15 +280,21 @@ jobs:
         # Switching MySQL Server Apparmor profile to "complain" as we are creating a custom data directory
         sudo aa-complain /usr/sbin/mysqld
         # Linking the "binlog_streaming" from the source tree into the MTR suits directory on the system
-        sudo ln -s ${{github.workspace}}/mtr/binlog_streaming /usr/lib/mysql-test/suite/binlog_streaming
+        sudo ln -s ${{github.workspace}}/src/mtr/binlog_streaming /usr/lib/mysql-test/suite/binlog_streaming
         # Running MTR from the system package
-        BINSRV=${{github.workspace}}/../build-${{matrix.config.label}}/binlog_server ./mtr \
-          --client-bindir=/usr/lib/mysql-test/bin --vardir=${{github.workspace}}/../mtrvardir \
+        BINSRV=${{github.workspace}}/build-${{matrix.config.label}}/binlog_server ./mtr \
+          --client-bindir=/usr/lib/mysql-test/bin --vardir=${{runner.temp}}/mtrvardir \
           --force --max-test-fail=0 --retry=0 --nounit-tests --big-test --repeat=2 --parallel=${{steps.cpu-cores.outputs.count}} \
           --suite=binlog_streaming ${{matrix.config.mtr_options}}
 
     - name: CTest
-      working-directory: ${{github.workspace}}/../build-${{matrix.config.label}}
+      working-directory: ${{github.workspace}}/build-${{matrix.config.label}}
       # Execute tests defined by the CMake configuration.
       # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
       run: ctest -C ${{matrix.config.build_type}} --parallel
+
+    - name: Info Build artefacts
+      run: |
+        ls -la ${{github.workspace}}
+        ls -la ${{runner.temp}}
+        ls -la ${{runner.temp}}/deps

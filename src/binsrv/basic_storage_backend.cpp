@@ -51,4 +51,8 @@ void basic_storage_backend::close_stream() {
   stream_opened_ = false;
 }
 
+[[nodiscard]] std::string basic_storage_backend::get_description() const {
+  return do_get_description();
+}
+
 } // namespace binsrv

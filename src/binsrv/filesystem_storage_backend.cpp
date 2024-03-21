@@ -117,6 +117,11 @@ void filesystem_storage_backend::do_write_data_to_stream(
 
 void filesystem_storage_backend::do_close_stream() { ofs_.close(); }
 
+[[nodiscard]] std::string
+filesystem_storage_backend::do_get_description() const {
+  return "local filesystem";
+}
+
 [[nodiscard]] std::filesystem::path
 filesystem_storage_backend::get_object_path(std::string_view name) const {
   auto result{root_path_};
