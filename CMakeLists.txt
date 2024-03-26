@@ -72,7 +72,7 @@ if(WITH_ASAN)
   target_link_options(binlog_server_compiler_flags INTERFACE "-fsanitize=address")
 endif()
 
-find_package(Boost 1.83.0 EXACT REQUIRED)
+find_package(Boost 1.84.0 EXACT REQUIRED)
 
 find_package(MySQL REQUIRED)
 
