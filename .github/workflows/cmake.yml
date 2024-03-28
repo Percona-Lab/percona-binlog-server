@@ -181,7 +181,7 @@ jobs:
       uses: actions/cache@v4
       with:
         path: ${{runner.temp}}/deps/boost-install-${{matrix.config.label}}
-        key: ${{format('boost-static-libraries-{0}-{1}-{2}', env.BOOST_MAJOR, env.BOOST_MINOR, env.BOOST_PATCH)}}
+        key: ${{format('boost-static-libraries-{0}-{1}-{2}-{3}', env.BOOST_MAJOR, env.BOOST_MINOR, env.BOOST_PATCH, matrix.config.label)}}
 
     - name: Checking out Boost source tree
       if: steps.cache-boost-static-libraries.outputs.cache-hit != 'true'
