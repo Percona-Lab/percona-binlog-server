@@ -18,8 +18,13 @@
 #include <cstddef>
 #include <filesystem>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <string_view>
+
+#include <boost/url/host_type.hpp>
+#include <boost/url/scheme.hpp>
+#include <boost/url/url_view_base.hpp>
 
 #include <aws/core/Aws.h>
 
@@ -28,6 +33,7 @@
 #include "binsrv/basic_storage_backend_fwd.hpp"
 
 #include "util/byte_span.hpp"
+#include "util/exception_location_helpers.hpp"
 #include "util/impl_helpers.hpp"
 
 namespace binsrv {
@@ -43,9 +49,50 @@ void s3_storage_backend::options_deleter::operator()(void *ptr) const noexcept {
   delete_helper{}(casted_ptr);
 }
 
-s3_storage_backend::s3_storage_backend(std::string_view root_path)
-    : root_path_{root_path}, options_{new Aws::SDKOptions} {
+s3_storage_backend::s3_storage_backend(const boost::urls::url_view_base &uri)
+    : access_key_id_{}, secret_access_key_{}, root_path_{},
+      options_{new Aws::SDKOptions} {
   Aws::InitAPI(*options_deimpl::get(options_));
+
+  // "s3://<access_key_id>:<secret_access_key>@<bucket_name>/<path>" for AWS S3
+  if (uri.scheme_id() != boost::urls::scheme::unknown ||
+      uri.scheme() != uri_schema) {
+    util::exception_location().raise<std::invalid_argument>(
+        "URI of invalid scheme provided");
+  }
+  if (uri.host_type() != boost::urls::host_type::name || uri.host().empty()) {
+    util::exception_location().raise<std::invalid_argument>(
+        "s3 URI must have host");
+  }
+  if (uri.host().find('.') != std::string::npos) {
+    util::exception_location().raise<std::invalid_argument>(
+        "s3 URI host must be a single bucket name");
+  }
+  bucket_ = uri.host();
+
+  if (uri.has_port()) {
+    util::exception_location().raise<std::invalid_argument>(
+        "s3 URI must not have port");
+  }
+
+  if (uri.has_userinfo()) {
+    if (!uri.has_password()) {
+      util::exception_location().raise<std::invalid_argument>(
+          "s3 URI must have either both user and password or none");
+    }
+    access_key_id_ = uri.user();
+    secret_access_key_ = uri.password();
+  }
+  if (uri.has_query()) {
+    util::exception_location().raise<std::invalid_argument>(
+        "s3 URI must not have query");
+  }
+  if (uri.has_fragment()) {
+    util::exception_location().raise<std::invalid_argument>(
+        "s3 URI must not have fragment");
+  }
+
+  root_path_ = uri.path();
 }
 
 [[nodiscard]] storage_object_name_container
@@ -79,7 +126,15 @@ void s3_storage_backend::do_close_stream() {}
   res += std::to_string(casted_options.sdkVersion.minor);
   res += '.';
   res += std::to_string(casted_options.sdkVersion.patch);
-  res += ')';
+  res += ") - ";
+
+  res += "bucket: ";
+  res += bucket_;
+  res += ", path: ";
+  res += root_path_.generic_string();
+  res += ", credentials: ";
+  res += (has_credentials() ? "***hidden***" : "none");
+
   return res;
 }
 } // namespace binsrv

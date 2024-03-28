@@ -19,19 +19,40 @@
 #include <filesystem>
 #include <string_view>
 
+#include <boost/url/url_view_base.hpp>
+
 #include "binsrv/basic_storage_backend.hpp" // IWYU pragma: export
 
 namespace binsrv {
 
 class [[nodiscard]] s3_storage_backend : public basic_storage_backend {
 public:
-  explicit s3_storage_backend(std::string_view root_path);
+  static constexpr std::string_view uri_schema{"s3"};
+
+  explicit s3_storage_backend(const boost::urls::url_view_base &uri);
+
+  [[nodiscard]] const std::string &get_bucket() const noexcept {
+    return bucket_;
+  }
+  [[nodiscard]] const std::string &get_access_key_id() const noexcept {
+    return access_key_id_;
+  }
+  [[nodiscard]] const std::string &get_secret_access_key() const noexcept {
+    return secret_access_key_;
+  }
+  [[nodiscard]] bool has_credentials() const noexcept {
+    return !access_key_id_.empty();
+  }
 
   [[nodiscard]] const std::filesystem::path &get_root_path() const noexcept {
     return root_path_;
   }
 
 private:
+  std::string access_key_id_;
+  // TODO: do not store secret_access_key in plain
+  std::string secret_access_key_;
+  std::string bucket_;
   std::filesystem::path root_path_;
   struct options_deleter {
     void operator()(void *ptr) const noexcept;

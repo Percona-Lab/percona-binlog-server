@@ -161,7 +161,7 @@ int main(int argc, char *argv[]) {
     std::cerr << "usage: " << executable_name
               << " <logger.level> <logger.file> <connection.host>"
                  " <connection.port> <connection.user> <connection.password>"
-                 " <storage.type> <storage.path>\n"
+                 " <storage.uri>\n"
               << "       " << executable_name << " <json_config_file>\n";
     return exit_code;
   }
@@ -218,11 +218,6 @@ int main(int argc, char *argv[]) {
     auto storage_backend{
         binsrv::storage_backend_factory::create(storage_config)};
     logger->log(binsrv::log_severity::info, "created binlog storage backend");
-    msg = "type: ";
-    msg += storage_config.get<"type">();
-    msg += ", path: ";
-    msg += storage_config.get<"path">();
-    logger->log(binsrv::log_severity::info, msg);
     msg = "description: ";
     msg += storage_backend->get_description();
     logger->log(binsrv::log_severity::info, msg);

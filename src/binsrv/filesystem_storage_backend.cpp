@@ -24,6 +24,10 @@
 #include <string>
 #include <string_view>
 
+#include <boost/url/host_type.hpp>
+#include <boost/url/scheme.hpp>
+#include <boost/url/url_view_base.hpp>
+
 // TODO: remove this include when switching to clang-18 where transitive
 //       IWYU 'export' pragmas are handled properly
 #include "binsrv/basic_storage_backend_fwd.hpp"
@@ -34,9 +38,39 @@
 namespace binsrv {
 
 filesystem_storage_backend::filesystem_storage_backend(
-    std::string_view root_path)
-    : root_path_{root_path}, ofs_{} {
+    const boost::urls::url_view_base &uri)
+    : root_path_{}, ofs_{} {
   // TODO: switch to utf8 file names
+
+  // "file://<path>" for local filesystem
+  if (uri.scheme_id() != boost::urls::scheme::file ||
+      uri.scheme() != uri_schema) {
+    util::exception_location().raise<std::invalid_argument>(
+        "URI of invalid scheme provided");
+  }
+  if (uri.host_type() != boost::urls::host_type::name || !uri.host().empty()) {
+    util::exception_location().raise<std::invalid_argument>(
+        "file URI must not have host");
+  }
+  if (uri.has_port()) {
+    util::exception_location().raise<std::invalid_argument>(
+        "file URI must not have port");
+  }
+  if (uri.has_userinfo()) {
+    util::exception_location().raise<std::invalid_argument>(
+        "file URI must not have userinfo");
+  }
+  if (uri.has_query()) {
+    util::exception_location().raise<std::invalid_argument>(
+        "file URI must not have query");
+  }
+  if (uri.has_fragment()) {
+    util::exception_location().raise<std::invalid_argument>(
+        "file URI must not have fragment");
+  }
+
+  root_path_ = uri.path();
+
   if (!std::filesystem::exists(root_path_)) {
     util::exception_location().raise<std::invalid_argument>(
         "root path does not exist");
@@ -134,7 +168,7 @@ void filesystem_storage_backend::do_close_stream() { ofs_.close(); }
 
 [[nodiscard]] std::string
 filesystem_storage_backend::do_get_description() const {
-  return "local filesystem";
+  return "local filesystem - " + root_path_.generic_string();
 }
 
 [[nodiscard]] std::filesystem::path

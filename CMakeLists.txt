@@ -72,12 +72,12 @@ if(WITH_ASAN)
   target_link_options(binlog_server_compiler_flags INTERFACE "-fsanitize=address")
 endif()
 
-find_package(Boost 1.84.0 EXACT REQUIRED)
+find_package(Boost 1.84.0 EXACT REQUIRED COMPONENTS url)
 
 find_package(MySQL REQUIRED)
 
 find_package(ZLIB REQUIRED)
-find_package(AWSSDK REQUIRED COMPONENTS s3-crt)
+find_package(AWSSDK 1.11.286 EXACT REQUIRED COMPONENTS s3-crt)
 
 set(source_files
   # main application files
@@ -260,7 +260,8 @@ target_link_libraries(binlog_server
   PUBLIC
     binlog_server_compiler_flags
   PRIVATE
-    Boost::headers MySQL::client
+    Boost::headers Boost::url
+    MySQL::client
     aws-cpp-sdk-s3-crt
 )
 # for some reason it is not possible to propagate CXX_EXTENSIONS and
