@@ -13,7 +13,6 @@ env:
   BOOST_MAJOR: 1
   BOOST_MINOR: 84
   BOOST_PATCH: 0
-  BOOST_EXT: .tar.bz2
 
 jobs:
   formatting-check:
@@ -82,7 +81,8 @@ jobs:
             cc: "gcc-13",
             cxx: "g++-13",
             sanitizer_cmake_flags: "-DWITH_ASAN=ON",
-            aws_sanitizer_cmake_flags: "-DENABLE_ADDRESS_SANITIZER=ON",
+            aws_cmake_flags: "-DENABLE_ADDRESS_SANITIZER=ON",
+            boost_cmake_flags: "-DCMAKE_CXX_FLAGS_INIT=-fsanitize=address",
             label: "ASan-gcc13",
             run_mtr: true,
             mtr_options: "--sanitize"
@@ -93,7 +93,8 @@ jobs:
             cc: "clang-17",
             cxx: "clang++-17",
             libcxx_cmake_flags: "-DWITH_STDLIB_LIBCXX=ON",
-            aws_libcxx_cmake_flags: "-DCMAKE_CXX_FLAGS_INIT=-stdlib=libc++",
+            aws_cmake_flags: "-DCMAKE_CXX_FLAGS_INIT=-stdlib=libc++",
+            boost_cmake_flags: "-DCMAKE_CXX_FLAGS_INIT=-stdlib=libc++",
             label: "Debug-clang17",
             run_clang_tidy: true,
           }
@@ -103,7 +104,8 @@ jobs:
             cc: "clang-17",
             cxx: "clang++-17",
             libcxx_cmake_flags: "-DWITH_STDLIB_LIBCXX=ON",
-            aws_libcxx_cmake_flags: "-DCMAKE_CXX_FLAGS_INIT=-stdlib=libc++",
+            aws_cmake_flags: "-DCMAKE_CXX_FLAGS_INIT=-stdlib=libc++",
+            boost_cmake_flags: "-DCMAKE_CXX_FLAGS_INIT=-stdlib=libc++",
             label: "RelWithDebInfo-clang17",
             run_clang_tidy: true,
           }
@@ -113,9 +115,9 @@ jobs:
             cc: "clang-17",
             cxx: "clang++-17",
             libcxx_cmake_flags: "-DWITH_STDLIB_LIBCXX=ON",
-            aws_libcxx_cmake_flags: "-DCMAKE_CXX_FLAGS_INIT=-stdlib=libc++",
+            aws_cmake_flags: "-DCMAKE_CXX_FLAGS_INIT=-stdlib=libc++ -DENABLE_ADDRESS_SANITIZER=ON",
+            boost_cmake_flags: "-DCMAKE_CXX_FLAGS_INIT=\"-stdlib=libc++ -fsanitize=address\"",
             sanitizer_cmake_flags: "-DWITH_ASAN=ON",
-            aws_sanitizer_cmake_flags: "-DENABLE_ADDRESS_SANITIZER=ON",
             label: "ASan-clang17",
             run_mtr: true,
             mtr_options: "--sanitize"
@@ -175,19 +177,47 @@ jobs:
       run: mkdir -p ${{runner.temp}}/deps
 
     - name: Cache boost libraries
-      id: cache-boost-libraries
+      id: cache-boost-static-libraries
       uses: actions/cache@v4
       with:
-        path: ${{runner.temp}}/deps/${{format('boost_{0}_{1}_{2}', env.BOOST_MAJOR, env.BOOST_MINOR, env.BOOST_PATCH)}}
-        key: ${{format('boost-libraries-{0}-{1}-{2}', env.BOOST_MAJOR, env.BOOST_MINOR, env.BOOST_PATCH)}}
+        path: ${{runner.temp}}/deps/boost-install-${{matrix.config.label}}
+        key: ${{format('boost-static-libraries-{0}-{1}-{2}', env.BOOST_MAJOR, env.BOOST_MINOR, env.BOOST_PATCH)}}
 
-    - name: Download and unpack boost libraries
-      if: steps.cache-boost-libraries.outputs.cache-hit != 'true'
-      working-directory: ${{runner.temp}}/deps
+    - name: Checking out Boost source tree
+      if: steps.cache-boost-static-libraries.outputs.cache-hit != 'true'
+      uses: actions/checkout@v4
+      with:
+        repository: boostorg/boost
+        ref: ${{format('boost-{0}.{1}.{2}', env.BOOST_MAJOR, env.BOOST_MINOR, env.BOOST_PATCH)}}
+        path: boost
+        submodules: recursive
+        fetch-tags: true
+
+    - name: Configure CMake for Boost
+      if: steps.cache-boost-static-libraries.outputs.cache-hit != 'true'
       run: |
-        wget --quiet ${{format('https://boostorg.jfrog.io/artifactory/main/release/{0}.{1}.{2}/source/boost_{0}_{1}_{2}{3}', env.BOOST_MAJOR, env.BOOST_MINOR, env.BOOST_PATCH, env.BOOST_EXT)}}
-        tar xf ${{format('boost_{0}_{1}_{2}{3}', env.BOOST_MAJOR, env.BOOST_MINOR, env.BOOST_PATCH, env.BOOST_EXT)}}
-        rm -f ${{format('boost_{0}_{1}_{2}{3}', env.BOOST_MAJOR, env.BOOST_MINOR, env.BOOST_PATCH, env.BOOST_EXT)}}
+        cmake \
+          -B ${{github.workspace}}/boost-build-${{matrix.config.label}} \
+          -S ${{github.workspace}}/boost \
+          -DCMAKE_INSTALL_PREFIX=${{runner.temp}}/deps/boost-install-${{matrix.config.label}} \
+          -DCMAKE_BUILD_TYPE=${{matrix.config.build_type}}  \
+          -DCMAKE_C_COMPILER=${{matrix.config.cc}} \
+          -DCMAKE_CXX_COMPILER=${{matrix.config.cxx}} \
+          ${{matrix.config.boost_cmake_flags}} \
+          -DBUILD_SHARED_LIBS=OFF \
+          -DBUILD_TESTING=OFF
+
+    - name: CMake info for Boost
+      if: steps.cache-boost-static-libraries.outputs.cache-hit != 'true'
+      run: cmake -L ${{github.workspace}}/boost-build-${{matrix.config.label}}
+
+    - name: Build for Boost
+      if: steps.cache-boost-static-libraries.outputs.cache-hit != 'true'
+      run: cmake --build ${{github.workspace}}/boost-build-${{matrix.config.label}} --config ${{matrix.config.build_type}} --parallel
+
+    - name: Install for Boost
+      if: steps.cache-boost-static-libraries.outputs.cache-hit != 'true'
+      run: cmake --install ${{github.workspace}}/boost-build-${{matrix.config.label}} --config ${{matrix.config.build_type}}
 
     - name: Cache AWS SDK C++ libraries
       id: cache-aws-sdk-cpp-libraries
@@ -216,8 +246,7 @@ jobs:
           -DCMAKE_BUILD_TYPE=${{matrix.config.build_type}}  \
           -DCMAKE_C_COMPILER=${{matrix.config.cc}} \
           -DCMAKE_CXX_COMPILER=${{matrix.config.cxx}} \
-          ${{matrix.config.aws_libcxx_cmake_flags}} \
-          ${{matrix.config.aws_sanitizer_cmake_flags}} \
+          ${{matrix.config.aws_cmake_flags}} \
           -DCPP_STANDARD=20 \
           -DENABLE_UNITY_BUILD=ON \
           -DBUILD_SHARED_LIBS=OFF \
@@ -259,7 +288,7 @@ jobs:
           ${{matrix.config.libcxx_cmake_flags}} \
           ${{matrix.config.sanitizer_cmake_flags}} \
           -DCMAKE_PREFIX_PATH=${{runner.temp}}/deps/aws-sdk-cpp-install-${{matrix.config.label}} \
-          -DBoost_ROOT=${{runner.temp}}/deps/${{format('boost_{0}_{1}_{2}', env.BOOST_MAJOR, env.BOOST_MINOR, env.BOOST_PATCH)}} \
+          -DBoost_ROOT=${{runner.temp}}/deps/boost-install-${{matrix.config.label}} \
           -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 
     - name: CMake info
