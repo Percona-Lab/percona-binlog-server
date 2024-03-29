@@ -10,7 +10,6 @@
     "password": ""
   },
   "storage": {
-    "type": "fs",
-    "path": "./storage"
+    "uri": "file:///home/user/vault"
   }
 }

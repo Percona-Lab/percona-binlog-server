@@ -18,6 +18,9 @@
 #include <memory>
 #include <stdexcept>
 
+#include <boost/url/parse.hpp>
+#include <boost/url/url_view.hpp>
+
 #include "binsrv/basic_storage_backend_fwd.hpp"
 #include "binsrv/filesystem_storage_backend.hpp"
 #include "binsrv/s3_storage_backend.hpp"
@@ -29,12 +32,22 @@ namespace binsrv {
 
 basic_storage_backend_ptr
 storage_backend_factory::create(const storage_config &config) {
-  const auto &storage_backend_type = config.get<"type">();
-  if (storage_backend_type == "fs") {
-    return std::make_unique<filesystem_storage_backend>(config.get<"path">());
+  const auto &storage_backend_uri = config.get<"uri">();
+
+  const auto uri_parse_result{
+      boost::urls::parse_absolute_uri(storage_backend_uri)};
+  if (!uri_parse_result) {
+    util::exception_location().raise<std::invalid_argument>(
+        "invalid storage backend URI");
   }
-  if (storage_backend_type == "s3") {
-    return std::make_unique<s3_storage_backend>(config.get<"path">());
+
+  const auto storage_backend_type{uri_parse_result->scheme()};
+
+  if (storage_backend_type == filesystem_storage_backend::uri_schema) {
+    return std::make_unique<filesystem_storage_backend>(*uri_parse_result);
+  }
+  if (storage_backend_type == s3_storage_backend::uri_schema) {
+    return std::make_unique<s3_storage_backend>(*uri_parse_result);
   }
   util::exception_location().raise<std::invalid_argument>(
       "unknown storage backend type");
