@@ -13,32 +13,47 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#include "easymysql/core_error_helpers_private.hpp"
+#include "binsrv/s3_error_helpers_private.hpp"
 
 #include <source_location>
 #include <string>
 #include <string_view>
+#include <type_traits>
 
-#include <mysql/mysql.h>
+#include <aws/s3-crt/S3CrtErrors.h>
 
-#include "easymysql/connection.hpp"
-#include "easymysql/connection_deimpl_private.hpp"
-#include "easymysql/core_error.hpp"
+#include "binsrv/s3_error.hpp"
 
 #include "util/exception_location_helpers.hpp"
 
-namespace easymysql {
-
-struct raise_access {
-  static const connection::impl_ptr &get(const connection &conn) noexcept {
-    return conn.impl_;
-  }
-};
+namespace binsrv {
 
 [[noreturn]] void
-raise_core_error_from_connection(std::string_view user_message,
-                                 const connection &conn,
-                                 std::source_location location) {
+raise_s3_error_from_outcome(std::string_view user_message,
+                            const Aws::S3Crt::S3CrtError &sdk_error,
+                            std::source_location location) {
+  std::string message{};
+  if (!user_message.empty()) {
+    message += user_message;
+    message += ": ";
+  }
+
+  message += '<';
+  message += sdk_error.GetExceptionName();
+  message += "> - ";
+  message += sdk_error.GetMessage();
+  message += " (IP ";
+  message += sdk_error.GetRemoteHostIpAddress();
+  message += ", RequestID ";
+  message += sdk_error.GetRequestId();
+  message += ", ResponseCode ";
+  // TODO: in c++23 change to std::to_underlying()
+  auto http_status_code = sdk_error.GetResponseCode();
+  message += std::to_string(
+      static_cast<std::underlying_type_t<decltype(http_status_code)>>(
+          http_status_code));
+  message += ')';
+
   // default value std::source_location::current() for the 'location'
   // parameter is specified in the declaration of this function
   // and passed to the util::exception_location's constructor
@@ -46,17 +61,8 @@ raise_core_error_from_connection(std::string_view user_message,
   // because otherwise the location will always point to this
   // particular line on this particular file regardless of the actual
   // location from where this function is called
-  auto *casted_impl =
-      connection_deimpl::get_const_casted(raise_access::get(conn));
-  std::string message{};
-  if (!user_message.empty()) {
-    message += user_message;
-    message += ": ";
-  }
-  message += mysql_error(casted_impl);
-
-  util::exception_location(location).raise<core_error>(
-      static_cast<int>(mysql_errno(casted_impl)), message);
+  util::exception_location(location).raise<s3_error>(
+      static_cast<int>(sdk_error.GetErrorType()), message);
 }
 
-} // namespace easymysql
+} // namespace binsrv

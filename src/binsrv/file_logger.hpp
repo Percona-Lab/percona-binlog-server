@@ -25,7 +25,7 @@
 
 namespace binsrv {
 
-class [[nodiscard]] file_logger : public basic_logger {
+class [[nodiscard]] file_logger final : public basic_logger {
 public:
   file_logger(log_severity min_level, std::string_view file_name);
 

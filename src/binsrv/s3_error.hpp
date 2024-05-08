@@ -13,20 +13,28 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef EASYMYSQL_CORE_ERROR_HELPERS_PRIVATE_HPP
-#define EASYMYSQL_CORE_ERROR_HELPERS_PRIVATE_HPP
+#ifndef BINSRV_S3_ERROR_HPP
+#define BINSRV_S3_ERROR_HPP
 
-#include "easymysql/connection_fwd.hpp"
+#include <stdexcept>
+#include <system_error>
 
-#include <source_location>
-#include <string_view>
+namespace binsrv {
 
-namespace easymysql {
+[[nodiscard]] const std::error_category &s3_category() noexcept;
 
-[[noreturn]] void raise_core_error_from_connection(
-    std::string_view user_message, const connection &conn,
-    std::source_location location = std::source_location::current());
+[[nodiscard]] inline std::error_code
+make_s3_error_code(int native_error_code) noexcept {
+  return {native_error_code, s3_category()};
+}
 
-} // namespace easymysql
+class [[nodiscard]] s3_error : public std::system_error {
+public:
+  explicit s3_error(int native_error_code);
+  s3_error(int native_error_code, const std::string &what);
+  s3_error(int native_error_code, const char *what);
+};
 
-#endif // EASYMYSQL_CORE_ERROR_HELPERS_PRIVATE_HPP
+} // namespace binsrv
+
+#endif // BINSRV_S3_ERROR_HPP

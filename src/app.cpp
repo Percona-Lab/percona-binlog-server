@@ -279,6 +279,7 @@ int main(int argc, char *argv[]) {
 
     receive_binlog_events(*logger, binlog, storage);
 
+    logger->log(binsrv::log_severity::info, "successfully shut down");
     exit_code = EXIT_SUCCESS;
   } catch (...) {
     handle_std_exception(logger);

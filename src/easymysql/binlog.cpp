@@ -70,7 +70,7 @@ binlog::binlog(connection &conn, std::uint32_t server_id,
 
   auto *casted_conn_impl = connection_deimpl::get(conn.impl_);
   if (mysql_binlog_open(casted_conn_impl, binlog_deimpl::get(impl_)) != 0) {
-    raise_core_error_from_connection(conn);
+    raise_core_error_from_connection("cannot open binary log", conn);
   }
 }
 
@@ -89,7 +89,7 @@ util::const_byte_span binlog::fetch() {
   auto *casted_conn_impl = connection_deimpl::get(conn_->impl_);
   auto *casted_rpl_impl = binlog_deimpl::get(impl_);
   if (mysql_binlog_fetch(casted_conn_impl, casted_rpl_impl) != 0) {
-    raise_core_error_from_connection(*conn_);
+    raise_core_error_from_connection("cannot fetch binlog event", *conn_);
   }
   return std::as_bytes(
       std::span{casted_rpl_impl->buffer, casted_rpl_impl->size});

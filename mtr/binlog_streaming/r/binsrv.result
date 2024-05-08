@@ -20,28 +20,6 @@ INSERT INTO t1 VALUES(DEFAULT);
 
 *** Generating a configuration file in JSON format for the Binlog
 *** Server utility.
-SET @storage_path = '<BINSRV_STORAGE_PATH>';
-SET @storage_uri = CONCAT('file://', @storage_path);
-SET @log_path = '<BINSRV_LOG_PATH>';
-SET @delimiter_pos = INSTR(USER(), '@');
-SET @connection_user = SUBSTRING(USER(), 1, @delimiter_pos - 1);
-SET @connection_host = SUBSTRING(USER(), @delimiter_pos + 1);
-SET @connection_host = IF(@connection_host = 'localhost', '127.0.0.1', @connection_host);
-SET @binsrv_config_json = JSON_OBJECT(
-'logger', JSON_OBJECT(
-'level', 'trace',
-'file', @log_path
-),
-'connection', JSON_OBJECT(
-'host', @connection_host,
-'port', @@global.port,
-'user', @connection_user,
-'password', ''
-  ),
-'storage', JSON_OBJECT(
-'uri', @storage_uri
-)
-);
 
 *** Determining binlog file directory from the server.
 
@@ -51,6 +29,9 @@ SET @binsrv_config_json = JSON_OBJECT(
 *** Executing the Binlog Server utility to download all binlog data
 *** from the server to the <BINSRV_STORAGE_PATH> directory (second
 *** binlog is still open / in use).
+
+*** Checking that the Binlog Server utility detected an empty storage
+include/assert_grep.inc [Binlog storage must be initialized on an empty directory]
 
 *** Comparing server and downloaded versions of the first binlog file.
 
@@ -70,6 +51,10 @@ FLUSH BINARY LOGS;
 *** Executing the Binlog Server utility one more time (the second
 *** binlog is no longer open / in use). Here we should also continue
 *** streaming binlog events from the last saved position.
+
+*** Checking that the Binlog Server utility detected a previously
+*** initialized storage
+include/assert_grep.inc [Binlog storage must be initialized on a non-empty directory]
 
 *** Comparing server and downloaded versions of the first binlog file
 *** one more time.

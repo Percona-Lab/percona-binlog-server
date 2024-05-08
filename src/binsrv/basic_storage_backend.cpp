@@ -39,18 +39,19 @@ void basic_storage_backend::put_object(std::string_view name,
   return do_put_object(name, content);
 }
 
-void basic_storage_backend::open_stream(std::string_view name) {
-  if (stream_opened_) {
+void basic_storage_backend::open_stream(std::string_view name,
+                                        storage_backend_open_stream_mode mode) {
+  if (stream_open_) {
     util::exception_location().raise<std::logic_error>(
         "cannot open a new stream as the previous one has not been closed");
   }
 
-  do_open_stream(name);
-  stream_opened_ = true;
+  do_open_stream(name, mode);
+  stream_open_ = true;
 }
 
 void basic_storage_backend::write_data_to_stream(util::const_byte_span data) {
-  if (!stream_opened_) {
+  if (!stream_open_) {
     util::exception_location().raise<std::logic_error>(
         "cannot write to the stream as it has not been opened");
   }
@@ -58,12 +59,12 @@ void basic_storage_backend::write_data_to_stream(util::const_byte_span data) {
 }
 
 void basic_storage_backend::close_stream() {
-  if (!stream_opened_) {
+  if (!stream_open_) {
     util::exception_location().raise<std::logic_error>(
         "cannot close the stream as it has not been opened");
   }
   do_close_stream();
-  stream_opened_ = false;
+  stream_open_ = false;
 }
 
 [[nodiscard]] std::string basic_storage_backend::get_description() const {
