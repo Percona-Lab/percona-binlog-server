@@ -42,7 +42,7 @@ public:
   storage &operator=(storage &&) = delete;
 
   // desctuctor is explicitly defined as default here to complete the rule of 5
-  ~storage() = default;
+  ~storage();
 
   [[nodiscard]] std::string_view get_binlog_name() const noexcept {
     return binlog_names_.empty() ? std::string_view{} : binlog_names_.back();

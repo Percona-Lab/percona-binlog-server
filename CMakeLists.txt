@@ -185,6 +185,11 @@ set(source_files
   src/binsrv/main_config.hpp
   src/binsrv/main_config.cpp
 
+  src/binsrv/s3_error_helpers_private.hpp
+  src/binsrv/s3_error_helpers_private.cpp
+  src/binsrv/s3_error.hpp
+  src/binsrv/s3_error.cpp
+
   src/binsrv/s3_storage_backend.hpp
   src/binsrv/s3_storage_backend.cpp
 

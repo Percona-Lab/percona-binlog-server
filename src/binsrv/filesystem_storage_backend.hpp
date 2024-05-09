@@ -26,8 +26,11 @@
 
 namespace binsrv {
 
-class [[nodiscard]] filesystem_storage_backend : public basic_storage_backend {
+class [[nodiscard]] filesystem_storage_backend final
+    : public basic_storage_backend {
 public:
+  static constexpr std::size_t max_memory_object_size{1048576U};
+
   static constexpr std::string_view uri_schema{"file"};
 
   explicit filesystem_storage_backend(const boost::urls::url_view_base &uri);
@@ -46,7 +49,8 @@ private:
   void do_put_object(std::string_view name,
                      util::const_byte_span content) override;
 
-  void do_open_stream(std::string_view name) override;
+  void do_open_stream(std::string_view name,
+                      storage_backend_open_stream_mode mode) override;
   void do_write_data_to_stream(util::const_byte_span data) override;
   void do_close_stream() override;
 

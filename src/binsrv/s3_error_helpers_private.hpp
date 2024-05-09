@@ -13,20 +13,20 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef EASYMYSQL_CORE_ERROR_HELPERS_PRIVATE_HPP
-#define EASYMYSQL_CORE_ERROR_HELPERS_PRIVATE_HPP
-
-#include "easymysql/connection_fwd.hpp"
+#ifndef BINSRV_S3_ERROR_HELPERS_PRIVATE_HPP
+#define BINSRV_S3_ERROR_HELPERS_PRIVATE_HPP
 
 #include <source_location>
 #include <string_view>
 
-namespace easymysql {
+#include <aws/s3-crt/S3CrtErrors.h>
 
-[[noreturn]] void raise_core_error_from_connection(
-    std::string_view user_message, const connection &conn,
+namespace binsrv {
+
+[[noreturn]] void raise_s3_error_from_outcome(
+    std::string_view user_message, const Aws::S3Crt::S3CrtError &sdk_error,
     std::source_location location = std::source_location::current());
 
-} // namespace easymysql
+} // namespace binsrv
 
-#endif // EASYMYSQL_CORE_ERROR_HELPERS_PRIVATE_HPP
+#endif // BINSRV_S3_ERROR_HELPERS_PRIVATE_HPP

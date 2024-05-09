@@ -23,6 +23,8 @@
 
 namespace binsrv {
 
+enum class storage_backend_open_stream_mode { create, append };
+
 class basic_storage_backend;
 
 using basic_storage_backend_ptr = std::unique_ptr<basic_storage_backend>;

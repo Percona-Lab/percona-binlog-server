@@ -15,7 +15,7 @@
 
 #include "binsrv/filesystem_storage_backend.hpp"
 
-#include <cstddef>
+#include <cassert>
 #include <filesystem>
 #include <fstream>
 #include <ios>
@@ -99,25 +99,24 @@ filesystem_storage_backend::do_list_objects() {
 
 [[nodiscard]] std::string
 filesystem_storage_backend::do_get_object(std::string_view name) {
-  const auto index_path{get_object_path(name)};
-
-  static constexpr std::size_t max_file_size{1048576U};
+  const auto object_path{get_object_path(name)};
 
   // opening in binary mode
-  std::ifstream ifs{index_path, std::ios_base::binary};
-  if (!ifs.is_open()) {
+  std::ifstream object_ifs{object_path,
+                           std::ios_base::in | std::ios_base::binary};
+  if (!object_ifs.is_open()) {
     util::exception_location().raise<std::runtime_error>(
         "cannot open undellying object file");
   }
-  auto file_size = std::filesystem::file_size(index_path);
-  if (file_size > max_file_size) {
+  auto file_size = std::filesystem::file_size(object_path);
+  if (file_size > max_memory_object_size) {
     util::exception_location().raise<std::out_of_range>(
-        "undellying object file is too large");
+        "undellying object file is too large to be loaded in memory");
   }
 
   std::string file_content(file_size, 'x');
-  if (!ifs.read(std::data(file_content),
-                static_cast<std::streamoff>(file_size))) {
+  if (!object_ifs.read(std::data(file_content),
+                       static_cast<std::streamoff>(file_size))) {
     util::exception_location().raise<std::runtime_error>(
         "cannot read undellying object file content");
   }
@@ -126,26 +125,33 @@ filesystem_storage_backend::do_get_object(std::string_view name) {
 
 void filesystem_storage_backend::do_put_object(std::string_view name,
                                                util::const_byte_span content) {
-  const auto index_path = get_object_path(name);
+  const auto object_path = get_object_path(name);
   // opening in binary mode with truncating
-  std::ofstream index_ofs{index_path, std::ios_base::trunc};
-  if (!index_ofs.is_open()) {
+  std::ofstream object_ofs{object_path, std::ios_base::out |
+                                            std::ios_base::binary |
+                                            std::ios_base::trunc};
+  if (!object_ofs.is_open()) {
     util::exception_location().raise<std::runtime_error>(
         "cannot open undellying object file for writing");
   }
   const auto content_sv = util::as_string_view(content);
-  if (!index_ofs.write(std::data(content_sv),
-                       static_cast<std::streamoff>(std::size(content_sv)))) {
+  if (!object_ofs.write(std::data(content_sv),
+                        static_cast<std::streamoff>(std::size(content_sv)))) {
     util::exception_location().raise<std::runtime_error>(
         "cannot write date to undellying object file");
   }
 }
 
-void filesystem_storage_backend::do_open_stream(std::string_view name) {
-  std::filesystem::path current_file_path{root_path_};
-  current_file_path /= name;
+void filesystem_storage_backend::do_open_stream(
+    std::string_view name, storage_backend_open_stream_mode mode) {
+  assert(!ofs_.is_open());
+  const std::filesystem::path current_file_path{get_object_path(name)};
 
-  ofs_.open(current_file_path, std::ios_base::binary | std::ios_base::app);
+  auto open_mode{std::ios_base::out | std::ios_base::binary |
+                 (mode == storage_backend_open_stream_mode::create
+                      ? std::ios_base::trunc
+                      : std::ios_base::app)};
+  ofs_.open(current_file_path, open_mode);
   if (!ofs_.is_open()) {
     util::exception_location().raise<std::runtime_error>(
         "cannot open underlying file for the stream");
@@ -154,6 +160,7 @@ void filesystem_storage_backend::do_open_stream(std::string_view name) {
 
 void filesystem_storage_backend::do_write_data_to_stream(
     util::const_byte_span data) {
+  assert(ofs_.is_open());
   const auto data_sv = util::as_string_view(data);
   if (!ofs_.write(std::data(data_sv),
                   static_cast<std::streamoff>(std::size(data_sv)))) {
@@ -164,7 +171,10 @@ void filesystem_storage_backend::do_write_data_to_stream(
   //       use fsync() system call here
 }
 
-void filesystem_storage_backend::do_close_stream() { ofs_.close(); }
+void filesystem_storage_backend::do_close_stream() {
+  assert(ofs_.is_open());
+  ofs_.close();
+}
 
 [[nodiscard]] std::string
 filesystem_storage_backend::do_get_description() const {

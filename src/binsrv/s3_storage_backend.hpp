@@ -17,31 +17,33 @@
 #define BINSRV_S3_STORAGE_BACKEND_HPP
 
 #include <filesystem>
+#include <fstream>
+#include <string>
 #include <string_view>
 
 #include <boost/url/url_view_base.hpp>
+
+#include <boost/uuid/uuid_generators.hpp>
 
 #include "binsrv/basic_storage_backend.hpp" // IWYU pragma: export
 
 namespace binsrv {
 
-class [[nodiscard]] s3_storage_backend : public basic_storage_backend {
+class [[nodiscard]] s3_storage_backend final : public basic_storage_backend {
 public:
+  static constexpr std::size_t max_memory_object_size{1048576U};
+
   static constexpr std::string_view uri_schema{"s3"};
 
   explicit s3_storage_backend(const boost::urls::url_view_base &uri);
+  s3_storage_backend(const s3_storage_backend &) = delete;
+  s3_storage_backend &operator=(const s3_storage_backend &) = delete;
+  s3_storage_backend(s3_storage_backend &&) = delete;
+  s3_storage_backend &operator=(s3_storage_backend &&) = delete;
+  ~s3_storage_backend() override;
 
   [[nodiscard]] const std::string &get_bucket() const noexcept {
     return bucket_;
-  }
-  [[nodiscard]] const std::string &get_access_key_id() const noexcept {
-    return access_key_id_;
-  }
-  [[nodiscard]] const std::string &get_secret_access_key() const noexcept {
-    return secret_access_key_;
-  }
-  [[nodiscard]] bool has_credentials() const noexcept {
-    return !access_key_id_.empty();
   }
 
   [[nodiscard]] const std::filesystem::path &get_root_path() const noexcept {
@@ -49,16 +51,16 @@ public:
   }
 
 private:
-  std::string access_key_id_;
-  // TODO: do not store secret_access_key in plain
-  std::string secret_access_key_;
   std::string bucket_;
   std::filesystem::path root_path_;
-  struct options_deleter {
-    void operator()(void *ptr) const noexcept;
-  };
-  using options_ptr = std::unique_ptr<void, options_deleter>;
-  options_ptr options_;
+  std::string current_name_;
+  boost::uuids::random_generator uuid_generator_;
+  std::filesystem::path current_tmp_file_path_;
+  std::fstream tmp_fstream_;
+
+  class aws_context;
+  using aws_context_ptr = std::unique_ptr<aws_context>;
+  aws_context_ptr impl_;
 
   [[nodiscard]] storage_object_name_container do_list_objects() override;
 
@@ -66,11 +68,17 @@ private:
   void do_put_object(std::string_view name,
                      util::const_byte_span content) override;
 
-  void do_open_stream(std::string_view name) override;
+  void do_open_stream(std::string_view name,
+                      storage_backend_open_stream_mode mode) override;
   void do_write_data_to_stream(util::const_byte_span data) override;
   void do_close_stream() override;
 
   [[nodiscard]] std::string do_get_description() const override;
+
+  [[nodiscard]] std::filesystem::path
+  get_object_path(std::string_view name) const;
+  [[nodiscard]] std::filesystem::path generate_tmp_file_path();
+  void close_stream_internal();
 };
 
 } // namespace binsrv

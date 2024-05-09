@@ -22,7 +22,7 @@
 
 namespace binsrv {
 
-class [[nodiscard]] cout_logger : public basic_logger {
+class [[nodiscard]] cout_logger final : public basic_logger {
 public:
   explicit cout_logger(log_severity min_level) : basic_logger{min_level} {}
 

@@ -56,6 +56,17 @@ storage::storage(basic_storage_backend_ptr backend)
   }
 }
 
+storage::~storage() {
+  if (!backend_->is_stream_open()) {
+    return;
+  }
+  // bugprone-empty-catch should not be that strict in destructors
+  try {
+    backend_->close_stream();
+  } catch (...) { // NOLINT(bugprone-empty-catch)
+  }
+}
+
 [[nodiscard]] bool
 storage::check_binlog_name(std::string_view binlog_name) noexcept {
   // TODO: parse binlog name into "base name" and "rotation number"
@@ -73,9 +84,11 @@ void storage::open_binlog(std::string_view binlog_name) {
         "cannot create a binlog with invalid name");
   }
 
-  backend_->open_stream(binlog_name);
+  const auto mode{position_ == 0ULL ? storage_backend_open_stream_mode::create
+                                    : storage_backend_open_stream_mode::append};
+  backend_->open_stream(binlog_name, mode);
 
-  if (position_ == 0ULL) {
+  if (mode == storage_backend_open_stream_mode::create) {
     // writing the magic binlog footprint only if this is a newly
     // created file
     backend_->write_data_to_stream(event::magic_binlog_payload);
