@@ -30,8 +30,9 @@
 namespace easymysql {
 
 struct raise_access {
-  static const connection::impl_ptr &get(const connection &conn) noexcept {
-    return conn.impl_;
+  static const connection::mysql_impl_ptr &
+  get(const connection &conn) noexcept {
+    return conn.mysql_impl_;
   }
 };
 
@@ -46,8 +47,7 @@ raise_core_error_from_connection(std::string_view user_message,
   // because otherwise the location will always point to this
   // particular line on this particular file regardless of the actual
   // location from where this function is called
-  auto *casted_impl =
-      connection_deimpl::get_const_casted(raise_access::get(conn));
+  auto *casted_impl = mysql_deimpl::get_const_casted(raise_access::get(conn));
   std::string message{};
   if (!user_message.empty()) {
     message += user_message;

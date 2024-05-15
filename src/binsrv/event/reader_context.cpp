@@ -39,8 +39,8 @@ void reader_context::process_event(const event &current_event) {
   const auto is_artificial{
       common_header.get_flags().has_element(flag_type::artificial)};
   const auto is_pseudo{common_header.get_next_event_position_raw() == 0U};
-  // artificial rotate events must always have enext event position and
-  // timestamp setto 0
+  // artificial rotate events must always have next event position and
+  // timestamp set to 0
   if (code == code_type::rotate && is_artificial) {
     if (common_header.get_timestamp_raw() != 0U) {
       util::exception_location().raise<std::logic_error>(

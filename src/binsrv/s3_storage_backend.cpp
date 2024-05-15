@@ -521,7 +521,11 @@ void s3_storage_backend::do_write_data_to_stream(util::const_byte_span data) {
   if (!tmp_fstream_.write(std::data(data_sv),
                           static_cast<std::streamoff>(std::size(data_sv)))) {
     util::exception_location().raise<std::runtime_error>(
-        "cannot write data to the underlying stream file");
+        "cannot write data to the temporary file for S3 object");
+  }
+  if (!tmp_fstream_.flush()) {
+    util::exception_location().raise<std::runtime_error>(
+        "cannot flush the temporary file for S3 object");
   }
 }
 
