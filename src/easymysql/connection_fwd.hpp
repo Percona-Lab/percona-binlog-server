@@ -18,6 +18,8 @@
 
 namespace easymysql {
 
+enum class connection_replication_mode_type { blocking, non_blocking };
+
 class connection;
 
 } // namespace easymysql

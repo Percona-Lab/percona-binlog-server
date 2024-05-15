@@ -22,7 +22,8 @@
 
 namespace easymysql {
 
-using connection_deimpl = util::deimpl<MYSQL>;
+using mysql_deimpl = util::deimpl<MYSQL>;
+using rpl_deimpl = util::deimpl<MYSQL_RPL>;
 
 } // namespace easymysql
 

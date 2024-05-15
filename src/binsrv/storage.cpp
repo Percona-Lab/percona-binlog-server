@@ -78,6 +78,10 @@ storage::check_binlog_name(std::string_view binlog_name) noexcept {
          std::string_view::npos;
 }
 
+[[nodiscard]] bool storage::is_binlog_open() const noexcept {
+  return backend_->is_stream_open();
+}
+
 void storage::open_binlog(std::string_view binlog_name) {
   if (!check_binlog_name(binlog_name)) {
     util::exception_location().raise<std::logic_error>(

@@ -185,6 +185,9 @@ set(source_files
   src/binsrv/main_config.hpp
   src/binsrv/main_config.cpp
 
+  src/binsrv/operation_mode_type_fwd.hpp
+  src/binsrv/operation_mode_type.hpp
+
   src/binsrv/s3_error_helpers_private.hpp
   src/binsrv/s3_error_helpers_private.cpp
   src/binsrv/s3_error.hpp
@@ -240,11 +243,6 @@ set(source_files
   src/easymysql/core_error_helpers_private.cpp
   src/easymysql/core_error.hpp
   src/easymysql/core_error.cpp
-
-  src/easymysql/binlog_deimpl_private.hpp
-  src/easymysql/binlog_fwd.hpp
-  src/easymysql/binlog.hpp
-  src/easymysql/binlog.cpp
 
   src/easymysql/connection_deimpl_private.hpp
   src/easymysql/connection_fwd.hpp

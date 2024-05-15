@@ -13,17 +13,29 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef EASYMYSQL_BINLOG_DEIMPL_PRIVATE_HPP
-#define EASYMYSQL_BINLOG_DEIMPL_PRIVATE_HPP
+#ifndef BINSRV_OPERATION_MODE_TYPE_FWD_HPP
+#define BINSRV_OPERATION_MODE_TYPE_FWD_HPP
 
-#include <mysql/mysql.h>
+#include <concepts>
+#include <cstdint>
+#include <iosfwd>
 
-#include "util/impl_helpers.hpp"
+namespace binsrv {
 
-namespace easymysql {
+enum class operation_mode_type : std::uint8_t;
 
-using binlog_deimpl = util::deimpl<MYSQL_RPL>;
+template <typename Char, typename Traits>
+  requires std::same_as<Char, char>
+std::basic_ostream<Char, Traits> &
+operator<<(std::basic_ostream<Char, Traits> &output,
+           operation_mode_type operation_mode);
 
-} // namespace easymysql
+template <typename Char, typename Traits>
+  requires std::same_as<Char, char>
+std::basic_istream<Char, Traits> &
+operator>>(std::basic_istream<Char, Traits> &input,
+           operation_mode_type &operation_mode);
 
-#endif // EASYMYSQL_BINLOG_DEIMPL_PRIVATE_HPP
+} // namespace binsrv
+
+#endif // BINSRV_OPERATION_MODE_TYPE_FWD_HPP

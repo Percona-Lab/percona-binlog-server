@@ -105,7 +105,10 @@ eval SET @binsrv_config_json = JSON_OBJECT(
      'host', @connection_host,
      'port', @@global.port,
      'user', @connection_user,
-     'password', ''
+     'password', '',
+     'connect_timeout', 20,
+     'read_timeout', 60,
+     'write_timeout', 60
   ),
   'storage', JSON_OBJECT(
      'uri', @storage_uri
@@ -144,7 +147,7 @@ if ($storage_backend == file)
 --echo *** Executing the Binlog Server utility to download all binlog data
 --echo *** from the server to the <BINSRV_STORAGE_PATH> directory (second
 --echo *** binlog is still open / in use).
---exec $BINSRV $binsrv_config_file_path > /dev/null
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
 
 --echo
 --echo *** Checking that the Binlog Server utility detected an empty storage
@@ -220,7 +223,7 @@ FLUSH BINARY LOGS;
 --echo *** Executing the Binlog Server utility one more time (the second
 --echo *** binlog is no longer open / in use). Here we should also continue
 --echo *** streaming binlog events from the last saved position.
---exec $BINSRV $binsrv_config_file_path > /dev/null
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
 
 --echo
 --echo *** Checking that the Binlog Server utility detected a previously

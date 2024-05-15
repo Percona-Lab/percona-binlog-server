@@ -28,10 +28,13 @@ namespace easymysql {
 struct [[nodiscard]] connection_config
     : util::nv_tuple<
           // clang-format off
-          util::nv<"host"    , std::string>,
-          util::nv<"port"    , std::uint16_t>,
-          util::nv<"user"    , std::string>,
-          util::nv<"password", std::string>
+          util::nv<"host"           , std::string>,
+          util::nv<"port"           , std::uint16_t>,
+          util::nv<"user"           , std::string>,
+          util::nv<"password"       , std::string>,
+          util::nv<"connect_timeout", std::uint32_t>,
+          util::nv<"read_timeout"   , std::uint32_t>,
+          util::nv<"write_timeout"  , std::uint32_t>
           // clang-format on
           > {
   [[nodiscard]] bool has_password() const noexcept {

@@ -167,6 +167,10 @@ void filesystem_storage_backend::do_write_data_to_stream(
     util::exception_location().raise<std::runtime_error>(
         "cannot write data to the underlying stream file");
   }
+  if (!ofs_.flush()) {
+    util::exception_location().raise<std::runtime_error>(
+        "cannot flush the underlying stream file");
+  }
   // TODO: make sure that the data is properly written to the disk
   //       use fsync() system call here
 }

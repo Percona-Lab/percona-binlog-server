@@ -44,16 +44,21 @@ public:
   // desctuctor is explicitly defined as default here to complete the rule of 5
   ~storage();
 
-  [[nodiscard]] std::string_view get_binlog_name() const noexcept {
-    return binlog_names_.empty() ? std::string_view{} : binlog_names_.back();
+  [[nodiscard]] bool has_current_binlog_name() const noexcept {
+    return !binlog_names_.empty();
   }
-  [[nodiscard]] std::uint64_t get_position() const noexcept {
+  [[nodiscard]] std::string_view get_current_binlog_name() const noexcept {
+    return has_current_binlog_name() ? binlog_names_.back()
+                                     : std::string_view{};
+  }
+  [[nodiscard]] std::uint64_t get_current_position() const noexcept {
     return position_;
   }
 
   [[nodiscard]] static bool
   check_binlog_name(std::string_view binlog_name) noexcept;
 
+  [[nodiscard]] bool is_binlog_open() const noexcept;
   void open_binlog(std::string_view binlog_name);
   void write_event(util::const_byte_span event_data);
   void close_binlog();
