@@ -61,6 +61,36 @@
 
 namespace {
 
+void log_connection_config_info(
+    binsrv::basic_logger &logger,
+    const easymysql::connection_config &connection_config) {
+  std::string msg;
+  msg = "mysql connection string: ";
+  msg += connection_config.get_connection_string();
+  logger.log(binsrv::log_severity::info, msg);
+
+  msg = "mysql connect timeout (seconds): ";
+  msg += std::to_string(connection_config.get<"connect_timeout">());
+  logger.log(binsrv::log_severity::info, msg);
+
+  msg = "mysql read timeout (seconds): ";
+  msg += std::to_string(connection_config.get<"read_timeout">());
+  logger.log(binsrv::log_severity::info, msg);
+
+  msg = "mysql write timeout (seconds): ";
+  msg += std::to_string(connection_config.get<"write_timeout">());
+  logger.log(binsrv::log_severity::info, msg);
+}
+
+void log_replication_info(
+    binsrv::basic_logger &logger,
+    const easymysql::replication_config &replication_config) {
+  std::string msg;
+  msg = "mysql replication server id: ";
+  msg += std::to_string(replication_config.get<"server_id">());
+  logger.log(binsrv::log_severity::info, msg);
+}
+
 void log_storage_info(binsrv::basic_logger &logger,
                       const binsrv::storage &storage) {
   std::string msg{};
@@ -324,7 +354,9 @@ int main(int argc, char *argv[]) {
     std::cerr << "usage: " << executable_name << " (fetch|pull))"
               << " <logger.level> <logger.file> <connection.host>"
                  " <connection.port> <connection.user> <connection.password>"
-                 " <connect_timeout> <read_timeout> <write_timeout>"
+                 " <connection.connect_timeout> <connection.read_timeout> "
+                 "<connection.write_timeout>"
+                 " <replication.server_id> <replication.idle_time>"
                  " <storage.uri>\n"
               << "       " << executable_name
               << " (fetch|pull)) <json_config_file>\n";
@@ -346,24 +378,22 @@ int main(int argc, char *argv[]) {
     logger->log(binsrv::log_severity::delimiter,
                 util::get_readable_command_line_arguments(cmd_args));
 
-    if (operation_mode == binsrv::operation_mode_type::fetch) {
-      logger->log(binsrv::log_severity::delimiter,
-                  "'fetch' operation mode specified");
-    } else if (operation_mode == binsrv::operation_mode_type::pull) {
-      logger->log(binsrv::log_severity::delimiter,
-                  "'pull' operation mode specified");
-    } else {
-      assert(false);
-    }
+    assert(operation_mode == binsrv::operation_mode_type::fetch ||
+           operation_mode == binsrv::operation_mode_type::pull);
+    std::string msg;
+    msg = '\'';
+    msg += boost::lexical_cast<std::string>(operation_mode);
+    msg += "' operation mode specified";
+    logger->log(binsrv::log_severity::delimiter, msg);
 
     binsrv::main_config_ptr config;
     if (number_of_cmd_args == 3U) {
       logger->log(binsrv::log_severity::delimiter,
-                  "reading connection configuration from the JSON file.");
+                  "reading configuration from the JSON file.");
       config = std::make_shared<binsrv::main_config>(cmd_args[2]);
     } else if (number_of_cmd_args == binsrv::main_config::flattened_size + 2U) {
       logger->log(binsrv::log_severity::delimiter,
-                  "reading connection configuration from the command line "
+                  "reading configuration from the command line "
                   "arguments.");
       config = std::make_shared<binsrv::main_config>(cmd_args.subspan(2U));
     } else {
@@ -388,12 +418,10 @@ int main(int argc, char *argv[]) {
                 "logging level set to \""s + std::string{log_level_label} +
                     '"');
 
-    std::string msg;
     const auto &storage_config = config->root().get<"storage">();
     auto storage_backend{
         binsrv::storage_backend_factory::create(storage_config)};
-    logger->log(binsrv::log_severity::info, "created binlog storage backend");
-    msg = "description: ";
+    msg = "created binlog storage backend: ";
     msg += storage_backend->get_description();
     logger->log(binsrv::log_severity::info, msg);
 
@@ -404,16 +432,13 @@ int main(int argc, char *argv[]) {
     log_storage_info(*logger, storage);
 
     const auto &connection_config = config->root().get<"connection">();
-    logger->log(binsrv::log_severity::info,
-                "mysql connection string: " +
-                    connection_config.get_connection_string());
+    log_connection_config_info(*logger, connection_config);
 
-    // TODO: put these parameters into configuration
-    static constexpr std::uint32_t default_server_id{42U};
-    static constexpr std::uint32_t default_idle_time_seconds{5U};
+    const auto &replication_config = config->root().get<"replication">();
+    log_replication_info(*logger, replication_config);
 
-    const auto server_id{default_server_id};
-    const auto idle_time_seconds{default_idle_time_seconds};
+    const auto server_id{replication_config.get<"server_id">()};
+    const auto idle_time_seconds{replication_config.get<"idle_time">()};
 
     const easymysql::library mysql_lib;
     logger->log(binsrv::log_severity::info, "initialized mysql client library");
@@ -428,9 +453,13 @@ int main(int argc, char *argv[]) {
       while (true) {
         std::this_thread::sleep_for(std::chrono::seconds(idle_time_seconds));
 
-        logger->log(binsrv::log_severity::info,
-                    "awoke after sleep and trying to reconnect (" +
-                        std::to_string(iteration_number) + ")");
+        msg = "awoke after sleeping for ";
+        msg += std::to_string(idle_time_seconds);
+        msg += " seconds and trying to reconnect (iteration ";
+        msg += std::to_string(iteration_number);
+        msg += ')';
+        logger->log(binsrv::log_severity::info, msg);
+
         receive_binlog_events(operation_mode, *logger, mysql_lib,
                               connection_config, server_id, storage);
         ++iteration_number;

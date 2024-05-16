@@ -110,6 +110,10 @@ eval SET @binsrv_config_json = JSON_OBJECT(
      'read_timeout', 60,
      'write_timeout', 60
   ),
+  'replication', JSON_OBJECT(
+     'server_id', @@server_id + 1,
+     'idle_time', 10
+  ),
   'storage', JSON_OBJECT(
      'uri', @storage_uri
   )
