@@ -256,6 +256,9 @@ set(source_files
   src/easymysql/library_fwd.hpp
   src/easymysql/library.hpp
   src/easymysql/library.cpp
+
+  src/easymysql/replication_config_fwd.hpp
+  src/easymysql/replication_config.hpp
 )
 
 add_executable(binlog_server ${source_files})

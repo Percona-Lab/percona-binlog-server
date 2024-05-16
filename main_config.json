@@ -12,6 +12,10 @@
     "read_timeout": 60,
     "write_timeout": 60
   },
+  "replication": {
+    "server_id": 42,
+    "idle_time": 10
+  },
   "storage": {
     "uri": "file:///home/user/vault"
   }
