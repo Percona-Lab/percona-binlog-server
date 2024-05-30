@@ -244,7 +244,7 @@ Currently we use the following mapping:
 - `<replication.idle_time>` - the number of seconds the utility will spend in disconnected mode between reconnection attempts.
 
 #### \<storage\> section
-- `<replication.uri>` - specifies the location (either local or remote) where the received binary logs should be stored
+- `<storage.uri>` - specifies the location (either local or remote) where the received binary logs should be stored
 
 ##### Storage URI format
 
