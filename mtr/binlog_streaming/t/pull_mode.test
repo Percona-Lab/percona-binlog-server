@@ -1,0 +1,156 @@
+# make sure that $BINSRV environment variable is set to the absolute path
+# of the Binlog Server utility before running this test
+if (!$BINSRV) {
+  --skip \$BINSRV environment variable must be set
+}
+
+--source include/count_sessions.inc
+
+# in case of --repeat=N, we need to start from a fresh binary log to make
+# this test deterministic
+--echo *** Resetting replication at the very beginning of the test.
+RESET MASTER;
+
+# identifying backend storage type ('file' or 's3')
+--source ../include/identify_storage_backend.inc
+
+# creating data directory, configuration file, etc.
+--let $binsrv_connect_timeout = 3
+--let $binsrv_read_timeout = 3
+--let $binsrv_idle_time = 1
+--source ../include/set_up_binsrv_environment.inc
+
+--echo
+--echo *** Starting Binlog Server Utility in background in pull mode
+--let $binsrv_pid_file = $MYSQL_TMP_DIR/binsrv_utility.pid
+--let $binsrv_spawn_cmd_line = $BINSRV pull $binsrv_config_file_path > /dev/null & echo \$! > $binsrv_pid_file
+
+--let EXPORTED_BINSRV_SPAWN_CMD_LINE = $binsrv_spawn_cmd_line
+--perl
+  use strict;
+  use warnings;
+  my $cmd = $ENV{'EXPORTED_BINSRV_SPAWN_CMD_LINE'};
+  system("$cmd");
+EOF
+
+--let $read_from_file = $binsrv_pid_file
+--source include/read_file_to_var.inc
+--let $binsrv_pid = $result
+
+--echo
+--echo *** Determining the first fresh binary log name.
+--let $first_binlog = query_get_value(SHOW MASTER STATUS, File, 1)
+
+--echo
+--echo *** Creating a simple table and filling it with some data.
+CREATE TABLE t1(id INT UNSIGNED NOT NULL AUTO_INCREMENT, PRIMARY KEY(id)) ENGINE=InnoDB;
+INSERT INTO t1 VALUES(DEFAULT);
+
+--echo
+--echo *** Restarting the server with a pause to test for the STOP event in
+--echo *** the binary log and reconnection logic.
+--source include/shutdown_mysqld.inc
+# Sleeping here deliberately so that the Binlog Server Utility would encounter
+# read timeout and would try to reconnect several times.
+--sleep 10
+--source include/start_mysqld.inc
+
+--echo
+--echo *** Determining the second binary log name.
+--let $second_binlog = query_get_value(SHOW MASTER STATUS, File, 1)
+
+--echo
+--echo *** Filling the table with some more data and dropping the table.
+INSERT INTO t1 VALUES(DEFAULT);
+DROP TABLE t1;
+
+--echo
+--echo *** FLUSHING the binlog one more time to make sure that the second one
+--echo *** is no longer open.
+FLUSH BINARY LOGS;
+
+--echo
+--echo *** Determining the third binary log name.
+--let $third_binlog = query_get_value(SHOW MASTER STATUS, File, 1)
+
+--echo
+--echo *** Waiting till Binlog Server Utility starts processing the third
+--echo *** binary log.
+# We grep the Binlog Server Utility log file in a loop until we encounter the
+# third binary log file name.
+--let $max_number_of_attempts = 60
+--let $iteration = 0
+while($iteration < $max_number_of_attempts)
+{
+  --error 0, 1
+  --exec grep --silent $third_binlog $binsrv_log_path
+  --let $grep_status = $__error
+  if ($grep_status == 0)
+  {
+    --let $iteration = $max_number_of_attempts
+  }
+  if ($grep_status != 0)
+  {
+    --sleep 1
+    --inc $iteration
+  }
+}
+if ($grep_status != 0)
+{
+  --die The Binlog Server Utility did not start processing the third binary log.
+}
+
+--echo
+--echo *** Sending SIGTERM signal to the Binlog Server Utility and waiting for
+--echo *** the process to terminate
+--replace_result $binsrv_pid <BINSRV_PID>
+--exec kill -s TERM $binsrv_pid
+--let EXPORTED_BINSRV_PID = $binsrv_pid
+
+--perl
+  use strict;
+  use warnings;
+  use Errno;
+  my $pid = $ENV{'EXPORTED_BINSRV_PID'};
+  my $not_present = (!kill(0, $pid) && $! == Errno::ESRCH);
+  while (!$not_present) {
+    sleep(1);
+    $not_present = (!kill(0, $pid) && $! == Errno::ESRCH);
+  }
+EOF
+
+--remove_file $binsrv_pid_file
+
+--echo
+--echo *** Checking that the Binlog Server utility detected an empty storage
+--let $assert_text = Binlog storage must be initialized on an empty directory
+--let $assert_file = $binsrv_log_path
+--let $assert_count = 1
+--let $assert_select = binlog storage initialized on an empty directory
+--source include/assert_grep.inc
+
+--echo
+--echo *** Comparing server and downloaded versions of the first binlog file
+--let $local_file = $binlog_base_dir/$first_binlog
+--let $storage_object = $binsrv_storage_path/$first_binlog
+--source ../include/diff_with_storage_object.inc
+
+--echo
+--echo *** Comparing server and downloaded versions of the second binlog file
+--let $local_file = $binlog_base_dir/$second_binlog
+--let $storage_object = $binsrv_storage_path/$second_binlog
+--source ../include/diff_with_storage_object.inc
+
+# cleaning up
+--source ../include/tear_down_binsrv_environment.inc
+
+# As the Binlog Server Utility interrupts the connection upon timeout, here we
+# need to close it on the MySQL server side as well in order to make sure that
+# MTR 'check-test' before and after the test produces the same output.
+--let $binlog_dump_connection_id = `SELECT ID FROM performance_schema.processlist WHERE COMMAND = 'Binlog Dump'`
+--replace_result $binlog_dump_connection_id <CONNECTION_ID>
+eval KILL CONNECTION $binlog_dump_connection_id;
+
+# Also, we use 'count_sessions' include files to make sure that 'Binlog Dump'
+# connection is indeed closed.
+--source include/wait_until_count_sessions.inc

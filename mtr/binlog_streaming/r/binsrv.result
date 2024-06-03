@@ -1,10 +1,7 @@
-*** Flushing binary logs at the very beginning of the test.
-FLUSH BINARY LOGS;
+*** Resetting replication at the very beginning of the test.
+RESET MASTER;
 
 *** Determining the first fresh binary log name.
-
-*** Purging all binary logs before the first fresh one.
-PURGE BINARY LOGS TO '<FIRST_BINLOG>';
 
 *** Creating a simple table and filling it with some data.
 CREATE TABLE t1(id INT UNSIGNED NOT NULL AUTO_INCREMENT, PRIMARY KEY(id)) ENGINE=InnoDB;

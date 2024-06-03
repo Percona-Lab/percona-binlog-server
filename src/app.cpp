@@ -228,7 +228,8 @@ void process_binlog_event(const binsrv::event::event &current_event,
   if (!is_artificial && !is_pseudo) {
     storage.write_event(portion);
   }
-  if (code == binsrv::event::code_type::rotate && !is_artificial) {
+  if ((code == binsrv::event::code_type::rotate && !is_artificial) ||
+      code == binsrv::event::code_type::stop) {
     storage.close_binlog();
   }
 }
@@ -457,15 +458,15 @@ int main(int argc, char *argv[]) {
                 "logging level set to \""s + std::string{log_level_label} +
                     '"');
 
-    // setting custom SIGINT and SIGTERM signals amd making sure that
-    // any other dependency library hasn't already changed them
-    [[maybe_unused]] auto const previous_sigterm_handler{
-        std::signal(SIGTERM, &custom_signal_handler)};
-    assert(previous_sigterm_handler == SIG_DFL);
-
-    [[maybe_unused]] auto const previous_sigint_handler{
-        std::signal(SIGINT, &custom_signal_handler)};
-    assert(previous_sigint_handler == SIG_DFL);
+    // setting custom SIGINT and SIGTERM signal handlers
+    if (std::signal(SIGTERM, &custom_signal_handler) == SIG_ERR) {
+      util::exception_location().raise<std::logic_error>(
+          "cannot set custom signal handler for SIGTERM");
+    }
+    if (std::signal(SIGINT, &custom_signal_handler) == SIG_ERR) {
+      util::exception_location().raise<std::logic_error>(
+          "cannot set custom signal handler for SIGINT");
+    }
 
     logger->log(binsrv::log_severity::info,
                 "set custom handlers for SIGINT and SIGTERM signals");

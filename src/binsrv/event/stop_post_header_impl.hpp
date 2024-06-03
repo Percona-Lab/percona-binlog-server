@@ -13,17 +13,20 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef BINSRV_EVENT_EMPTY_BODY_FWD_HPP
-#define BINSRV_EVENT_EMPTY_BODY_FWD_HPP
+#ifndef BINSRV_EVENT_STOP_POST_HEADER_IMPL_HPP
+#define BINSRV_EVENT_STOP_POST_HEADER_IMPL_HPP
 
-#include <iosfwd>
+#include "binsrv/event/stop_post_header_impl_fwd.hpp" // IWYU pragma: export
+
+#include "binsrv/event/empty_post_header.hpp"
 
 namespace binsrv::event {
 
-class empty_body;
-
-std::ostream &operator<<(std::ostream &output, const empty_body &obj);
+template <> class [[nodiscard]] generic_post_header_impl<code_type::stop> {
+public:
+  using redirect_type = empty_post_header;
+};
 
 } // namespace binsrv::event
 
-#endif // BINSRV_EVENT_EMPTY_BODY_FWD_HPP
+#endif // BINSRV_EVENT_STOP_POST_HEADER_IMPL_HPP

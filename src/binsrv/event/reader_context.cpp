@@ -93,14 +93,23 @@ void reader_context::process_event(const event &current_event) {
           "header");
     }
 
-    // normal (non-artificial) event is expected to be the last event in
+    // normal (non-artificial) ROTATE event is expected to be the last event in
     // binlog - so we reset the current position here
+    position_ = 0U;
+  }
+  if (code == code_type::stop) {
+    // alternatively, the last event in binlog may be not only non-artificial
+    // ROTATE (in case when admin executed FLUSH BINARY LOGS) but STOP (when
+    // the server was shut down)
+    // in this latter case, we also reset the position in order to indicate
+    // the end of the current cycle and expect new ROTATE(artificial) and
+    // FORMAT_DESCRIPTION
     position_ = 0U;
   }
 
   // TODO: add some kind of state machine where the expected sequence of events
   //       is the following -
-  //       (ROTATE(artificial) FORMAT_DESCRIPTION <ANY>* ROTATE)*
+  //       (ROTATE(artificial) FORMAT_DESCRIPTION <ANY>* (ROTATE|STOP))*
   if (code == code_type::format_description) {
     const auto &post_header{
         current_event.get_post_header<code_type::format_description>()};

@@ -40,6 +40,8 @@
 #include "binsrv/event/reader_context_fwd.hpp"
 #include "binsrv/event/rotate_body_impl.hpp"        // IWYU pragma: export
 #include "binsrv/event/rotate_post_header_impl.hpp" // IWYU pragma: export
+#include "binsrv/event/stop_body_impl.hpp"          // IWYU pragma: export
+#include "binsrv/event/stop_post_header_impl.hpp"   // IWYU pragma: export
 #include "binsrv/event/unknown_body.hpp"            // IWYU pragma: export
 #include "binsrv/event/unknown_post_header.hpp"     // IWYU pragma: export
 
