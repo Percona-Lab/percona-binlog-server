@@ -27,7 +27,6 @@
 
 #include "binsrv/event/checksum_algorithm_type.hpp"
 #include "binsrv/event/code_type.hpp"
-#include "binsrv/event/flag_type.hpp"
 #include "binsrv/event/generic_body.hpp"
 #include "binsrv/event/generic_post_header.hpp"
 #include "binsrv/event/protocol_traits_fwd.hpp"
@@ -59,18 +58,12 @@ event::event(reader_context &context, util::const_byte_span portion)
     // format_description_events always include event footers with checksums
     footer_size = footer::size_in_bytes;
   } else {
-    if (context.has_fde_processed()) {
-      // if format_description event has already been encountered, we determine
-      // whether there is a footer in the event from it
-      footer_size = (context.get_current_checksum_algorithm() ==
-                             checksum_algorithm_type::crc32
-                         ? footer::size_in_bytes
-                         : 0U);
-    } else {
-      // we get in this branch only for the very first artificial rotate event
-      // and in this case it does not include the footer
-      footer_size = 0U;
-    }
+    // we determine whether there is a footer in the event from the
+    // reader_context
+    footer_size = (context.get_current_checksum_algorithm() ==
+                           checksum_algorithm_type::crc32
+                       ? footer::size_in_bytes
+                       : 0U);
   }
 
   const std::size_t event_size = std::size(portion);
@@ -80,31 +73,8 @@ event::event(reader_context &context, util::const_byte_span portion)
         "header");
   }
   std::size_t post_header_size{0U};
-  if (context.has_fde_processed()) {
-    // if format_description event has already been encountered in the stream,
-    // we take post-header length from it
-    post_header_size = context.get_current_post_header_length(code);
-  } else {
-    // we expect that we can receive only 2 events before there is a
-    // format_description event we can refer to: rotate (with artificial
-    // flag) and format description event itself
-    post_header_size = get_expected_post_header_length(code);
-    switch (code) {
-    case code_type::rotate:
-      if (!common_header_.get_flags().has_element(flag_type::artificial)) {
-        util::exception_location().raise<std::logic_error>(
-            "rotate event without preceding format_description event must have "
-            "'artificial' flag set");
-      }
-      break;
-    case code_type::format_description:
-      break;
-    default:
-      util::exception_location().raise<std::logic_error>(
-          "this type of event must be preceded by a format_description event");
-    }
-    assert(post_header_size != unspecified_post_header_length);
-  }
+  post_header_size = context.get_current_post_header_length(code);
+  assert(post_header_size != unspecified_post_header_length);
 
   const std::size_t group_size =
       common_header::size_in_bytes + post_header_size + footer_size;

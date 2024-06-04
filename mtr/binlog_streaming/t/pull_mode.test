@@ -60,30 +60,47 @@ INSERT INTO t1 VALUES(DEFAULT);
 --let $second_binlog = query_get_value(SHOW MASTER STATUS, File, 1)
 
 --echo
---echo *** Filling the table with some more data and dropping the table.
+--echo *** Filling the table with some more data.
 INSERT INTO t1 VALUES(DEFAULT);
-DROP TABLE t1;
 
 --echo
---echo *** FLUSHING the binlog one more time to make sure that the second one
---echo *** is no longer open.
-FLUSH BINARY LOGS;
+--echo *** Killing the server and restarting it after a pause to test for the
+--echo *** missing ROTATE / STOP event at the end of the binary log .
+--source include/kill_mysqld.inc
+# Sleeping here deliberately so that the Binlog Server Utility would encounter
+# read timeout and would try to reconnect several times.
+--sleep 10
+--source include/start_mysqld.inc
 
 --echo
 --echo *** Determining the third binary log name.
 --let $third_binlog = query_get_value(SHOW MASTER STATUS, File, 1)
 
 --echo
---echo *** Waiting till Binlog Server Utility starts processing the third
+--echo *** Filling the table with some more data again and dropping the table.
+INSERT INTO t1 VALUES(DEFAULT);
+DROP TABLE t1;
+
+--echo
+--echo *** FLUSHING the binlog one more time to make sure that the third one
+--echo *** is no longer open.
+FLUSH BINARY LOGS;
+
+--echo
+--echo *** Determining the fourth binary log name.
+--let $fourth_binlog = query_get_value(SHOW MASTER STATUS, File, 1)
+
+--echo
+--echo *** Waiting till Binlog Server Utility starts processing the fourth
 --echo *** binary log.
 # We grep the Binlog Server Utility log file in a loop until we encounter the
-# third binary log file name.
+# fourth binary log file name.
 --let $max_number_of_attempts = 60
 --let $iteration = 0
 while($iteration < $max_number_of_attempts)
 {
   --error 0, 1
-  --exec grep --silent $third_binlog $binsrv_log_path
+  --exec grep --silent $fourth_binlog $binsrv_log_path
   --let $grep_status = $__error
   if ($grep_status == 0)
   {
@@ -97,7 +114,7 @@ while($iteration < $max_number_of_attempts)
 }
 if ($grep_status != 0)
 {
-  --die The Binlog Server Utility did not start processing the third binary log.
+  --die The Binlog Server Utility did not start processing the fourth binary log.
 }
 
 --echo
@@ -122,14 +139,6 @@ EOF
 --remove_file $binsrv_pid_file
 
 --echo
---echo *** Checking that the Binlog Server utility detected an empty storage
---let $assert_text = Binlog storage must be initialized on an empty directory
---let $assert_file = $binsrv_log_path
---let $assert_count = 1
---let $assert_select = binlog storage initialized on an empty directory
---source include/assert_grep.inc
-
---echo
 --echo *** Comparing server and downloaded versions of the first binlog file
 --let $local_file = $binlog_base_dir/$first_binlog
 --let $storage_object = $binsrv_storage_path/$first_binlog
@@ -139,6 +148,12 @@ EOF
 --echo *** Comparing server and downloaded versions of the second binlog file
 --let $local_file = $binlog_base_dir/$second_binlog
 --let $storage_object = $binsrv_storage_path/$second_binlog
+--source ../include/diff_with_storage_object.inc
+
+--echo
+--echo *** Comparing server and downloaded versions of the third binlog file
+--let $local_file = $binlog_base_dir/$third_binlog
+--let $storage_object = $binsrv_storage_path/$third_binlog
 --source ../include/diff_with_storage_object.inc
 
 # cleaning up

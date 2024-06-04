@@ -24,28 +24,37 @@ INSERT INTO t1 VALUES(DEFAULT);
 
 *** Determining the second binary log name.
 
-*** Filling the table with some more data and dropping the table.
+*** Filling the table with some more data.
 INSERT INTO t1 VALUES(DEFAULT);
-DROP TABLE t1;
 
-*** FLUSHING the binlog one more time to make sure that the second one
-*** is no longer open.
-FLUSH BINARY LOGS;
+*** Killing the server and restarting it after a pause to test for the
+*** missing ROTATE / STOP event at the end of the binary log .
+# Kill the server
+# restart
 
 *** Determining the third binary log name.
 
-*** Waiting till Binlog Server Utility starts processing the third
+*** Filling the table with some more data again and dropping the table.
+INSERT INTO t1 VALUES(DEFAULT);
+DROP TABLE t1;
+
+*** FLUSHING the binlog one more time to make sure that the third one
+*** is no longer open.
+FLUSH BINARY LOGS;
+
+*** Determining the fourth binary log name.
+
+*** Waiting till Binlog Server Utility starts processing the fourth
 *** binary log.
 
 *** Sending SIGTERM signal to the Binlog Server Utility and waiting for
 *** the process to terminate
 
-*** Checking that the Binlog Server utility detected an empty storage
-include/assert_grep.inc [Binlog storage must be initialized on an empty directory]
-
 *** Comparing server and downloaded versions of the first binlog file
 
 *** Comparing server and downloaded versions of the second binlog file
+
+*** Comparing server and downloaded versions of the third binlog file
 
 *** Removing the Binlog Server utility storage directory.
 

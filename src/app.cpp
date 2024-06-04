@@ -45,6 +45,7 @@
 #include "binsrv/storage.hpp"
 #include "binsrv/storage_backend_factory.hpp"
 
+#include "binsrv/event//checksum_algorithm_type.hpp"
 #include "binsrv/event/code_type.hpp"
 #include "binsrv/event/event.hpp"
 #include "binsrv/event/flag_type.hpp"
@@ -222,6 +223,12 @@ void process_binlog_event(const binsrv::event::event &current_event,
 
       skip_open_binlog = false;
     } else {
+      // in case when the server was not shut down properly, it won't have
+      // ROTATE or STOP event as the last one in the binlog, so here we
+      // handle this case by closing the old binlog and opening a new one
+      if (storage.is_binlog_open()) {
+        storage.close_binlog();
+      }
       storage.open_binlog(current_rotate_body.get_binlog());
     }
   }
@@ -291,7 +298,11 @@ void receive_binlog_events(
 
   util::const_byte_span portion;
 
-  binsrv::event::reader_context context{};
+  // TODO: change this checksum algorithm to the value of the
+  //       @source_binlog_checksum variable that we set in the
+  //       'connection::switch_to_replication()'
+  binsrv::event::reader_context context{
+      binsrv::event::checksum_algorithm_type::off};
 
   // if binlog is still open, there is no sense to close it and re-open
   // instead, we will just instruct this loop to process the
