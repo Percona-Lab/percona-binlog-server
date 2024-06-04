@@ -1,0 +1,55 @@
+*** Resetting replication at the very beginning of the test.
+RESET MASTER;
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+
+*** Starting Binlog Server Utility in background in pull mode
+include/read_file_to_var.inc
+
+*** Determining the first fresh binary log name.
+
+*** Creating a simple table and filling it with some data.
+CREATE TABLE t1(id INT UNSIGNED NOT NULL AUTO_INCREMENT, PRIMARY KEY(id)) ENGINE=InnoDB;
+INSERT INTO t1 VALUES(DEFAULT);
+
+*** Restarting the server with a pause to test for the STOP event in
+*** the binary log and reconnection logic.
+# restart
+
+*** Determining the second binary log name.
+
+*** Filling the table with some more data and dropping the table.
+INSERT INTO t1 VALUES(DEFAULT);
+DROP TABLE t1;
+
+*** FLUSHING the binlog one more time to make sure that the second one
+*** is no longer open.
+FLUSH BINARY LOGS;
+
+*** Determining the third binary log name.
+
+*** Waiting till Binlog Server Utility starts processing the third
+*** binary log.
+
+*** Sending SIGTERM signal to the Binlog Server Utility and waiting for
+*** the process to terminate
+
+*** Checking that the Binlog Server utility detected an empty storage
+include/assert_grep.inc [Binlog storage must be initialized on an empty directory]
+
+*** Comparing server and downloaded versions of the first binlog file
+
+*** Comparing server and downloaded versions of the second binlog file
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.
+KILL CONNECTION <CONNECTION_ID>;

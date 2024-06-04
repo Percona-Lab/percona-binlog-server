@@ -2,18 +2,18 @@
 # Compares a file on a local filesystem with an object from the backend storage.
 #
 # Usage:
-# --let $storage_backend = file
-# --let $local_file = $MYSQL_TMP_DIR/first
-# --let $storage_object = $MYSQL_TMP_DIR/second
-# --source diff_with_storage_object.inc
+#   --let $storage_backend = file
+#   --let $local_file = $MYSQL_TMP_DIR/first
+#   --let $storage_object = $MYSQL_TMP_DIR/second
+#   --source diff_with_storage_object.inc
 #
 # or
-# --let $aws_cli = AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... aws
-# --let $storage_backend = s3
-# --let $local_file = $MYSQL_TMP_DIR/first
-# --let $aws_s3_bucket = my-bucket
-# --let $storage_object = /vault/second
-# --source diff_with_storage_object.inc
+#   --let $aws_cli = AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... aws
+#   --let $storage_backend = s3
+#   --let $local_file = $MYSQL_TMP_DIR/first
+#   --let $aws_s3_bucket = my-bucket
+#   --let $storage_object = /vault/second
+#   --source diff_with_storage_object.inc
 #
 # $storage_backend - determines stortage backend type (either 'file' or 'fs')
 # $aws_cli         - path to AWS command line interface (cli) tools with AWS_ACCESS_KEY_ID /

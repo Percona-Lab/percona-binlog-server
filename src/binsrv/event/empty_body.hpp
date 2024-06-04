@@ -16,7 +16,7 @@
 #ifndef BINSRV_EVENT_EMPTY_BODY_HPP
 #define BINSRV_EVENT_EMPTY_BODY_HPP
 
-#include "binsrv/event/empty_post_header_fwd.hpp" // IWYU pragma: export
+#include "binsrv/event/empty_body_fwd.hpp" // IWYU pragma: export
 
 #include "util/byte_span_fwd.hpp"
 

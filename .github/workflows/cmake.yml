@@ -96,7 +96,7 @@ jobs:
             aws_cmake_flags: "-DCMAKE_CXX_FLAGS_INIT=-stdlib=libc++",
             boost_cmake_flags: "-DCMAKE_CXX_FLAGS_INIT=-stdlib=libc++",
             label: "Debug-clang17",
-            run_clang_tidy: true,
+            run_clang_tidy: true
           }
         - {
             name: "Clang 17 RelWithDebInfo",
@@ -107,7 +107,7 @@ jobs:
             aws_cmake_flags: "-DCMAKE_CXX_FLAGS_INIT=-stdlib=libc++",
             boost_cmake_flags: "-DCMAKE_CXX_FLAGS_INIT=-stdlib=libc++",
             label: "RelWithDebInfo-clang17",
-            run_clang_tidy: true,
+            run_clang_tidy: true
           }
         - {
             name: "Clang 17 ASan",
@@ -118,9 +118,13 @@ jobs:
             aws_cmake_flags: "-DCMAKE_CXX_FLAGS_INIT=-stdlib=libc++ -DENABLE_ADDRESS_SANITIZER=ON",
             boost_cmake_flags: "-DCMAKE_CXX_FLAGS_INIT=\"-stdlib=libc++ -fsanitize=address\"",
             sanitizer_cmake_flags: "-DWITH_ASAN=ON",
-            label: "ASan-clang17",
-            run_mtr: true,
-            mtr_options: "--sanitize"
+            label: "ASan-clang17"
+            # TODO: re-enable running MTR under "Clang 17 ASan"
+            #   run_mtr: true,
+            #   mtr_options: "--sanitize"
+            # when "-stdlib=libc++ -fsanitize=address" alloc-dealloc-mismatch issue is fixed
+            # (https://github.com/llvm/llvm-project/issues/59432)
+            # or CI is upgraded to Clang 18
           }
 
     steps:
