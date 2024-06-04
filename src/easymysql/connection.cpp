@@ -163,7 +163,7 @@ connection &connection::operator=(connection &&other) noexcept {
 }
 
 // default destructor is OK as 'mysql_impl_' and 'rpl_impl_' will be
-// destrojed in the order reverse to how they were declared, e.g.
+// destroyed in the order reverse to how they were declared, e.g.
 // 'rpl_impl_' first, 'mysql_impl_' second
 connection::~connection() = default;
 

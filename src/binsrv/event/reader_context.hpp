@@ -19,6 +19,7 @@
 #include "binsrv/event/reader_context_fwd.hpp" // IWYU pragma: export
 
 #include "binsrv/event/checksum_algorithm_type_fwd.hpp"
+#include "binsrv/event/common_header_fwd.hpp"
 #include "binsrv/event/event_fwd.hpp"
 #include "binsrv/event/protocol_traits.hpp"
 
@@ -28,11 +29,8 @@ class [[nodiscard]] reader_context {
   friend class event;
 
 public:
-  reader_context();
+  explicit reader_context(checksum_algorithm_type checksum_algorithm);
 
-  [[nodiscard]] bool has_fde_processed() const noexcept {
-    return fde_processed_;
-  }
   [[nodiscard]] checksum_algorithm_type
   get_current_checksum_algorithm() const noexcept;
   [[nodiscard]] std::size_t
@@ -42,13 +40,25 @@ public:
   }
 
 private:
-  bool fde_processed_{false};
-  // NOLINTNEXTLINE(cppcoreguidelines-use-default-member-init,modernize-use-default-member-init)
+  // this class implements the logic of the following state machine
+  // (ROTATE(artificial) FORMAT_DESCRIPTION <ANY>* (ROTATE|STOP)?)+
+  enum class state_type {
+    initial,
+    rotate_artificial_processed,
+    format_description_processed
+  };
+  state_type state_{state_type::initial};
   checksum_algorithm_type checksum_algorithm_;
   post_header_length_container post_header_lengths_{};
   std::uint32_t position_{0U};
 
   void process_event(const event &current_event);
+  [[nodiscard]] bool process_event_in_initial_state(const event &current_event);
+  [[nodiscard]] bool process_event_in_rotate_artificial_processed_state(
+      const event &current_event);
+  [[nodiscard]] bool process_event_in_format_description_processed_state(
+      const event &current_event);
+  void validate_position_and_advance(const common_header &common_header);
 };
 
 } // namespace binsrv::event
