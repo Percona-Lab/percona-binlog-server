@@ -17,7 +17,7 @@ Currently prebuilt binaries are not available.
 - [CMake](https://cmake.org/) 3.20.0+
 - [Clang](https://clang.llvm.org/) (`clang-15` / `clang-16` / `clang-17`) or [GCC](https://gcc.gnu.org/) (`gcc-12` / `gcc-13` / `gcc-14`)
 - [Boost libraries](https://www.boost.org/) 1.84.0 (git version, not the source tarball)
-- [MySQL client library](https://dev.mysql.com/doc/c-api/8.0/en/) 8.0.x (`libmysql`)
+- [MySQL client library](https://dev.mysql.com/doc/c-api/8.0/en/) 8.0.x (`libmysqlclient`)
 - [CURL library](https://curl.se/libcurl/) (`libcurl`) 8.6.0+
 - [AWS SDK for C++](https://aws.amazon.com/sdk-for-cpp/) 1.11.286
 
@@ -231,7 +231,7 @@ Currently we use the following mapping:
 - `trace` - used to print source file name / line number / position from caught exceptions and to print raw data (hex dumps) of binary log events.
 
 #### \<connection\> section
-- `<connection.host>` - MySQL server host name (e.g. `127.0.0.1`, `localhost`, `192.168.0.100`, `dbsrv.mydomain.com`, etc.).
+- `<connection.host>` - MySQL server host name (e.g. `127.0.0.1`, `192.168.0.100`, `dbsrv.mydomain.com`, etc.). Please do not use `localhost` here as it will be interpreted differently by the `libmysqlclient` and will instruct the library to use Unix socket file for connection instead of TCP protocol - use `127.0.0.1` instead (see [this page](https://dev.mysql.com/doc/c-api/8.0/en/mysql-real-connect.html) for more details).
 - `<connection.port>` - MySQL server port (e.g. `3306` - the default MySQL server port).
 - `<connection.user>` - the name of the MySQL user that has [REPLICATION SLAVE](https://dev.mysql.com/doc/refman/8.0/en/replication-howto-repuser.html) privilege.
 - `<connection.password>` - the password for this MySQL user
