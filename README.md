@@ -55,9 +55,9 @@ Make sure that versions of the `CC` and `CXX` compilers match.
 ###### Getting Boost Libraries source
 
 ```bash
-git clone --recurse-submodules --jobs=8 https://github.com/boostorg/boost.git
+git clone --recurse-submodules -b boost-1.84.0 --jobs=8 https://github.com/boostorg/boost.git
 cd boost
-git checkout --recurse-submodules -b required_release boost-1.84.0
+git switch -c required_release
 ```
 
 ###### Configuring Boost Libraries
@@ -93,7 +93,7 @@ cmake --install ./boost-build-${BUILD_CONFIGURATION} --config ${BUILD_CONFIGURAT
 ```bash
 git clone --recurse-submodules --jobs=8 https://github.com/aws/aws-sdk-cpp
 cd aws-sdk-cpp
-git checkout --recurse-submodules -b required_release 1.11.286
+git switch -c required_release
 ```
 
 ###### Configuring AWS SDK CPP Libraries

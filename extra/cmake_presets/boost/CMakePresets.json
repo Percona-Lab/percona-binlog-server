@@ -1,0 +1,99 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 21,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "common_hidden",
+      "hidden": true,
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceParentDir}/${sourceDirName}-build-${presetName}",
+      "installDir": "${sourceParentDir}/${sourceDirName}-install-${presetName}",
+      "cacheVariables": {
+        "CMAKE_CXX_FLAGS_INIT": "$env{ASAN_FLAGS} $env{STDLIB_FLAGS}",
+        "BUILD_SHARED_LIBS": "OFF",
+        "BUILD_TESTING": "OFF"
+      }
+    },
+
+    {
+      "name": "debug_hidden",
+      "hidden": true,
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "release_hidden",
+      "hidden": true,
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo"
+      }
+    },
+    {
+      "name": "asan_hidden",
+      "hidden": true,
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      },
+      "environment": {
+        "ASAN_FLAGS": "-fsanitize=address"
+      }
+    },
+
+    {
+      "name": "gcc13_hidden",
+      "hidden": true,
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc-13",
+        "CMAKE_CXX_COMPILER": "g++-13"
+      }
+    },
+    {
+      "name": "clang17_hidden",
+      "hidden": true,
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang-17",
+        "CMAKE_CXX_COMPILER": "clang++-17"
+      },
+      "environment": {
+        "STDLIB_FLAGS": "-stdlib=libc++"
+      }
+    },
+
+    {
+      "name": "debug_gcc13",
+      "inherits": [ "common_hidden", "debug_hidden", "gcc13_hidden" ],
+      "displayName": "GCC 13 Debug"
+    },
+    {
+      "name": "release_gcc13",
+      "inherits": [ "common_hidden", "release_hidden", "gcc13_hidden" ],
+      "displayName": "GCC 13 RelWithDebInfo"
+    },
+    {
+      "name": "asan_gcc13",
+      "inherits": [ "common_hidden", "asan_hidden", "gcc13_hidden" ],
+      "displayName": "GCC 13 ASan"
+    },
+
+    {
+      "name": "debug_clang17",
+      "inherits": [ "common_hidden", "debug_hidden", "clang17_hidden" ],
+      "displayName": "Clang 17 Debug"
+    },
+    {
+      "name": "release_clang17",
+      "inherits": [ "common_hidden", "release_hidden", "clang17_hidden" ],
+      "displayName": "Clang 17 RelWithDebInfo"
+    },
+    {
+      "name": "asan_clang17",
+      "inherits": [ "common_hidden", "asan_hidden", "clang17_hidden" ],
+      "displayName": "Clang 17 ASan"
+    }
+  ]
+}
