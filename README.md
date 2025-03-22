@@ -32,58 +32,45 @@ Every next step will assume that we are currently inside the `ws` directory unle
 
 ##### Defining environment variables affecting build configurations
 
-Define `BUILD_CONFIGURATION` depending on whether you want to build `Debug` or `Release` version of the library.
+Define `BUILD_PRESET` depending on whether you want to build in `Debug`, `Release`, or `Debug` with `Address Sanitizer` configuration and which toolset you would like to use.
 
 ```bash
-export BUILD_CONFIGURATION=Debug
+export BUILD_PRESET=<configuration>_<toolset>
 ```
-or
+The supported values for `<configuration>` are `debug`, `release`, and `asan`.
+The supported values for `<toolset>` are `gcc13` and  `clang17`.
+
+For instance, if you want to build in `RelWithDebInfo` configuration using `GCC 13`, please specify
 ```bash
-export BUILD_CONFIGURATION=RelWithDebInfo
+export BUILD_PRESET=release_gcc13
 ```
-Define `BUILD_CC` and `BUILD_CXX` depending on the compiler you wish to use.
-```bash
-export BUILD_CC=gcc
-export BUILD_CXX=g++
-```
-Instead of `gcc` you may use `gcc-12` / `gcc-13` / `gcc-14` or `clang-15` / `clang-16` / `clang-17`.
-Instead of `g++` you may use `g++-12` / `g++-13` / `g++-14` or `clang++-15` / `clang++-16` / `clang++-17`.
-Make sure that versions of the `CC` and `CXX` compilers match.
 
 ##### Boost Libraries
 
 ###### Getting Boost Libraries source
 
 ```bash
-git clone --recurse-submodules --jobs=8 https://github.com/boostorg/boost.git
+git clone --recurse-submodules -b boost-1.84.0 --jobs=8 https://github.com/boostorg/boost.git
 cd boost
-git checkout --recurse-submodules -b required_release boost-1.84.0
+git switch -c required_release
 ```
 
 ###### Configuring Boost Libraries
 
 ```bash
-cmake \
-  -B ./boost-build-${BUILD_CONFIGURATION} \
-  -S ./boost \
-  -DCMAKE_INSTALL_PREFIX=./boost-install-${BUILD_CONFIGURATION} \
-  -DCMAKE_BUILD_TYPE=${BUILD_CONFIGURATION} \
-  -DCMAKE_C_COMPILER=${BUILD_CC} \
-  -DCMAKE_CXX_COMPILER=${BUILD_CXX} \
-  -DBUILD_SHARED_LIBS=OFF \
-  -DBUILD_TESTING=OFF
+cmake ./boost --preset ${BUILD_PRESET}
 ```
 
 ###### Building Boost Libraries
 
 ```bash
-cmake --build ./boost-build-${BUILD_CONFIGURATION} --config ${BUILD_CONFIGURATION} --parallel
+cmake --build ./boost-build-${BUILD_PRESET} --parallel
 ```
 
 ###### Installing Boost Libraries
 
 ```bash
-cmake --install ./boost-build-${BUILD_CONFIGURATION} --config ${BUILD_CONFIGURATION}
+cmake --install ./boost-build-${BUILD_PRESET}
 ```
 
 ##### AWS SDK CPP Libraries
@@ -93,38 +80,25 @@ cmake --install ./boost-build-${BUILD_CONFIGURATION} --config ${BUILD_CONFIGURAT
 ```bash
 git clone --recurse-submodules --jobs=8 https://github.com/aws/aws-sdk-cpp
 cd aws-sdk-cpp
-git checkout --recurse-submodules -b required_release 1.11.286
+git switch -c required_release
 ```
 
 ###### Configuring AWS SDK CPP Libraries
 
 ```bash
-cmake \
-  -B ./aws-sdk-cpp-build-${BUILD_CONFIGURATION} \
-  -S ./aws-sdk-cpp \
-  -DCMAKE_INSTALL_PREFIX=./aws-sdk-cpp-install-${BUILD_CONFIGURATION} \
-  -DCMAKE_BUILD_TYPE=${BUILD_CONFIGURATION} \
-  -DCMAKE_C_COMPILER=${BUILD_CC} \
-  -DCMAKE_CXX_COMPILER=${BUILD_CXX} \
-  -DCPP_STANDARD=20 \
-  -DENABLE_UNITY_BUILD=ON \
-  -DBUILD_SHARED_LIBS=OFF \
-  -DFORCE_SHARED_CRT=OFF \
-  -DENABLE_TESTING=OFF \
-  -DAUTORUN_UNIT_TESTS=OFF \
-  -DBUILD_ONLY=s3-crt
+cmake ./aws-sdk-cpp --preset ${BUILD_PRESET}
 ```
 
 ###### Building AWS SDK CPP Libraries
 
 ```bash
-cmake --build ./aws-sdk-cpp-build-${BUILD_CONFIGURATION} --config ${BUILD_CONFIGURATION} --parallel
+cmake --build ./aws-sdk-cpp-build-${BUILD_PRESET} --parallel
 ```
 
 ###### Installing AWS SDK CPP Libraries
 
 ```bash
-cmake --install ./aws-sdk-cpp-build-${BUILD_CONFIGURATION} --config ${BUILD_CONFIGURATION}
+cmake --install ./aws-sdk-cpp-build-${BUILD_PRESET}
 ```
 ##### Main Application
 
@@ -137,26 +111,18 @@ git clone https://github.com/Percona-Lab/percona-binlog-server.git
 ###### Configuring Main Application
 
 ```bash
-cmake  \
-  -B ./percona-binlog-server-build-${BUILD_CONFIGURATION} \
-  -S ./percona-binlog-server \
-  -DCMAKE_BUILD_TYPE=${BUILD_CONFIGURATION} \
-  -DCMAKE_C_COMPILER=${BUILD_CC} \
-  -DCMAKE_CXX_COMPILER=${BUILD_CXX} \
-  -DCPP_STANDARD=20 \
-  -DCMAKE_PREFIX_PATH=${PWD}/aws-sdk-cpp-install-${BUILD_CONFIGURATION} \
-  -DBoost_ROOT=${PWD}/boost-install-${BUILD_CONFIGURATION}
+cmake ./percona-binlog-server --preset ${BUILD_PRESET}
 ```
 
 ###### Building Main Application
 
 ```bash
-cmake --build ./percona-binlog-server-build-${BUILD_CONFIGURATION} --config ${BUILD_CONFIGURATION} --parallel
+cmake --build ./percona-binlog-server-build-${BUILD_PRESET} --parallel
 ```
 
 ###### Main Application binary
 
-The result binary can be found under the following path `ws/percona-binlog-server-build-${BUILD_CONFIGURATION}/binlog_server`
+The result binary can be found under the following path `ws/percona-binlog-server-build-${BUILD_PRESET}/binlog_server`
 
 ## Usage
 
