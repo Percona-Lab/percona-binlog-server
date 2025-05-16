@@ -16,7 +16,7 @@ env:
 
 jobs:
   formatting-check:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     name: Formatting checks
     steps:
       - name: Cheking out source tree
@@ -37,24 +37,22 @@ jobs:
 
       - name: Install dependencies on ubuntu
         run: |
-          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc
-          echo deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-17 main | sudo tee /etc/apt/sources.list.d/llvm.list
           sudo apt-get update
-          sudo apt-get install clang-format-17
+          sudo apt-get install clang-format-18
 
       - name: Info Clang Format
-        run: clang-format-17 --version
+        run: clang-format-18 --version
 
-      - name: Check formatting with git clang-format-17
+      - name: Check formatting with git clang-format-18
         working-directory: ${{github.workspace}}/src
-        run: git clang-format-17 --diff --binary=clang-format-17 HEAD~
+        run: git clang-format-18 --diff --binary=clang-format-18 HEAD~
 
   build:
     # The CMake configure and build commands are platform agnostic and should work equally well on Windows or Mac.
     # You can convert this to a matrix build if you need cross-platform coverage.
     # See: https://docs.github.com/en/free-pro-team@latest/actions/learn-github-actions/managing-complex-workflows#using-a-build-matrix
     name: ${{ matrix.config.name }}
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
@@ -76,24 +74,24 @@ jobs:
             mtr_options: "--sanitize"
           }
         - {
-            name: "Clang 17 Debug",
-            label: "debug_clang17",
+            name: "Clang 18 Debug",
+            label: "debug_clang18",
             run_clang_tidy: true
           }
         - {
-            name: "Clang 17 RelWithDebInfo",
-            label: "release_clang17",
+            name: "Clang 18 RelWithDebInfo",
+            label: "release_clang18",
             run_clang_tidy: true
           }
         - {
-            name: "Clang 17 ASan",
-            label: "asan_clang17"
-            # TODO: re-enable running MTR under "Clang 17 ASan"
+            name: "Clang 18 ASan",
+            label: "asan_clang18"
+            # TODO: re-enable running MTR under "Clang 18 ASan"
             #   run_mtr: true,
             #   mtr_options: "--sanitize"
             # when "-stdlib=libc++ -fsanitize=address" alloc-dealloc-mismatch issue is fixed
             # (https://github.com/llvm/llvm-project/issues/59432)
-            # or CI is upgraded to Clang 18
+            # or CI is upgraded to Clang 19
           }
 
     steps:
@@ -128,15 +126,12 @@ jobs:
     - name: Install Clang dependencies on ubuntu
       if: startsWith(matrix.config.name, 'Clang')
       run: |
-        wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc
-        echo deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-17 main | sudo tee /etc/apt/sources.list.d/llvm.list
         sudo apt-get update
-        sudo apt-get install clang-17 lld-17 clang-tidy-17 libc++-17-dev libc++1-17 libc++abi-17-dev libc++abi1-17
+        sudo apt-get install clang-18 lld-18 clang-tidy-18 libc++-18-dev libc++1-18 libc++abi-18-dev libc++abi1-18
 
     - name: Install GCC dependencies on ubuntu
       if: startsWith(matrix.config.name, 'GCC')
       run: |
-        sudo add-apt-repository ppa:ubuntu-toolchain-r/test
         sudo apt-get update
         sudo apt-get install g++-13
 
@@ -239,19 +234,23 @@ jobs:
 
     - name: Info Clang Tidy
       if: matrix.config.run_clang_tidy
-      run: clang-tidy-17 --version
+      run: clang-tidy-18 --version
 
     - name: Clang Tidy
       if: matrix.config.run_clang_tidy
       # Run Clang Tidy
-      run: run-clang-tidy-17 -header-filter=.* -j=${{steps.cpu-cores.outputs.count}} -use-color -p=${{github.workspace}}/src-build-${{matrix.config.label}}
+      run: run-clang-tidy-18 -header-filter=.* -j=${{steps.cpu-cores.outputs.count}} -use-color -p=${{github.workspace}}/src-build-${{matrix.config.label}}
 
     - name: MTR tests
       if: matrix.config.run_mtr
       working-directory: /usr/lib/mysql-test
       run: |
-        # Switching MySQL Server Apparmor profile to "complain" as we are creating a custom data directory
-        sudo aa-complain /usr/sbin/mysqld
+        # TODO: consider adding ${{runner.temp}}/mtrvardir into the list of
+        # writable directories in '/etc/apparmor.d/usr.sbin.mysqld' AppArmor
+        # profile instead of disabling it completely.
+        # Disabling MySQL Server Apparmor profile as we are creating a custom data directory
+        sudo ln -s /etc/apparmor.d/usr.sbin.mysqld /etc/apparmor.d/disable
+        sudo apparmor_parser -R /etc/apparmor.d/usr.sbin.mysqld
         # Linking the "binlog_streaming" from the source tree into the MTR suits directory on the system
         sudo ln -s ${{github.workspace}}/src/mtr/binlog_streaming /usr/lib/mysql-test/suite/binlog_streaming
         # Running MTR from the system package

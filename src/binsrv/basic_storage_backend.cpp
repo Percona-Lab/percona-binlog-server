@@ -36,7 +36,7 @@ basic_storage_backend::get_object(std::string_view name) {
 
 void basic_storage_backend::put_object(std::string_view name,
                                        util::const_byte_span content) {
-  return do_put_object(name, content);
+  do_put_object(name, content);
 }
 
 void basic_storage_backend::open_stream(std::string_view name,

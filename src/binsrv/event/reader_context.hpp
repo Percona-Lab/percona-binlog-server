@@ -18,6 +18,8 @@
 
 #include "binsrv/event/reader_context_fwd.hpp" // IWYU pragma: export
 
+#include <cstdint>
+
 #include "binsrv/event/checksum_algorithm_type_fwd.hpp"
 #include "binsrv/event/common_header_fwd.hpp"
 #include "binsrv/event/event_fwd.hpp"
@@ -42,7 +44,7 @@ public:
 private:
   // this class implements the logic of the following state machine
   // (ROTATE(artificial) FORMAT_DESCRIPTION <ANY>* (ROTATE|STOP)?)+
-  enum class state_type {
+  enum class state_type : std::uint8_t {
     initial,
     rotate_artificial_processed,
     format_description_processed

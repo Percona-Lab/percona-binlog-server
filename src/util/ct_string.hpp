@@ -47,13 +47,13 @@ template <std::size_t N> struct ct_string {
 };
 
 template <std::size_t N1, std::size_t N2>
-constexpr inline auto operator==(const ct_string<N1> &cts1,
-                                 const ct_string<N2> &cts2) noexcept {
+constexpr auto operator==(const ct_string<N1> &cts1,
+                          const ct_string<N2> &cts2) noexcept {
   return cts1.sv() == cts2.sv();
 }
 template <std::size_t N1, std::size_t N2>
-constexpr inline auto operator<=>(const ct_string<N1> &cts1,
-                                  const ct_string<N2> &cts2) noexcept {
+constexpr auto operator<=>(const ct_string<N1> &cts1,
+                           const ct_string<N2> &cts2) noexcept {
   return cts1.sv() <=> cts2.sv();
 }
 

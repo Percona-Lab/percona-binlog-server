@@ -17,6 +17,7 @@
 
 #include <cassert>
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -54,9 +55,6 @@
 #include <aws/s3-crt/model/ListObjectsV2Result.h>
 #include <aws/s3-crt/model/PutObjectRequest.h>
 
-// TODO: remove this include when switching to clang-18 where transitive
-//       IWYU 'export' pragmas are handled properly
-#include "binsrv/basic_storage_backend_fwd.hpp"
 #include "binsrv/s3_error_helpers_private.hpp"
 
 #include "util/byte_span.hpp"
@@ -97,7 +95,7 @@ struct qualified_object_path {
 
 class s3_storage_backend::aws_context : private aws_context_base {
 public:
-  enum class construction_alternative { bucket, region };
+  enum class construction_alternative : std::uint8_t { bucket, region };
   using stream_factory_type = std::function<std::iostream *()>;
   using stream_handler_type = std::function<void(std::size_t, std::iostream &)>;
 
