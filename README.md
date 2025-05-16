@@ -16,7 +16,7 @@ Currently prebuilt binaries are not available.
 
 - [CMake](https://cmake.org/) 3.20.0+
 - [Clang](https://clang.llvm.org/) (`clang-15` / `clang-16` / `clang-17`) or [GCC](https://gcc.gnu.org/) (`gcc-12` / `gcc-13` / `gcc-14`)
-- [Boost libraries](https://www.boost.org/) 1.84.0 (git version, not the source tarball)
+- [Boost libraries](https://www.boost.org/) 1.88.0 (git version, not the source tarball)
 - [MySQL client library](https://dev.mysql.com/doc/c-api/8.0/en/) 8.0.x (`libmysqlclient`)
 - [CURL library](https://curl.se/libcurl/) (`libcurl`) 8.6.0+
 - [AWS SDK for C++](https://aws.amazon.com/sdk-for-cpp/) 1.11.570
@@ -56,7 +56,7 @@ export BUILD_PRESET=release_gcc13
 ###### Getting Boost Libraries source
 
 ```bash
-git clone --recurse-submodules -b boost-1.84.0 --jobs=8 https://github.com/boostorg/boost.git
+git clone --recurse-submodules -b boost-1.88.0 --jobs=8 https://github.com/boostorg/boost.git
 cd boost
 git switch -c required_release
 ```
