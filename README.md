@@ -19,7 +19,7 @@ Currently prebuilt binaries are not available.
 - [Boost libraries](https://www.boost.org/) 1.84.0 (git version, not the source tarball)
 - [MySQL client library](https://dev.mysql.com/doc/c-api/8.0/en/) 8.0.x (`libmysqlclient`)
 - [CURL library](https://curl.se/libcurl/) (`libcurl`) 8.6.0+
-- [AWS SDK for C++](https://aws.amazon.com/sdk-for-cpp/) 1.11.286
+- [AWS SDK for C++](https://aws.amazon.com/sdk-for-cpp/) 1.11.570
 
 #### Instructions
 
@@ -90,7 +90,7 @@ cmake --install ./boost-build-${BUILD_PRESET}
 ###### Getting AWS SDK CPP Libraries source
 
 ```bash
-git clone --recurse-submodules -b 1.11.286 --jobs=8 https://github.com/aws/aws-sdk-cpp
+git clone --recurse-submodules -b 1.11.570 --jobs=8 https://github.com/aws/aws-sdk-cpp
 cd aws-sdk-cpp
 git switch -c required_release
 ```
