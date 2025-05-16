@@ -30,6 +30,12 @@ mkdir ws
 ```
 Every next step will assume that we are currently inside the `ws` directory unless explicitly stated otherwise.
 
+##### Getting the build scripts and the source code
+
+```bash
+git clone https://github.com/Percona-Lab/percona-binlog-server.git
+```
+
 ##### Defining environment variables affecting build configurations
 
 Define `BUILD_PRESET` depending on whether you want to build in `Debug`, `Release`, or `Debug` with `Address Sanitizer` configuration and which toolset you would like to use.
@@ -55,6 +61,12 @@ cd boost
 git switch -c required_release
 ```
 
+###### Copying CMake presets for Boost Libraries
+
+```bash
+cp ./percona-binlog-server/extra/cmake_presets/boost/CMakePresets.json ./boost
+```
+
 ###### Configuring Boost Libraries
 
 ```bash
@@ -78,9 +90,15 @@ cmake --install ./boost-build-${BUILD_PRESET}
 ###### Getting AWS SDK CPP Libraries source
 
 ```bash
-git clone --recurse-submodules --jobs=8 https://github.com/aws/aws-sdk-cpp
+git clone --recurse-submodules -b 1.11.286 --jobs=8 https://github.com/aws/aws-sdk-cpp
 cd aws-sdk-cpp
 git switch -c required_release
+```
+
+###### Copying CMake presets for AWS SDK CPP Libraries
+
+```bash
+cp ./percona-binlog-server/extra/cmake_presets/aws-sdk-cpp/CMakePresets.json ./aws-sdk-cpp
 ```
 
 ###### Configuring AWS SDK CPP Libraries
@@ -104,9 +122,7 @@ cmake --install ./aws-sdk-cpp-build-${BUILD_PRESET}
 
 ###### Getting Main Application source
 
-```bash
-git clone https://github.com/Percona-Lab/percona-binlog-server.git
-```
+Main application source code should have already been cloned from the git repo during the "Getting the build scripts and the source code" step.
 
 ###### Configuring Main Application
 
