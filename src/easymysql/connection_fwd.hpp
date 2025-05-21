@@ -16,9 +16,14 @@
 #ifndef EASYMYSQL_CONNECTION_FWD_HPP
 #define EASYMYSQL_CONNECTION_FWD_HPP
 
+#include <cstdint>
+
 namespace easymysql {
 
-enum class connection_replication_mode_type { blocking, non_blocking };
+enum class connection_replication_mode_type : std::uint8_t {
+  blocking,
+  non_blocking
+};
 
 class connection;
 

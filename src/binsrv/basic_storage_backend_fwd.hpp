@@ -23,7 +23,7 @@
 
 namespace binsrv {
 
-enum class storage_backend_open_stream_mode { create, append };
+enum class storage_backend_open_stream_mode : std::uint8_t { create, append };
 
 class basic_storage_backend;
 

@@ -28,10 +28,6 @@
 #include <boost/url/scheme.hpp>
 #include <boost/url/url_view_base.hpp>
 
-// TODO: remove this include when switching to clang-18 where transitive
-//       IWYU 'export' pragmas are handled properly
-#include "binsrv/basic_storage_backend_fwd.hpp"
-
 #include "util/byte_span.hpp"
 #include "util/exception_location_helpers.hpp"
 
