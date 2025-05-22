@@ -44,11 +44,11 @@ Define `BUILD_PRESET` depending on whether you want to build in `Debug`, `Releas
 export BUILD_PRESET=<configuration>_<toolset>
 ```
 The supported values for `<configuration>` are `debug`, `release`, and `asan`.
-The supported values for `<toolset>` are `gcc13` and  `clang19`.
+The supported values for `<toolset>` are `gcc14` and  `clang19`.
 
-For instance, if you want to build in `RelWithDebInfo` configuration using `GCC 13`, please specify
+For instance, if you want to build in `RelWithDebInfo` configuration using `GCC 14`, please specify
 ```bash
-export BUILD_PRESET=release_gcc13
+export BUILD_PRESET=release_gcc14
 ```
 
 ##### Boost Libraries
