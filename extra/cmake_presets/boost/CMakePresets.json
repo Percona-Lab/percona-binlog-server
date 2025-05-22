@@ -45,11 +45,11 @@
     },
 
     {
-      "name": "gcc13_hidden",
+      "name": "gcc14_hidden",
       "hidden": true,
       "cacheVariables": {
-        "CMAKE_C_COMPILER": "gcc-13",
-        "CMAKE_CXX_COMPILER": "g++-13"
+        "CMAKE_C_COMPILER": "gcc-14",
+        "CMAKE_CXX_COMPILER": "g++-14"
       }
     },
     {
@@ -65,31 +65,31 @@
     },
 
     {
-      "name": "debug_gcc13",
+      "name": "debug_gcc14",
       "inherits": [
         "common_hidden",
         "debug_hidden",
-        "gcc13_hidden"
+        "gcc14_hidden"
       ],
-      "displayName": "GCC 13 Debug"
+      "displayName": "GCC 14 Debug"
     },
     {
-      "name": "release_gcc13",
+      "name": "release_gcc14",
       "inherits": [
         "common_hidden",
         "release_hidden",
-        "gcc13_hidden"
+        "gcc14_hidden"
       ],
-      "displayName": "GCC 13 RelWithDebInfo"
+      "displayName": "GCC 14 RelWithDebInfo"
     },
     {
-      "name": "asan_gcc13",
+      "name": "asan_gcc14",
       "inherits": [
         "common_hidden",
         "asan_hidden",
-        "gcc13_hidden"
+        "gcc14_hidden"
       ],
-      "displayName": "GCC 13 ASan"
+      "displayName": "GCC 14 ASan"
     },
 
     {

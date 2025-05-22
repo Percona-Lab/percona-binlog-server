@@ -58,18 +58,18 @@ jobs:
       matrix:
         config:
         - {
-            name: "GCC 13 Debug",
-            label: "debug_gcc13",
+            name: "GCC 14 Debug",
+            label: "debug_gcc14",
             run_mtr: true
           }
         - {
-            name: "GCC 13 RelWithDebInfo",
-            label: "release_gcc13",
+            name: "GCC 14 RelWithDebInfo",
+            label: "release_gcc14",
             run_mtr: true
           }
         - {
-            name: "GCC 13 ASan",
-            label: "asan_gcc13",
+            name: "GCC 14 ASan",
+            label: "asan_gcc14",
             run_mtr: true,
             mtr_options: "--sanitize"
           }
@@ -133,7 +133,7 @@ jobs:
       if: startsWith(matrix.config.name, 'GCC')
       run: |
         sudo apt-get update
-        sudo apt-get install g++-13
+        sudo apt-get install g++-14
 
     - name: Info CMake
       run: cmake --version
