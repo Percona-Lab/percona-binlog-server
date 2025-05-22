@@ -50,6 +50,7 @@ namespace binsrv::event {
 // clang-format on
 
 #define BINSRV_EVENT_FLAG_TYPE_XY_MACRO(X, Y) X = Y
+// NOLINTNEXTLINE(readability-enum-initial-value,cert-int09-c)
 enum class flag_type : std::uint16_t {
   BINSRV_EVENT_FLAG_TYPE_XY_SEQUENCE(),
   delimiter

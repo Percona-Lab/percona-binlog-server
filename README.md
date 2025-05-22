@@ -15,7 +15,7 @@ Currently prebuilt binaries are not available.
 #### Dependencies
 
 - [CMake](https://cmake.org/) 3.20.0+
-- [Clang](https://clang.llvm.org/) (`clang-15` .. `clang-18`) or [GCC](https://gcc.gnu.org/) (`gcc-12` .. `gcc-14`)
+- [Clang](https://clang.llvm.org/) (`clang-15` .. `clang-19`) or [GCC](https://gcc.gnu.org/) (`gcc-12` .. `gcc-14`)
 - [Boost libraries](https://www.boost.org/) 1.88.0 (git version, not the source tarball)
 - [MySQL client library](https://dev.mysql.com/doc/c-api/8.0/en/) 8.0.x (`libmysqlclient`)
 - [CURL library](https://curl.se/libcurl/) (`libcurl`) 8.6.0+
@@ -44,7 +44,7 @@ Define `BUILD_PRESET` depending on whether you want to build in `Debug`, `Releas
 export BUILD_PRESET=<configuration>_<toolset>
 ```
 The supported values for `<configuration>` are `debug`, `release`, and `asan`.
-The supported values for `<toolset>` are `gcc13` and  `clang18`.
+The supported values for `<toolset>` are `gcc13` and  `clang19`.
 
 For instance, if you want to build in `RelWithDebInfo` configuration using `GCC 13`, please specify
 ```bash

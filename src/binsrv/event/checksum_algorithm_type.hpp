@@ -35,6 +35,7 @@ namespace binsrv::event {
 // clang-format on
 
 #define BINSRV_CHECKSUM_ALGORITHM_TYPE_XY_MACRO(X, Y) X = Y
+// NOLINTNEXTLINE(readability-enum-initial-value,cert-int09-c)
 enum class checksum_algorithm_type : std::uint8_t {
   BINSRV_CHECKSUM_ALGORITHM_TYPE_XY_SEQUENCE(),
   delimiter

@@ -20,6 +20,7 @@
 
 namespace binsrv::event {
 
+// NOLINTNEXTLINE(readability-enum-initial-value,cert-int09-c)
 enum class checksum_algorithm_type : std::uint8_t;
 
 } // namespace binsrv::event

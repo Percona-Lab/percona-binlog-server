@@ -22,6 +22,7 @@
 
 namespace binsrv::event {
 
+// NOLINTNEXTLINE(readability-enum-initial-value,cert-int09-c)
 enum class flag_type : std::uint16_t;
 
 using flag_set = util::flag_set<flag_type>;
