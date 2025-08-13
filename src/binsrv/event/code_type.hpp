@@ -27,7 +27,8 @@ namespace binsrv::event {
 
 // NOLINTBEGIN(cppcoreguidelines-macro-usage)
 // Event type codes copied from
-// https://github.com/mysql/mysql-server/blob/mysql-8.0.37/libbinlogevents/include/binlog_event.h#L275
+// https://github.com/mysql/mysql-server/blob/mysql-8.0.43/libbinlogevents/include/binlog_event.h#L275
+// https://github.com/mysql/mysql-server/blob/mysql-8.4.6/libs/mysql/binlog/event/binlog_event.h#L286
 // clang-format off
 #define BINSRV_EVENT_CODE_TYPE_XY_SEQUENCE() \
   BINSRV_EVENT_CODE_TYPE_XY_MACRO(unknown            ,  0), \
@@ -36,9 +37,13 @@ namespace binsrv::event {
   BINSRV_EVENT_CODE_TYPE_XY_MACRO(stop               ,  3), \
   BINSRV_EVENT_CODE_TYPE_XY_MACRO(rotate             ,  4), \
   BINSRV_EVENT_CODE_TYPE_XY_MACRO(intvar             ,  5), \
+  BINSRV_EVENT_CODE_TYPE_XY_MACRO(obsolete_6         ,  6), \
   BINSRV_EVENT_CODE_TYPE_XY_MACRO(slave              ,  7), \
+  BINSRV_EVENT_CODE_TYPE_XY_MACRO(obsolete_8         ,  8), \
   BINSRV_EVENT_CODE_TYPE_XY_MACRO(append_block       ,  9), \
+  BINSRV_EVENT_CODE_TYPE_XY_MACRO(obsolete_10        , 10), \
   BINSRV_EVENT_CODE_TYPE_XY_MACRO(delete_file        , 11), \
+  BINSRV_EVENT_CODE_TYPE_XY_MACRO(obsolete_12        , 12), \
   BINSRV_EVENT_CODE_TYPE_XY_MACRO(rand               , 13), \
   BINSRV_EVENT_CODE_TYPE_XY_MACRO(user_var           , 14), \
   BINSRV_EVENT_CODE_TYPE_XY_MACRO(format_description , 15), \
@@ -46,6 +51,9 @@ namespace binsrv::event {
   BINSRV_EVENT_CODE_TYPE_XY_MACRO(begin_load_query   , 17), \
   BINSRV_EVENT_CODE_TYPE_XY_MACRO(execute_load_query , 18), \
   BINSRV_EVENT_CODE_TYPE_XY_MACRO(table_map          , 19), \
+  BINSRV_EVENT_CODE_TYPE_XY_MACRO(obsolete_20        , 20), \
+  BINSRV_EVENT_CODE_TYPE_XY_MACRO(obsolete_21        , 21), \
+  BINSRV_EVENT_CODE_TYPE_XY_MACRO(obsolete_22        , 22), \
   BINSRV_EVENT_CODE_TYPE_XY_MACRO(write_rows_v1      , 23), \
   BINSRV_EVENT_CODE_TYPE_XY_MACRO(update_rows_v1     , 24), \
   BINSRV_EVENT_CODE_TYPE_XY_MACRO(delete_rows_v1     , 25), \
@@ -64,7 +72,8 @@ namespace binsrv::event {
   BINSRV_EVENT_CODE_TYPE_XY_MACRO(xa_prepare_log     , 38), \
   BINSRV_EVENT_CODE_TYPE_XY_MACRO(partial_update_rows, 39), \
   BINSRV_EVENT_CODE_TYPE_XY_MACRO(transaction_payload, 40), \
-  BINSRV_EVENT_CODE_TYPE_XY_MACRO(heartbeat_log_v2   , 41)
+  BINSRV_EVENT_CODE_TYPE_XY_MACRO(heartbeat_log_v2   , 41), \
+  BINSRV_EVENT_CODE_TYPE_XY_MACRO(gtid_tagged_log    , 42)
 // clang-format on
 
 #define BINSRV_EVENT_CODE_TYPE_XY_MACRO(X, Y) X = Y

@@ -1,5 +1,4 @@
 *** Resetting replication at the very beginning of the test.
-RESET MASTER;
 
 *** Generating a configuration file in JSON format for the Binlog
 *** Server utility.

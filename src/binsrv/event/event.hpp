@@ -24,6 +24,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <variant>
 
 #include <boost/mp11/algorithm.hpp>
@@ -53,8 +54,7 @@ class [[nodiscard]] event {
 private:
   // here we create an index sequence (std::index_sequence) specialized
   // with the following std::size_t constant pack: 0 .. <number_of_events>
-  using code_index_sequence =
-      std::make_index_sequence<default_number_of_events>;
+  using code_index_sequence = std::make_index_sequence<max_number_of_events>;
   // almost all boost::mp11 algorithms accept lists of types (rather than
   // lists of constants), so we convert std::index_sequence into
   // boost::mp11::mp_list of std::integral_constant types
@@ -97,26 +97,6 @@ public:
 
   using optional_footer = std::optional<footer>;
 
-  // here we use a trick with immediately invoked lambda to initialize a
-  // constexpr array which would have expected post header lengths for all
-  // event codes based on generic_post_header<xxx>::size_in_bytes
-
-  // we ignore the very first element in the code_type enum
-  // (code_type::unknown) since the post header length for this value is
-  // simply not included into FDE post header
-  static constexpr post_header_length_container expected_post_header_lengths{
-      []<std::size_t... IndexPack>(
-          std::index_sequence<IndexPack...>) -> post_header_length_container {
-        return {static_cast<encoded_post_header_length_type>(
-            generic_post_header<util::index_to_enum<code_type>(
-                IndexPack + 1U)>::size_in_bytes)...};
-      }(std::make_index_sequence<default_number_of_events - 1U>{})};
-
-  [[nodiscard]] static std::size_t
-  get_expected_post_header_length(code_type code) noexcept {
-    return get_post_header_length_for_code(expected_post_header_lengths, code);
-  }
-
   event(reader_context &context, util::const_byte_span portion);
 
   [[nodiscard]] const common_header &get_common_header() const noexcept {
@@ -148,15 +128,27 @@ private:
   optional_footer footer_;
 
   template <typename T>
-  void generic_emplace_post_header(util::const_byte_span portion) {
-    post_header_.emplace<T>(portion);
+  void generic_emplace_post_header(std::uint32_t encoded_server_version,
+                                   util::const_byte_span portion) {
+    if constexpr (std::is_constructible_v<T, util::const_byte_span>) {
+      post_header_.emplace<T>(portion);
+    } else {
+      post_header_.emplace<T>(encoded_server_version, portion);
+    }
   }
-  void emplace_post_header(code_type code, util::const_byte_span portion);
+  void emplace_post_header(std::uint32_t encoded_server_version, code_type code,
+                           util::const_byte_span portion);
   template <typename T>
-  void generic_emplace_body(util::const_byte_span portion) {
-    body_.emplace<T>(portion);
+  void generic_emplace_body(std::uint32_t encoded_server_version,
+                            util::const_byte_span portion) {
+    if constexpr (std::is_constructible_v<T, util::const_byte_span>) {
+      body_.emplace<T>(portion);
+    } else {
+      body_.emplace<T>(encoded_server_version, portion);
+    }
   }
-  void emplace_body(code_type code, util::const_byte_span portion);
+  void emplace_body(std::uint32_t encoded_server_version, code_type code,
+                    util::const_byte_span portion);
 };
 
 } // namespace binsrv::event

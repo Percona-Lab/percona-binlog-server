@@ -31,8 +31,13 @@ class [[nodiscard]] reader_context {
   friend class event;
 
 public:
-  explicit reader_context(checksum_algorithm_type checksum_algorithm);
+  reader_context(std::uint32_t encoded_server_version,
+                 checksum_algorithm_type checksum_algorithm);
 
+  [[nodiscard]] std::uint32_t
+  get_current_encoded_server_version() const noexcept {
+    return encoded_server_version_;
+  }
   [[nodiscard]] checksum_algorithm_type
   get_current_checksum_algorithm() const noexcept;
   [[nodiscard]] std::size_t
@@ -50,6 +55,7 @@ private:
     format_description_processed
   };
   state_type state_{state_type::initial};
+  std::uint32_t encoded_server_version_;
   checksum_algorithm_type checksum_algorithm_;
   post_header_length_container post_header_lengths_{};
   std::uint32_t position_{0U};
@@ -61,6 +67,10 @@ private:
   [[nodiscard]] bool process_event_in_format_description_processed_state(
       const event &current_event);
   void validate_position_and_advance(const common_header &common_header);
+
+  [[nodiscard]] static const post_header_length_container &
+  get_hardcoded_post_header_lengths(
+      std::uint32_t encoded_server_version) noexcept;
 };
 
 } // namespace binsrv::event

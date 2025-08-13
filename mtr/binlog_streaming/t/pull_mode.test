@@ -4,12 +4,16 @@ if (!$BINSRV) {
   --skip \$BINSRV environment variable must be set
 }
 
+--source ../include/v80_v84_compatibility_defines.inc
+
 --source include/count_sessions.inc
 
 # in case of --repeat=N, we need to start from a fresh binary log to make
 # this test deterministic
 --echo *** Resetting replication at the very beginning of the test.
-RESET MASTER;
+--disable_query_log
+eval $stmt_reset_binary_logs_and_gtids;
+--enable_query_log
 
 # identifying backend storage type ('file' or 's3')
 --source ../include/identify_storage_backend.inc
@@ -39,7 +43,7 @@ EOF
 
 --echo
 --echo *** Determining the first fresh binary log name.
---let $first_binlog = query_get_value(SHOW MASTER STATUS, File, 1)
+--let $first_binlog = query_get_value($stmt_show_binary_log_status, File, 1)
 
 --echo
 --echo *** Creating a simple table and filling it with some data.
@@ -57,7 +61,7 @@ INSERT INTO t1 VALUES(DEFAULT);
 
 --echo
 --echo *** Determining the second binary log name.
---let $second_binlog = query_get_value(SHOW MASTER STATUS, File, 1)
+--let $second_binlog = query_get_value($stmt_show_binary_log_status, File, 1)
 
 --echo
 --echo *** Filling the table with some more data.
@@ -74,7 +78,7 @@ INSERT INTO t1 VALUES(DEFAULT);
 
 --echo
 --echo *** Determining the third binary log name.
---let $third_binlog = query_get_value(SHOW MASTER STATUS, File, 1)
+--let $third_binlog = query_get_value($stmt_show_binary_log_status, File, 1)
 
 --echo
 --echo *** Filling the table with some more data again and dropping the table.
@@ -88,7 +92,7 @@ FLUSH BINARY LOGS;
 
 --echo
 --echo *** Determining the fourth binary log name.
---let $fourth_binlog = query_get_value(SHOW MASTER STATUS, File, 1)
+--let $fourth_binlog = query_get_value($stmt_show_binary_log_status, File, 1)
 
 --echo
 --echo *** Waiting till Binlog Server Utility starts processing the fourth

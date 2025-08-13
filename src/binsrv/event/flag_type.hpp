@@ -29,9 +29,11 @@ namespace binsrv::event {
 
 // NOLINTBEGIN(cppcoreguidelines-macro-usage)
 // Event flags copied from
-// https://github.com/mysql/mysql-server/blob/mysql-8.0.37/sql/log_event.h#L247
+// https://github.com/mysql/mysql-server/blob/mysql-8.0.43/sql/log_event.h#L247
+// https://github.com/mysql/mysql-server/blob/mysql-8.4.6/sql/log_event.h#L245
 // 'binlog_in_use' flag is copied from
-// https://github.com/mysql/mysql-server/blob/mysql-8.0.37/libbinlogevents/include/binlog_event.h#L270
+// https://github.com/mysql/mysql-server/blob/mysql-8.0.43/libbinlogevents/include/binlog_event.h#L270
+// https://github.com/mysql/mysql-server/blob/mysql-8.4.6/libs/mysql/binlog/event/binlog_event.h#L281
 // This flag is used as a marker in the common header section of the very
 // first format description event that this particular binlog is currently in
 // use. It us cleared(rewritten) by the server when the binary log is

@@ -15,7 +15,9 @@
 
 #include "binsrv/event/format_description_post_header_impl.hpp"
 
+#include <cstdint>
 #include <ostream>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -28,6 +30,7 @@
 
 #include "binsrv/event/code_type.hpp"
 #include "binsrv/event/protocol_traits.hpp"
+#include "binsrv/event/server_version.hpp"
 
 #include "util/byte_span.hpp"
 #include "util/byte_span_extractors.hpp"
@@ -36,12 +39,13 @@
 namespace binsrv::event {
 
 generic_post_header_impl<code_type::format_description>::
-    generic_post_header_impl(util::const_byte_span portion) {
+    generic_post_header_impl(std::uint32_t encoded_server_version,
+                             util::const_byte_span portion) {
   // TODO: rework with direct member initialization
 
   /*
-    https://github.com/mysql/mysql-server/blob/mysql-8.0.37/libbinlogevents/include/control_events.h#L287
-
+    https://github.com/mysql/mysql-server/blob/mysql-8.0.43/libbinlogevents/include/control_events.h#L287
+    https://github.com/mysql/mysql-server/blob/mysql-8.4.6/libs/mysql/binlog/event/control_events.h#L295
     +=====================================+
     | event  | binlog_version   19 : 2    | = 4
     | data   +----------------------------+
@@ -70,16 +74,18 @@ generic_post_header_impl<code_type::format_description>::
       sizeof binlog_version_ + std::tuple_size_v<decltype(server_version_)> +
               sizeof create_timestamp_ + sizeof common_header_length_ +
               std::tuple_size_v<decltype(post_header_lengths_)> ==
-          size_in_bytes,
+          get_size_in_bytes(latest_known_protocol_server_version),
       "mismatch in "
       "generic_post_header_impl<code_type::format_description>::size_in_bytes");
   // make sure we did OK with data members reordering
-  static_assert(sizeof *this == boost::alignment::align_up(
-                                    size_in_bytes, alignof(decltype(*this))),
+  static_assert(sizeof *this ==
+                    boost::alignment::align_up(
+                        get_size_in_bytes(latest_known_protocol_server_version),
+                        alignof(decltype(*this))),
                 "inefficient data member reordering in "
                 "generic_post_header_impl<code_type::format_description>");
 
-  if (std::size(portion) != size_in_bytes) {
+  if (std::size(portion) != get_size_in_bytes(encoded_server_version)) {
     util::exception_location().raise<std::invalid_argument>(
         "invalid format_description event post-header length");
   }
@@ -89,7 +95,12 @@ generic_post_header_impl<code_type::format_description>::
   util::extract_byte_array_from_byte_span(remainder, server_version_);
   util::extract_fixed_int_from_byte_span(remainder, create_timestamp_);
   util::extract_fixed_int_from_byte_span(remainder, common_header_length_);
-  util::extract_byte_array_from_byte_span(remainder, post_header_lengths_);
+  const auto expected_subrange_length{
+      get_number_of_events(encoded_server_version) - 1U};
+  const std::span<encoded_post_header_length_type> post_header_lengths_subrange{
+      std::data(post_header_lengths_), expected_subrange_length};
+  util::extract_byte_span_from_byte_span(remainder,
+                                         post_header_lengths_subrange);
 }
 
 [[nodiscard]] std::string_view
@@ -106,6 +117,12 @@ generic_post_header_impl<code_type::format_description>::get_server_version()
   return result;
 }
 
+[[nodiscard]] std::uint32_t generic_post_header_impl<
+    code_type::format_description>::get_encoded_server_version()
+    const noexcept {
+  return server_version{get_server_version()}.get_encoded();
+}
+
 [[nodiscard]] std::string generic_post_header_impl<
     code_type::format_description>::get_readable_create_timestamp() const {
   return boost::posix_time::to_simple_string(
@@ -120,7 +137,8 @@ operator<<(std::ostream &output,
          << ", create timestamp: " << obj.get_readable_create_timestamp()
          << ", common header length: " << obj.get_common_header_length()
          << "\npost-header lengths: {\n";
-  print_post_header_lengths(output, obj.get_post_header_lengths_raw());
+  print_post_header_lengths(output, obj.get_encoded_server_version(),
+                            obj.get_post_header_lengths_raw());
   output << "\n}";
   return output;
 }

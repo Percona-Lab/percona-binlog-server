@@ -16,9 +16,11 @@
 #include "binsrv/event/reader_context.hpp"
 
 #include <cassert>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <stdexcept>
+#include <utility>
 
 #include "binsrv/event/checksum_algorithm_type.hpp"
 #include "binsrv/event/code_type.hpp"
@@ -26,13 +28,17 @@
 #include "binsrv/event/flag_type.hpp"
 #include "binsrv/event/protocol_traits.hpp"
 
+#include "util/conversion_helpers.hpp"
 #include "util/exception_location_helpers.hpp"
 
 namespace binsrv::event {
 
-reader_context::reader_context(checksum_algorithm_type checksum_algorithm)
-    : checksum_algorithm_{checksum_algorithm},
-      post_header_lengths_{event::expected_post_header_lengths} {}
+reader_context::reader_context(std::uint32_t encoded_server_version,
+                               checksum_algorithm_type checksum_algorithm)
+    : encoded_server_version_{encoded_server_version},
+      checksum_algorithm_{checksum_algorithm},
+      post_header_lengths_{
+          get_hardcoded_post_header_lengths(encoded_server_version_)} {}
 
 void reader_context::process_event(const event &current_event) {
   bool processed{false};
@@ -131,10 +137,17 @@ reader_context::process_event_in_rotate_artificial_processed_state(
         "unexpected common header length in format description event");
   }
 
+  // check if server version in FDE is the same as the one extracted from
+  // the connection object ('mysql_get_server_version()')
+  if (post_header.get_encoded_server_version() != encoded_server_version_) {
+    util::exception_location().raise<std::logic_error>(
+        "unexpected server version in format description event");
+  }
   // check if the values from the post_header_lengths array are the same as
   // generic_post_header_impl<code_type::xxx>::size_in_bytes for known events
-  validate_post_header_lengths(post_header.get_post_header_lengths_raw(),
-                               event::expected_post_header_lengths);
+  validate_post_header_lengths(
+      encoded_server_version_, post_header.get_post_header_lengths_raw(),
+      get_hardcoded_post_header_lengths(encoded_server_version_));
 
   post_header_lengths_ = post_header.get_post_header_lengths_raw();
 
@@ -240,7 +253,67 @@ reader_context::get_current_checksum_algorithm() const noexcept {
 
 [[nodiscard]] std::size_t
 reader_context::get_current_post_header_length(code_type code) const noexcept {
-  return get_post_header_length_for_code(post_header_lengths_, code);
+  return get_post_header_length_for_code(encoded_server_version_,
+                                         post_header_lengths_, code);
+}
+
+[[nodiscard]] const post_header_length_container &
+reader_context::get_hardcoded_post_header_lengths(
+    std::uint32_t encoded_server_version) noexcept {
+  // here we use a trick with a templated lambda to initialize constexpr
+  // arrays which would have expected post header lengths for all
+  // event codes based on generic_post_header<xxx>::get_size_in_bytes()
+
+  // we ignore the very first element in the code_type enum
+  // (code_type::unknown) since the post header length for this value is
+  // simply not included into FDE post header
+
+  using size_in_bytes_helper =
+      decltype([]<std::size_t Index>(
+                   std::uint32_t version) constexpr -> std::size_t {
+        constexpr auto code{util::index_to_enum<code_type>(Index + 1U)};
+        if constexpr (requires(std::uint32_t test_version) {
+                        {
+                          generic_post_header<code>::get_size_in_bytes(
+                              test_version)
+                        } -> std::same_as<std::size_t>;
+                      }) {
+          return generic_post_header<code>::get_size_in_bytes(version);
+        } else {
+          return generic_post_header<code>::size_in_bytes;
+        }
+      });
+
+  constexpr auto hardcoded_post_header_lengths_generator{
+      []<std::size_t... IndexPack>(std::uint32_t version,
+                                   std::index_sequence<IndexPack...>) constexpr
+          -> post_header_length_container {
+        return {
+          static_cast<encoded_post_header_length_type>(
+              size_in_bytes_helper{}.template operator()<IndexPack>(version))...
+        };
+      }};
+
+  // the remainder of the 'earliest_supported_post_header_lengths' container
+  // will be default-initialized
+  static constexpr post_header_length_container
+      earliest_supported_post_header_lengths{
+          hardcoded_post_header_lengths_generator(
+              earliest_supported_protocol_server_version,
+              std::make_index_sequence<
+                  get_number_of_events(
+                      earliest_supported_protocol_server_version) -
+                  1U>{})};
+  static constexpr post_header_length_container
+      latest_known_post_header_lengths{hardcoded_post_header_lengths_generator(
+          latest_known_protocol_server_version,
+          std::make_index_sequence<get_number_of_events(
+                                       latest_known_protocol_server_version) -
+                                   1U>{})};
+
+  return encoded_server_version < latest_known_protocol_server_version
+             ? earliest_supported_post_header_lengths
+             : latest_known_post_header_lengths;
 }
 
 } // namespace binsrv::event

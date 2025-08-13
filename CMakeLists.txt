@@ -143,6 +143,10 @@ set(source_files
   src/binsrv/event/rotate_post_header_impl.hpp
   src/binsrv/event/rotate_post_header_impl.cpp
 
+  src/binsrv/event/server_version_fwd.hpp
+  src/binsrv/event/server_version.hpp
+  src/binsrv/event/server_version.cpp
+
   src/binsrv/event/stop_body_impl_fwd.hpp
   src/binsrv/event/stop_body_impl.hpp
 
