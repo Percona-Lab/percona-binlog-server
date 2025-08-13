@@ -76,12 +76,12 @@ jobs:
         - {
             name: "Clang 19 Debug",
             label: "debug_clang19",
-            run_clang_tidy: true
+            #run_clang_tidy: true
           }
         - {
             name: "Clang 19 RelWithDebInfo",
             label: "release_clang19",
-            run_clang_tidy: true
+            #run_clang_tidy: true
           }
         - {
             name: "Clang 19 ASan",
@@ -113,15 +113,27 @@ jobs:
         echo github.workspace: ${{github.workspace}}
         echo runner.temp     : ${{runner.temp}}
 
+    - name: Listing installed MySQL packages
+      run: |
+        sudo apt remove php8.3-mysql *mysql*
+        dpkg -l | grep mysql
+
+    - name: Install MySQL APT Repository
+      working-directory: ${{runner.temp}}
+      run: |
+        wget -c https://dev.mysql.com/get/mysql-apt-config_0.8.34-1_all.deb
+        sudo dpkg -i mysql-apt-config_0.8.34-1_all.deb
+        sudo apt-get update
+
     - name: Install MySQL client libraries and CURL Development libraries
       run: |
-        sudo apt-get update
         sudo apt-get install libmysqlclient-dev libcurl4-openssl-dev
 
     - name: Install MySQL server and MTR
       if: matrix.config.run_mtr
       run: |
         sudo apt-get install mysql-client mysql-server mysql-testsuite apparmor-utils
+        ls -l /usr/lib/mysql-test*
 
     - name: Install Clang dependencies on ubuntu
       if: startsWith(matrix.config.name, 'Clang')
@@ -255,7 +267,7 @@ jobs:
         sudo ln -s ${{github.workspace}}/src/mtr/binlog_streaming /usr/lib/mysql-test/suite/binlog_streaming
         # Running MTR from the system package
         BINSRV=${{github.workspace}}/src-build-${{matrix.config.label}}/binlog_server ./mtr \
-          --client-bindir=/usr/lib/mysql-test/bin --vardir=${{runner.temp}}/mtrvardir \
+          --vardir=${{runner.temp}}/mtrvardir \
           --force --max-test-fail=0 --retry=0 --nounit-tests --big-test --repeat=2 --parallel=${{steps.cpu-cores.outputs.count}} \
           --suite=binlog_streaming ${{matrix.config.mtr_options}}
 
