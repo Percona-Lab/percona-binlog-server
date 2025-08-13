@@ -13,17 +13,13 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef BINSRV_EVENT_EVENT_FWD_HPP
-#define BINSRV_EVENT_EVENT_FWD_HPP
-
-#include <iosfwd>
+#ifndef BINSRV_EVENT_SERVER_VERSION_FWD_HPP
+#define BINSRV_EVENT_SERVER_VERSION_FWD_HPP
 
 namespace binsrv::event {
 
-class event;
-
-std::ostream &operator<<(std::ostream &output, const event &obj);
+class server_version;
 
 } // namespace binsrv::event
 
-#endif // BINSRV_EVENT_EVENT_FWD_HPP
+#endif // BINSRV_EVENT_SERVER_VERSION_FWD_HPP

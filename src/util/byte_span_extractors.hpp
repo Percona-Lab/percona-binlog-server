@@ -42,6 +42,17 @@ void extract_fixed_int_from_byte_span(util::const_byte_span &remainder,
   remainder = remainder.subspan(sizeof(T));
 }
 
+template <typename T>
+  requires(std::integral<T> || std::same_as<T, std::byte>) && (sizeof(T) == 1U)
+void extract_byte_span_from_byte_span(util::const_byte_span &remainder,
+                                      std::span<T> storage_span) noexcept {
+  assert(std::size(remainder) >= storage_span.size());
+  std::memcpy(std::data(storage_span), std::data(remainder),
+              storage_span.size());
+
+  remainder = remainder.subspan(storage_span.size());
+}
+
 template <typename T, std::size_t N>
   requires(std::integral<T> || std::same_as<T, std::byte>) && (sizeof(T) == 1U)
 void extract_byte_array_from_byte_span(util::const_byte_span &remainder,

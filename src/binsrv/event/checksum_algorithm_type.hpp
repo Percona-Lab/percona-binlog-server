@@ -27,7 +27,8 @@ namespace binsrv::event {
 
 // NOLINTBEGIN(cppcoreguidelines-macro-usage)
 // Checksum algorithm type codes copied from
-// https://github.com/mysql/mysql-server/blob/mysql-8.0.37/libbinlogevents/include/binlog_event.h#L426
+// https://github.com/mysql/mysql-server/blob/mysql-8.0.43/libbinlogevents/include/binlog_event.h#L440
+// https://github.com/mysql/mysql-server/blob/mysql-8.4.6/libs/mysql/binlog/event/binlog_event.h#L462
 // clang-format off
 #define BINSRV_CHECKSUM_ALGORITHM_TYPE_XY_SEQUENCE() \
   BINSRV_CHECKSUM_ALGORITHM_TYPE_XY_MACRO(off  ,  0), \

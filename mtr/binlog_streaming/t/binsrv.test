@@ -4,14 +4,18 @@ if (!$BINSRV) {
   --skip \$BINSRV environment variable must be set
 }
 
+--source ../include/v80_v84_compatibility_defines.inc
+
 # in case of --repeat=N, we need to start from a fresh binary log to make
 # this test deterministic
 --echo *** Resetting replication at the very beginning of the test.
-RESET MASTER;
+--disable_query_log
+eval $stmt_reset_binary_logs_and_gtids;
+--enable_query_log
 
 --echo
 --echo *** Determining the first fresh binary log name.
---let $first_binlog = query_get_value(SHOW MASTER STATUS, File, 1)
+--let $first_binlog = query_get_value($stmt_show_binary_log_status, File, 1)
 
 --echo
 --echo *** Creating a simple table and filling it with some data.
@@ -24,7 +28,7 @@ FLUSH BINARY LOGS;
 
 --echo
 --echo *** Determining the second binary log name.
---let $second_binlog = query_get_value(SHOW MASTER STATUS, File, 1)
+--let $second_binlog = query_get_value($stmt_show_binary_log_status, File, 1)
 
 --echo
 --echo *** Filling the table with some more data.

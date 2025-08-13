@@ -1,5 +1,4 @@
 *** Resetting replication at the very beginning of the test.
-RESET MASTER;
 
 *** Determining the first fresh binary log name.
 

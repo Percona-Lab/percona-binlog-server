@@ -18,6 +18,7 @@
 #include <array>
 #include <cassert>
 #include <cstddef>
+#include <cstdint>
 #include <ostream>
 #include <stdexcept>
 #include <string>
@@ -72,9 +73,20 @@ event::event(reader_context &context, util::const_byte_span portion)
         "actual event size does not match the one specified in event common "
         "header");
   }
+
+  const auto encoded_server_version{
+      context.get_current_encoded_server_version()};
+
   std::size_t post_header_size{0U};
   post_header_size = context.get_current_post_header_length(code);
-  assert(post_header_size != unspecified_post_header_length);
+  if (post_header_size == unspecified_post_header_length) {
+    util::exception_location().raise<std::invalid_argument>(
+        "received event of type " + std::to_string(util::enum_to_index(code)) +
+        " \"" + std::string{to_string_view(code)} +
+        "\" "
+        "is not known in server version " +
+        std::to_string(encoded_server_version));
+  }
 
   const std::size_t group_size =
       common_header::size_in_bytes + post_header_size + footer_size;
@@ -86,11 +98,11 @@ event::event(reader_context &context, util::const_byte_span portion)
 
   const auto post_header_portion =
       portion.subspan(common_header::size_in_bytes, post_header_size);
-  emplace_post_header(code, post_header_portion);
+  emplace_post_header(encoded_server_version, code, post_header_portion);
 
   const auto body_portion = portion.subspan(
       common_header::size_in_bytes + post_header_size, body_size);
-  emplace_body(code, body_portion);
+  emplace_body(encoded_server_version, code, body_portion);
 
   if (footer_size != 0U) {
     const auto footer_portion = portion.subspan(
@@ -101,7 +113,8 @@ event::event(reader_context &context, util::const_byte_span portion)
   context.process_event(*this);
 }
 
-void event::emplace_post_header(code_type code, util::const_byte_span portion) {
+void event::emplace_post_header(std::uint32_t encoded_server_version,
+                                code_type code, util::const_byte_span portion) {
   // our goal here is to initialize (emplace) a specific class inside
   // 'post_header_' variant (determined via runtime argument 'code') with the
   // 'portion' byte range
@@ -109,11 +122,12 @@ void event::emplace_post_header(code_type code, util::const_byte_span portion) {
   // we start with defining an alias for a member function pointer that
   // accepts a byte range and performs some modification on an object of this
   // class (on 'post_header_' member to be precise)
-  using emplace_function = void (event::*)(util::const_byte_span);
+  using emplace_function =
+      void (event::*)(std::uint32_t, util::const_byte_span);
   // then, we define an alias for a container that can store
   // '<number_of_events>' such member function pointers
   using emplace_function_container =
-      std::array<emplace_function, default_number_of_events>;
+      std::array<emplace_function, max_number_of_events>;
   // after that we declare a constexpr instance of such array and initialize it
   // with immediately invoked lambda
   static constexpr emplace_function_container emplace_functions{
@@ -131,7 +145,7 @@ void event::emplace_post_header(code_type code, util::const_byte_span portion) {
   //     generic_post_header<1 = start_v3>>,
   //   ...
   //   &event::generic_emplace_post_header<
-  //     generic_post_header<number_of_events - 1U = heartbeat_log_v2>>
+  //     generic_post_header<number_of_events - 1U = gtid_tagged_log>>
   // }
 
   // please, notice that we managed to avoid code bloat here by reusing the
@@ -148,14 +162,16 @@ void event::emplace_post_header(code_type code, util::const_byte_span portion) {
   // this will initialize the 'post_header_' member with expected variant
 
   // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index)
-  (this->*emplace_functions[function_index])(portion);
+  (this->*emplace_functions[function_index])(encoded_server_version, portion);
 }
 
-void event::emplace_body(code_type code, util::const_byte_span portion) {
+void event::emplace_body(std::uint32_t encoded_server_version, code_type code,
+                         util::const_byte_span portion) {
   // here we use the same technique as in 'emplace_post_header()'
-  using emplace_function = void (event::*)(util::const_byte_span);
+  using emplace_function =
+      void (event::*)(std::uint32_t, util::const_byte_span);
   using emplace_function_container =
-      std::array<emplace_function, default_number_of_events>;
+      std::array<emplace_function, max_number_of_events>;
   static constexpr emplace_function_container emplace_functions{
       []<std::size_t... IndexPack>(
           std::index_sequence<IndexPack...>) -> emplace_function_container {
@@ -166,7 +182,7 @@ void event::emplace_body(code_type code, util::const_byte_span portion) {
   const auto function_index = util::enum_to_index(code);
   assert(function_index < util::enum_to_index(code_type::delimiter));
   // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index)
-  (this->*emplace_functions[function_index])(portion);
+  (this->*emplace_functions[function_index])(encoded_server_version, portion);
 }
 
 std::ostream &operator<<(std::ostream &output, const event &obj) {

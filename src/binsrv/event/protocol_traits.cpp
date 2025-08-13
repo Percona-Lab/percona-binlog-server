@@ -17,10 +17,12 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <iomanip>
 #include <ios>
 #include <iterator>
 #include <ostream>
+#include <ranges>
 #include <stdexcept>
 #include <string>
 
@@ -34,16 +36,17 @@
 namespace binsrv::event {
 
 [[nodiscard]] std::size_t
-get_post_header_length_for_code(const post_header_length_container &storage,
+get_post_header_length_for_code(std::uint32_t encoded_server_version,
+                                const post_header_length_container &storage,
                                 code_type code) noexcept {
-  static_assert(default_number_of_events ==
+  static_assert(max_number_of_events ==
                     util::enum_to_index(code_type::delimiter),
                 "mismatch between number_of_events and code_type enum");
 
   // here the very first "unknown" code is not included in the array by the
   // spec
   const auto index{util::enum_to_index(code)};
-  if (index == 0U || index >= default_number_of_events) {
+  if (index == 0U || index >= get_number_of_events(encoded_server_version)) {
     return unspecified_post_header_length;
   }
   // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index)
@@ -56,9 +59,10 @@ get_post_header_length_for_code(const post_header_length_container &storage,
 
 std::ostream &
 print_post_header_lengths(std::ostream &output,
+                          std::uint32_t encoded_server_version,
                           const post_header_length_container &obj) {
   const boost::io::ios_flags_saver saver(output);
-  const auto max_index = util::enum_to_index(code_type::delimiter);
+  const auto max_index = get_number_of_events(encoded_server_version);
   // starting from 1 here as the very first "unknown" code is not included
   // in this array
   for (std::size_t index{1U}; index < max_index; ++index) {
@@ -77,16 +81,21 @@ print_post_header_lengths(std::ostream &output,
     } else {
       output << std::left << std::setw(alignment_width) << label;
     }
-    output << " => " << get_post_header_length_for_code(obj, current_code);
+    output << " => "
+           << get_post_header_length_for_code(encoded_server_version, obj,
+                                              current_code);
   }
   return output;
 }
 
 void validate_post_header_lengths(
+    std::uint32_t encoded_server_version,
     const post_header_length_container &runtime,
     const post_header_length_container &hardcoded) {
+  const auto number_of_events{get_number_of_events(encoded_server_version)};
   const auto length_mismatch_result{std::ranges::mismatch(
-      runtime, hardcoded,
+      runtime | std::ranges::views::take(number_of_events),
+      hardcoded | std::ranges::views::take(number_of_events),
       [](encoded_post_header_length_type real,
          encoded_post_header_length_type expected) {
         return expected == static_cast<encoded_post_header_length_type>(

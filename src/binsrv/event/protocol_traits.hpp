@@ -30,17 +30,20 @@ using encoded_post_header_length_type = std::uint8_t;
 
 // we do not store length for the first element which is the "unknown" event
 using post_header_length_container =
-    std::array<encoded_post_header_length_type, default_number_of_events - 1U>;
+    std::array<encoded_post_header_length_type, max_number_of_events - 1U>;
 
 [[nodiscard]] std::size_t
-get_post_header_length_for_code(const post_header_length_container &storage,
+get_post_header_length_for_code(std::uint32_t encoded_server_version,
+                                const post_header_length_container &storage,
                                 code_type code) noexcept;
 
 std::ostream &
 print_post_header_lengths(std::ostream &output,
+                          std::uint32_t encoded_server_version,
                           const post_header_length_container &obj);
 
 void validate_post_header_lengths(
+    std::uint32_t encoded_server_version,
     const post_header_length_container &runtime,
     const post_header_length_container &hardcoded);
 

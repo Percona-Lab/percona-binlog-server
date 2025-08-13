@@ -35,11 +35,19 @@ template <>
 class [[nodiscard]] generic_post_header_impl<code_type::format_description> {
 public:
   static constexpr std::size_t server_version_length{50U};
-  static constexpr std::size_t size_in_bytes{98U};
+  static constexpr std::size_t base_size_in_bytes{server_version_length + 7U};
+  static constexpr std::size_t
+  get_size_in_bytes(std::uint32_t encoded_server_version) noexcept {
+    // " - 1U" is needed here because post header size array does not include
+    // the value for the UNKNOWN binlog event
+    return base_size_in_bytes + get_number_of_events(encoded_server_version) -
+           1U;
+  }
 
   using server_version_storage = std::array<std::byte, server_version_length>;
 
-  explicit generic_post_header_impl(util::const_byte_span portion);
+  generic_post_header_impl(std::uint32_t encoded_server_version,
+                           util::const_byte_span portion);
 
   [[nodiscard]] std::uint16_t get_binlog_version_raw() const noexcept {
     return binlog_version_;
@@ -51,6 +59,8 @@ public:
   }
 
   [[nodiscard]] std::string_view get_server_version() const noexcept;
+
+  [[nodiscard]] std::uint32_t get_encoded_server_version() const noexcept;
 
   [[nodiscard]] std::uint32_t get_create_timestamp_raw() const noexcept {
     return create_timestamp_;
@@ -71,18 +81,14 @@ public:
   get_post_header_lengths_raw() const noexcept {
     return post_header_lengths_;
   }
-  [[nodiscard]] std::size_t
-  get_post_header_length(code_type code) const noexcept {
-    return get_post_header_length_for_code(post_header_lengths_, code);
-  }
 
 private:
   // the members are deliberately reordered for better packing
-  std::uint32_t create_timestamp_{};                  // 2
-  server_version_storage server_version_{};           // 1
-  std::uint16_t binlog_version_{};                    // 0
+  std::uint32_t create_timestamp_{};                   // 2
+  server_version_storage server_version_{};            // 1
+  std::uint16_t binlog_version_{};                     // 0
   post_header_length_container post_header_lengths_{}; // 4
-  std::uint8_t common_header_length_{};               // 3
+  std::uint8_t common_header_length_{};                // 3
 };
 
 } // namespace binsrv::event

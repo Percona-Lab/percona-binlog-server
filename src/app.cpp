@@ -302,6 +302,7 @@ void receive_binlog_events(
   //       @source_binlog_checksum variable that we set in the
   //       'connection::switch_to_replication()'
   binsrv::event::reader_context context{
+      connection.get_server_version(),
       binsrv::event::checksum_algorithm_type::off};
 
   // if binlog is still open, there is no sense to close it and re-open
