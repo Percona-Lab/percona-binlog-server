@@ -20,6 +20,7 @@
 
 #include <algorithm>
 #include <array>
+#include <concepts>
 #include <istream>
 #include <ostream>
 #include <string_view>

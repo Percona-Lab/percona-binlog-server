@@ -22,7 +22,6 @@
 #include <stdexcept>
 #include <utility>
 
-#include "binsrv/event/checksum_algorithm_type.hpp"
 #include "binsrv/event/code_type.hpp"
 #include "binsrv/event/event.hpp"
 #include "binsrv/event/flag_type.hpp"
@@ -34,9 +33,9 @@
 namespace binsrv::event {
 
 reader_context::reader_context(std::uint32_t encoded_server_version,
-                               checksum_algorithm_type checksum_algorithm)
+                               bool verify_checksum)
     : encoded_server_version_{encoded_server_version},
-      checksum_algorithm_{checksum_algorithm},
+      verify_checksum_{verify_checksum},
       post_header_lengths_{
           get_hardcoded_post_header_lengths(encoded_server_version_)} {}
 
@@ -59,8 +58,6 @@ void reader_context::process_event(const event &current_event) {
       assert(false);
     }
   }
-  // TODO: check if CRC32 checksum from the footer (if present) matches the
-  //       calculated one
 }
 
 [[nodiscard]] bool
@@ -152,7 +149,7 @@ reader_context::process_event_in_rotate_artificial_processed_state(
   post_header_lengths_ = post_header.get_post_header_lengths_raw();
 
   const auto &body{current_event.get_body<code_type::format_description>()};
-  checksum_algorithm_ = body.get_checksum_algorithm();
+  verify_checksum_ = body.has_checksum_algorithm();
 
   // some format description events (non-pseudo ones) must be written to
   // the binary log file and advance position when being processed
@@ -244,11 +241,6 @@ void reader_context::validate_position_and_advance(
   }
   // simply advance current position
   position_ = common_header.get_next_event_position_raw();
-}
-
-[[nodiscard]] checksum_algorithm_type
-reader_context::get_current_checksum_algorithm() const noexcept {
-  return checksum_algorithm_;
 }
 
 [[nodiscard]] std::size_t

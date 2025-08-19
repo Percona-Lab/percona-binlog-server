@@ -230,6 +230,9 @@ set(source_files
   src/util/composite_name_fwd.hpp
   src/util/composite_name.hpp
 
+  src/util/crc_helpers.hpp
+  src/util/crc_helpers.cpp
+
   src/util/ct_string.hpp
 
   src/util/exception_location_helpers.hpp
@@ -277,6 +280,7 @@ target_link_libraries(binlog_server
     binlog_server_compiler_flags
   PRIVATE
     Boost::headers Boost::url
+    ZLIB::ZLIB
     MySQL::client
     aws-cpp-sdk-s3-crt
 )

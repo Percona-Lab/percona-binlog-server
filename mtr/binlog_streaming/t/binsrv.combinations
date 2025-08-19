@@ -1,5 +1,15 @@
-[crc]
-binlog_checksum = CRC32
+[srv_nocrc_utl_nocrc]
+binlog-checksum = NONE
+init-connect = SET @binsrv_checksum = 'FALSE'
 
-[nocrc]
-binlog_checksum = NONE
+[srv_nocrc_utl_crc]
+binlog-checksum = NONE
+init-connect = SET @binsrv_checksum = 'TRUE'
+
+[srv_crc_utl_nocrc]
+binlog-checksum = CRC32
+init-connect = SET @binsrv_checksum = 'FALSE'
+
+[srv_crc_utl_crc]
+binlog-checksum = CRC32
+init-connect = SET @binsrv_checksum = 'TRUE'

@@ -189,7 +189,8 @@ The Percona Binary Log Server configuration file has the following format.
   },
   "replication": {
     "server_id": 42,
-    "idle_time": 10
+    "idle_time": 10,
+    "verify_checksum": true
   },
   "storage": {
     "uri": "file:///home/user/vault"
@@ -224,6 +225,7 @@ Currently we use the following mapping:
 #### \<replication\> section
 - `<replication.server_id>` - specifies the server ID that the utility will be using when connecting to a remote MySQL server (similar to [--connection-server-id](https://dev.mysql.com/doc/refman/8.0/en/mysqlbinlog.html#option_mysqlbinlog_connection-server-id) `mysqlbinlog` command line option).
 - `<replication.idle_time>` - the number of seconds the utility will spend in disconnected mode between reconnection attempts.
+- `<replication.verify_checksum>` - a boolean value which specifies whether the utility should verify event checksums.
 
 #### \<storage\> section
 - `<storage.uri>` - specifies the location (either local or remote) where the received binary logs should be stored

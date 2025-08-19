@@ -20,7 +20,6 @@
 
 #include <cstdint>
 
-#include "binsrv/event/checksum_algorithm_type_fwd.hpp"
 #include "binsrv/event/common_header_fwd.hpp"
 #include "binsrv/event/event_fwd.hpp"
 #include "binsrv/event/protocol_traits.hpp"
@@ -31,15 +30,16 @@ class [[nodiscard]] reader_context {
   friend class event;
 
 public:
-  reader_context(std::uint32_t encoded_server_version,
-                 checksum_algorithm_type checksum_algorithm);
+  reader_context(std::uint32_t encoded_server_version, bool verify_checksum);
 
   [[nodiscard]] std::uint32_t
   get_current_encoded_server_version() const noexcept {
     return encoded_server_version_;
   }
-  [[nodiscard]] checksum_algorithm_type
-  get_current_checksum_algorithm() const noexcept;
+  [[nodiscard]] bool get_current_verify_checksum() const noexcept {
+    return verify_checksum_;
+  }
+
   [[nodiscard]] std::size_t
   get_current_post_header_length(code_type code) const noexcept;
   [[nodiscard]] std::uint32_t get_current_position() const noexcept {
@@ -56,7 +56,7 @@ private:
   };
   state_type state_{state_type::initial};
   std::uint32_t encoded_server_version_;
-  checksum_algorithm_type checksum_algorithm_;
+  bool verify_checksum_;
   post_header_length_container post_header_lengths_{};
   std::uint32_t position_{0U};
 

@@ -5,6 +5,7 @@
 #   --let $binsrv_connect_timeout = 20
 #   --let $binsrv_read_timeout = 60
 #   --let $binsrv_idle_time = 10
+#   --let $binsrv_verify_checksum = TRUE | FALSE
 #   --source set_up_binsrv_environment.inc
 
 --echo
@@ -58,7 +59,8 @@ eval SET @binsrv_config_json = JSON_OBJECT(
   ),
   'replication', JSON_OBJECT(
      'server_id', @@server_id + 1,
-     'idle_time', $binsrv_idle_time
+     'idle_time', $binsrv_idle_time,
+     'verify_checksum', $binsrv_verify_checksum
   ),
   'storage', JSON_OBJECT(
      'uri', @storage_uri
