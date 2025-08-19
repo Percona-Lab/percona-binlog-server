@@ -14,7 +14,8 @@
   },
   "replication": {
     "server_id": 42,
-    "idle_time": 10
+    "idle_time": 10,
+    "verify_checksum": true
   },
   "storage": {
     "uri": "file:///home/user/vault"

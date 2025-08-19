@@ -20,6 +20,7 @@
 #include <memory>
 #include <span>
 #include <stdexcept>
+#include <string>
 #include <string_view>
 #include <utility>
 
@@ -230,7 +231,7 @@ bool connection::ping() {
 
 void connection::switch_to_replication(
     std::uint32_t server_id, std::string_view file_name, std::uint64_t position,
-    connection_replication_mode_type blocking_mode) {
+    bool verify_checksum, connection_replication_mode_type blocking_mode) {
   assert(!is_empty());
   if (is_in_replication_mode()) {
     util::exception_location().raise<std::logic_error>(
@@ -239,10 +240,12 @@ void connection::switch_to_replication(
 
   // WL#2540: Replication event checksums
   // https://dev.mysql.com/worklog/task/?id=2540
-  static constexpr std::string_view crc_query{
-      "SET @source_binlog_checksum = 'NONE', "
-      "@master_binlog_checksum = 'NONE'"};
-  execute_generic_query_noresult(crc_query);
+  const std::string checksum_algorithm_label{verify_checksum ? "CRC32"
+                                                             : "NONE"};
+  const auto set_binlog_checksum_query{
+      "SET @source_binlog_checksum = '" + checksum_algorithm_label +
+      "', @master_binlog_checksum = '" + checksum_algorithm_label + "'"};
+  execute_generic_query_noresult(set_binlog_checksum_query);
 
   rpl_impl_ = std::make_unique<rpl_impl>(*this, server_id, file_name, position,
                                          blocking_mode);

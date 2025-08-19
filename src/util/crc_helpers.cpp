@@ -13,26 +13,24 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef EASYMYSQL_REPLICATION_CONFIG_HPP
-#define EASYMYSQL_REPLICATION_CONFIG_HPP
-
-#include "easymysql/replication_config_fwd.hpp" // IWYU pragma: export
+#include "util/crc_helpers.hpp"
 
 #include <cstdint>
+#include <iterator>
 
-#include "util/nv_tuple.hpp"
+#include <zconf.h>
+#include <zlib.h>
 
-namespace easymysql {
+#include "util/byte_span_fwd.hpp"
 
-struct [[nodiscard]] replication_config
-    : util::nv_tuple<
-          // clang-format off
-          util::nv<"server_id", std::uint32_t>,
-          util::nv<"idle_time", std::uint32_t>,
-          util::nv<"verify_checksum", bool>
-          // clang-format on
-          > {};
+namespace util {
 
-} // namespace easymysql
+std::uint32_t calculate_crc32(const_byte_span portion) noexcept {
+  auto crc = crc32_z(0UL, Z_NULL, 0U);
+  return static_cast<std::uint32_t>(
+      // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+      crc32_z(crc, reinterpret_cast<const Bytef *>(std::data(portion)),
+              std::size(portion)));
+}
 
-#endif // EASYMYSQL_REPLICATION_CONFIG_HPP
+} // namespace util

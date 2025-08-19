@@ -13,26 +13,17 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef EASYMYSQL_REPLICATION_CONFIG_HPP
-#define EASYMYSQL_REPLICATION_CONFIG_HPP
-
-#include "easymysql/replication_config_fwd.hpp" // IWYU pragma: export
+#ifndef UTIL_CRC_HELPERS_HPP
+#define UTIL_CRC_HELPERS_HPP
 
 #include <cstdint>
 
-#include "util/nv_tuple.hpp"
+#include "util/byte_span_fwd.hpp"
 
-namespace easymysql {
+namespace util {
 
-struct [[nodiscard]] replication_config
-    : util::nv_tuple<
-          // clang-format off
-          util::nv<"server_id", std::uint32_t>,
-          util::nv<"idle_time", std::uint32_t>,
-          util::nv<"verify_checksum", bool>
-          // clang-format on
-          > {};
+[[nodiscard]] std::uint32_t calculate_crc32(const_byte_span portion) noexcept;
 
-} // namespace easymysql
+} // namespace util
 
-#endif // EASYMYSQL_REPLICATION_CONFIG_HPP
+#endif // UTIL_CRC_HELPERS_HPP

@@ -26,7 +26,6 @@
 #include <utility>
 #include <variant>
 
-#include "binsrv/event/checksum_algorithm_type.hpp"
 #include "binsrv/event/code_type.hpp"
 #include "binsrv/event/generic_body.hpp"
 #include "binsrv/event/generic_post_header.hpp"
@@ -35,6 +34,7 @@
 
 #include "util/byte_span_fwd.hpp"
 #include "util/conversion_helpers.hpp"
+#include "util/crc_helpers.hpp"
 #include "util/exception_location_helpers.hpp"
 
 namespace binsrv::event {
@@ -56,15 +56,14 @@ event::event(reader_context &context, util::const_byte_span portion)
 
   std::size_t footer_size{0U};
   if (code == code_type::format_description) {
-    // format_description_events always include event footers with checksums
+    // format_description events always include event footers with checksums
+    // even if their bodies contain 'checksum_algorithm' set to 'none'
     footer_size = footer::size_in_bytes;
   } else {
     // we determine whether there is a footer in the event from the
     // reader_context
-    footer_size = (context.get_current_checksum_algorithm() ==
-                           checksum_algorithm_type::crc32
-                       ? footer::size_in_bytes
-                       : 0U);
+    footer_size =
+        (context.get_current_verify_checksum() ? footer::size_in_bytes : 0U);
   }
 
   const std::size_t event_size = std::size(portion);
@@ -105,10 +104,23 @@ event::event(reader_context &context, util::const_byte_span portion)
   emplace_body(encoded_server_version, code, body_portion);
 
   if (footer_size != 0U) {
-    const auto footer_portion = portion.subspan(
-        common_header::size_in_bytes + post_header_size + body_size,
-        footer_size);
+    const auto size_wo_footer{common_header::size_in_bytes + post_header_size +
+                              body_size};
+    const auto footer_portion = portion.subspan(size_wo_footer, footer_size);
     footer_.emplace(footer_portion);
+    const bool need_checksum_verification{
+        code == code_type::format_description
+            ? get_body<code_type::format_description>().has_checksum_algorithm()
+            : context.get_current_verify_checksum()};
+    if (need_checksum_verification) {
+      const auto event_wo_footer_portion = portion.subspan(0U, size_wo_footer);
+      const auto calculated_crc{util::calculate_crc32(event_wo_footer_portion)};
+      const auto expected_crc{footer_->get_crc_raw()};
+      if (calculated_crc != expected_crc) {
+        util::exception_location().raise<std::invalid_argument>(
+            "event checksum mismatch");
+      }
+    }
   };
   context.process_event(*this);
 }

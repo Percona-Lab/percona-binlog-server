@@ -45,7 +45,6 @@
 #include "binsrv/storage.hpp"
 #include "binsrv/storage_backend_factory.hpp"
 
-#include "binsrv/event//checksum_algorithm_type.hpp"
 #include "binsrv/event/code_type.hpp"
 #include "binsrv/event/event.hpp"
 #include "binsrv/event/flag_type.hpp"
@@ -246,7 +245,7 @@ void receive_binlog_events(
     const volatile std::atomic_flag &termination_flag,
     binsrv::basic_logger &logger, const easymysql::library &mysql_lib,
     const easymysql::connection_config &connection_config,
-    std::uint32_t server_id, binsrv::storage &storage) {
+    std::uint32_t server_id, bool verify_checksum, binsrv::storage &storage) {
   easymysql::connection connection{};
   try {
     connection = mysql_lib.create_connection(connection_config);
@@ -278,7 +277,8 @@ void receive_binlog_events(
 
   try {
     connection.switch_to_replication(server_id, current_binlog_name,
-                                     current_binlog_position, blocking_mode);
+                                     current_binlog_position, verify_checksum,
+                                     blocking_mode);
   } catch (const easymysql::core_error &) {
     if (operation_mode == binsrv::operation_mode_type::fetch) {
       throw;
@@ -287,7 +287,9 @@ void receive_binlog_events(
     return;
   }
 
-  logger.log(binsrv::log_severity::info, "switched to replication");
+  logger.log(binsrv::log_severity::info,
+             std::string{"switched to replication (checksum "} +
+                 (verify_checksum ? "enabled" : "disabled") + ")");
 
   log_replication_info(logger, server_id, current_binlog_name,
                        current_binlog_position, blocking_mode);
@@ -298,12 +300,8 @@ void receive_binlog_events(
 
   util::const_byte_span portion;
 
-  // TODO: change this checksum algorithm to the value of the
-  //       @source_binlog_checksum variable that we set in the
-  //       'connection::switch_to_replication()'
-  binsrv::event::reader_context context{
-      connection.get_server_version(),
-      binsrv::event::checksum_algorithm_type::off};
+  binsrv::event::reader_context context{connection.get_server_version(),
+                                        verify_checksum};
 
   // if binlog is still open, there is no sense to close it and re-open
   // instead, we will just instruct this loop to process the
@@ -505,6 +503,7 @@ int main(int argc, char *argv[]) {
 
     const auto server_id{replication_config.get<"server_id">()};
     const auto idle_time_seconds{replication_config.get<"idle_time">()};
+    const auto verify_checksum{replication_config.get<"verify_checksum">()};
 
     const easymysql::library mysql_lib;
     logger->log(binsrv::log_severity::info, "initialized mysql client library");
@@ -512,7 +511,8 @@ int main(int argc, char *argv[]) {
     log_library_info(*logger, mysql_lib);
 
     receive_binlog_events(operation_mode, termination_flag, *logger, mysql_lib,
-                          connection_config, server_id, storage);
+                          connection_config, server_id, verify_checksum,
+                          storage);
 
     if (operation_mode == binsrv::operation_mode_type::pull) {
       std::size_t iteration_number{1U};
@@ -532,7 +532,8 @@ int main(int argc, char *argv[]) {
         logger->log(binsrv::log_severity::info, msg);
 
         receive_binlog_events(operation_mode, termination_flag, *logger,
-                              mysql_lib, connection_config, server_id, storage);
+                              mysql_lib, connection_config, server_id,
+                              verify_checksum, storage);
         ++iteration_number;
       }
     }

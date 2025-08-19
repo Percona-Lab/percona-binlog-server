@@ -15,6 +15,7 @@
 
 #include "binsrv/event/format_description_body_impl.hpp"
 
+#include <cassert>
 #include <iterator>
 #include <ostream>
 #include <stdexcept>
@@ -65,6 +66,15 @@ generic_body_impl<code_type::format_description>::generic_body_impl(
     code_type::format_description>::get_readable_checksum_algorithm()
     const noexcept {
   return to_string_view(get_checksum_algorithm());
+}
+
+[[nodiscard]] bool
+generic_body_impl<code_type::format_description>::has_checksum_algorithm()
+    const noexcept {
+  const auto checksum_algorithm{get_checksum_algorithm()};
+  assert(checksum_algorithm == checksum_algorithm_type::off ||
+         checksum_algorithm == checksum_algorithm_type::crc32);
+  return checksum_algorithm != checksum_algorithm_type::off;
 }
 
 std::ostream &

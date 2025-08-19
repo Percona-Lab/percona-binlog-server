@@ -47,6 +47,8 @@ public:
   [[nodiscard]] std::string_view
   get_readable_checksum_algorithm() const noexcept;
 
+  [[nodiscard]] bool has_checksum_algorithm() const noexcept;
+
 private:
   std::uint8_t checksum_algorithm_{};
 };
