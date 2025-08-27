@@ -21,6 +21,9 @@
 #include <cstdint>
 #include <string>
 
+#include "easymysql/ssl_config.hpp" // IWYU pragma: export
+#include "easymysql/tls_config.hpp" // IWYU pragma: export
+
 #include "util/nv_tuple.hpp"
 
 namespace easymysql {
@@ -34,7 +37,9 @@ struct [[nodiscard]] connection_config
           util::nv<"password"       , std::string>,
           util::nv<"connect_timeout", std::uint32_t>,
           util::nv<"read_timeout"   , std::uint32_t>,
-          util::nv<"write_timeout"  , std::uint32_t>
+          util::nv<"write_timeout"  , std::uint32_t>,
+          util::nv<"ssl"            , optional_ssl_config>,
+          util::nv<"tls"            , optional_tls_config>
           // clang-format on
           > {
   [[nodiscard]] bool has_password() const noexcept {

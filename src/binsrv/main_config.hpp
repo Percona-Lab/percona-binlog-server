@@ -24,7 +24,6 @@
 #include "easymysql/connection_config.hpp"  // IWYU pragma: export
 #include "easymysql/replication_config.hpp" // IWYU pragma: export
 
-#include "util/command_line_helpers_fwd.hpp"
 #include "util/nv_tuple.hpp"
 
 namespace binsrv {
@@ -41,12 +40,7 @@ private:
       >;
 
 public:
-  static constexpr std::size_t flattened_size{impl_type::flattened_size};
-  static constexpr std::size_t depth{impl_type::depth};
-
   explicit main_config(std::string_view file_name);
-
-  explicit main_config(util::command_line_arg_view arguments);
 
   [[nodiscard]] const auto &root() const noexcept { return impl_; }
 

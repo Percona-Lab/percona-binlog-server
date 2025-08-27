@@ -24,6 +24,8 @@
 
 #include "easymysql/connection_config_fwd.hpp"
 #include "easymysql/library_fwd.hpp"
+#include "easymysql/ssl_config_fwd.hpp"
+#include "easymysql/tls_config_fwd.hpp"
 
 #include "util/byte_span_fwd.hpp"
 
@@ -74,6 +76,10 @@ public:
   [[nodiscard]] bool fetch_binlog_event(util::const_byte_span &portion);
 
 private:
+  void process_ssl_config(const ssl_config &config);
+  void process_tls_config(const tls_config &config);
+  void process_connection_config(const connection_config &config);
+
   explicit connection(const connection_config &config);
 
   struct mysql_deleter {

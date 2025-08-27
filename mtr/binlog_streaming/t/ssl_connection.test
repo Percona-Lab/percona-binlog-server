@@ -1,0 +1,225 @@
+--source ../include/have_binsrv.inc
+
+--let $localhost_ip = 127.0.0.1
+
+--let $user_name = user
+--let $ssl_user_name = ssl_user
+--let $x509_user_name = x509_user
+
+--let $user_password = strong_password
+
+--echo
+--echo *** Creating auxiliary users
+eval CREATE USER '$user_name'@'$localhost_ip' IDENTIFIED WITH mysql_native_password BY '$user_password';
+eval CREATE USER '$ssl_user_name'@'$localhost_ip' IDENTIFIED BY '$user_password' REQUIRE SSL;
+eval CREATE USER '$x509_user_name'@'$localhost_ip' REQUIRE X509;
+
+--echo
+--echo *** Granting replication privileges to the created users
+eval GRANT REPLICATION SLAVE ON *.* TO '$user_name'@'$localhost_ip';
+eval GRANT REPLICATION SLAVE ON *.* TO '$ssl_user_name'@'$localhost_ip';
+eval GRANT REPLICATION SLAVE ON *.* TO '$x509_user_name'@'$localhost_ip';
+
+# identifying backend storage type ('file' or 's3')
+--source ../include/identify_storage_backend.inc
+
+
+# We are using SAN certificates here as along with 'localhost'
+# they also include '127.0.0.1' in Subject Alternative Names
+--let $ca_cert = $MYSQL_TEST_DIR/std_data/ca-cert-verify-san.pem
+--let $client_cert = $MYSQL_TEST_DIR/std_data/client-cert-verify-san.pem
+--let $client_key = $MYSQL_TEST_DIR/std_data/client-key-verify-san.pem
+
+# Common binlog utility configuration options
+--let $binsrv_connection_host = $localhost_ip
+--let $binsrv_connect_timeout = 20
+--let $binsrv_read_timeout = 60
+--let $binsrv_idle_time = 10
+--let $binsrv_verify_checksum = TRUE
+
+# a query that checks SSL connection status
+--let $ssl_status_query = SELECT IF(VARIABLE_VALUE = '', '<unspecified>', VARIABLE_VALUE) AS SSL_status FROM performance_schema.session_status WHERE VARIABLE_NAME = 'Ssl_version'
+
+--let $tls_index = 2
+while ($tls_index <= 3)
+{
+  --let $enforced_tls_version = TLSv1.$tls_index
+  --let $binsrv_tls_version = $enforced_tls_version
+
+  --echo
+  --echo *** 1. Normal unprivileged user ($enforced_tls_version)
+  --echo
+  --let $auth_options = --tls-version=$enforced_tls_version --host=$localhost_ip --user=$user_name --password=$user_password
+  --let $binsrv_connection_user = $user_name
+  --let $binsrv_connection_password = $user_password
+
+  # SSL mode disabled can only be used for the $user_name user who has
+  # neither REQUIRE SSL nor REQUIRE X509. This is why this section is marked with
+  # a weird value "1.0.".
+  --echo
+  --echo ****** 1.0. SSL mode disabled ($enforced_tls_version)
+  --let $binsrv_ssl_mode = required
+  --source ../include/set_up_binsrv_environment.inc
+  --echo ********* Executing mysql client
+  --exec $MYSQL --ssl-mode=DISABLED $auth_options -e "$ssl_status_query"
+  --echo ********* Executing binlog utility
+  --exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+  --source ../include/tear_down_binsrv_environment.inc
+
+  --echo
+  --echo ****** 1.1. SSL mode preferred ($enforced_tls_version)
+  --let $binsrv_ssl_mode = preferred
+  --source ../include/set_up_binsrv_environment.inc
+  --echo ********* Executing mysql client
+  --exec $MYSQL --ssl-mode=PREFERRED $auth_options -e "$ssl_status_query"
+  --echo ********* Executing binlog utility
+  --exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+  --source ../include/tear_down_binsrv_environment.inc
+
+  --echo
+  --echo ****** 1.2. SSL mode required ($enforced_tls_version)
+  --let $binsrv_ssl_mode = required
+  --source ../include/set_up_binsrv_environment.inc
+  --echo ********* Executing mysql client
+  --exec $MYSQL --ssl-mode=REQUIRED $auth_options -e "$ssl_status_query"
+  --echo ********* Executing binlog utility
+  --exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+  --source ../include/tear_down_binsrv_environment.inc
+
+  --let $auth_options = $auth_options --ssl-ca=$ca_cert
+  --let $binsrv_ssl_ca = $ca_cert
+
+  --echo
+  --echo ****** 1.3. SSL mode verify_ca ($enforced_tls_version)
+  --let $binsrv_ssl_mode = verify_ca
+  --source ../include/set_up_binsrv_environment.inc
+  --echo ********* Executing mysql client
+  --exec $MYSQL --ssl-mode=VERIFY_CA $auth_options -e "$ssl_status_query"
+  --echo ********* Executing binlog utility
+  --exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+  --source ../include/tear_down_binsrv_environment.inc
+
+  --echo
+  --echo ****** 1.4. SSL mode verify_identity ($enforced_tls_version)
+  --let $binsrv_ssl_mode = verify_identity
+  --source ../include/set_up_binsrv_environment.inc
+  --echo ********* Executing mysql client
+  --exec $MYSQL --ssl-mode=VERIFY_IDENTITY $auth_options -e "$ssl_status_query"
+  --echo ********* Executing binlog utility
+  --exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+  --source ../include/tear_down_binsrv_environment.inc
+
+
+  --echo
+  --echo *** 2. REQUIRE SSL unprivileged user ($enforced_tls_version)
+  --echo
+  --let $auth_options = --tls-version=$enforced_tls_version --host=$localhost_ip --user=$ssl_user_name --password=$user_password
+  --let $binsrv_connection_user = $ssl_user_name
+  --let $binsrv_connection_password = $user_password
+  --let $binsrv_ssl_ca =
+
+  --echo
+  --echo ****** 2.1. SSL mode preferred ($enforced_tls_version)
+  --let $binsrv_ssl_mode = preferred
+  --source ../include/set_up_binsrv_environment.inc
+  --echo ********* Executing mysql client
+  --exec $MYSQL --ssl-mode=PREFERRED $auth_options -e "$ssl_status_query"
+  --echo ********* Executing binlog utility
+  --exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+  --source ../include/tear_down_binsrv_environment.inc
+
+  --echo
+  --echo ****** 2.2. SSL mode required ($enforced_tls_version)
+  --let $binsrv_ssl_mode = required
+  --source ../include/set_up_binsrv_environment.inc
+  --echo ********* Executing mysql client
+  --exec $MYSQL --ssl-mode=REQUIRED $auth_options -e "$ssl_status_query"
+  --echo ********* Executing binlog utility
+  --exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+  --source ../include/tear_down_binsrv_environment.inc
+
+  --let $auth_options = $auth_options --ssl-ca=$ca_cert
+  --let $binsrv_ssl_ca = $ca_cert
+
+  --echo
+  --echo ****** 2.3. SSL mode verify_ca ($enforced_tls_version)
+  --let $binsrv_ssl_mode = verify_ca
+  --source ../include/set_up_binsrv_environment.inc
+  --echo ********* Executing mysql client
+  --exec $MYSQL --ssl-mode=VERIFY_CA $auth_options -e "$ssl_status_query"
+  --echo ********* Executing binlog utility
+  --exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+  --source ../include/tear_down_binsrv_environment.inc
+
+  --echo
+  --echo ****** 2.4. SSL mode verify_identity ($enforced_tls_version)
+  --let $binsrv_ssl_mode = verify_identity
+  --source ../include/set_up_binsrv_environment.inc
+  --echo ********* Executing mysql client
+  --exec $MYSQL --ssl-mode=VERIFY_IDENTITY $auth_options -e "$ssl_status_query"
+  --echo ********* Executing binlog utility
+  --exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+  --source ../include/tear_down_binsrv_environment.inc
+
+
+  --echo
+  --echo *** 3. REQUIRE X509 unprivileged user ($enforced_tls_version)
+  --echo
+  --let $auth_options = --tls-version=$enforced_tls_version --host=$localhost_ip --user=$x509_user_name --ssl-cert=$client_cert --ssl-key=$client_key
+  --let $binsrv_connection_user = $x509_user_name
+  --let $binsrv_connection_password =
+  --let $binsrv_ssl_ca =
+  --let $binsrv_ssl_cert = $client_cert
+  --let $binsrv_ssl_key = $client_key
+
+  --echo
+  --echo ****** 3.1. SSL mode preferred ($enforced_tls_version)
+  --let $binsrv_ssl_mode = preferred
+  --source ../include/set_up_binsrv_environment.inc
+  --echo ********* Executing mysql client
+  --exec $MYSQL --ssl-mode=PREFERRED $auth_options -e "$ssl_status_query"
+  --echo ********* Executing binlog utility
+  --exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+  --source ../include/tear_down_binsrv_environment.inc
+
+  --echo
+  --echo ****** 3.2. SSL mode required ($enforced_tls_version)
+  --let $binsrv_ssl_mode = required
+  --source ../include/set_up_binsrv_environment.inc
+  --echo ********* Executing mysql client
+  --exec $MYSQL --ssl-mode=REQUIRED $auth_options -e "$ssl_status_query"
+  --echo ********* Executing binlog utility
+  --exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+  --source ../include/tear_down_binsrv_environment.inc
+
+  --let $auth_options = $auth_options --ssl-ca=$ca_cert
+  --let $binsrv_ssl_ca = $ca_cert
+
+  --echo
+  --echo ****** 3.3. SSL mode verify_ca ($enforced_tls_version)
+  --let $binsrv_ssl_mode = verify_ca
+  --source ../include/set_up_binsrv_environment.inc
+  --echo ********* Executing mysql client
+  --exec $MYSQL --ssl-mode=VERIFY_CA $auth_options -e "$ssl_status_query"
+  --echo ********* Executing binlog utility
+  --exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+  --source ../include/tear_down_binsrv_environment.inc
+
+  --echo
+  --echo ****** 3.4. SSL mode verify_identity ($enforced_tls_version)
+  --let $binsrv_ssl_mode = verify_identity
+  --source ../include/set_up_binsrv_environment.inc
+  --echo ********* Executing mysql client
+  --exec $MYSQL --ssl-mode=VERIFY_IDENTITY $auth_options -e "$ssl_status_query"
+  --echo ********* Executing binlog utility
+  --exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+  --source ../include/tear_down_binsrv_environment.inc
+
+  --inc $tls_index
+}
+
+--echo
+--echo *** Dropping auxiliary users
+eval DROP USER '$x509_user_name'@'$localhost_ip';
+eval DROP USER '$ssl_user_name'@'$localhost_ip';
+eval DROP USER '$user_name'@'$localhost_ip';

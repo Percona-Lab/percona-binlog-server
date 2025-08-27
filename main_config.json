@@ -10,7 +10,21 @@
     "password": "",
     "connect_timeout": 20,
     "read_timeout": 60,
-    "write_timeout": 60
+    "write_timeout": 60,
+    "ssl": {
+      "mode": "verify_identity",
+      "ca": "/etc/mysql/ca.pem",
+      "capath": "/etc/mysql/cadir",
+      "crl": "/etc/mysql/crl-client-revoked.crl",
+      "crlpath": "/etc/mysql/crldir",
+      "cert": "/etc/mysql/client-cert.pem",
+      "key": "/etc/mysql/client-key.pem",
+      "cipher": "ECDHE-RSA-AES128-GCM-SHA256"
+    },
+    "tls": {
+      "ciphersuites": "TLS_AES_256_GCM_SHA384",
+      "version": "TLSv1.3"
+    }
   },
   "replication": {
     "server_id": 42,
