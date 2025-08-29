@@ -15,13 +15,48 @@
 
 #include "easymysql/connection_config.hpp"
 
+#include <stdexcept>
 #include <string>
+
+#include "util/exception_location_helpers.hpp"
+
 namespace easymysql {
 
 std::string connection_config::get_connection_string() const {
-  return get<"user">() + '@' + get<"host">() + ':' +
-         std::to_string(get<"port">()) +
-         (has_password() ? " (password ***hidden***)" : " (no password)");
+  std::string res{};
+  res += get<"user">();
+  res += '@';
+  if (has_dns_srv_name()) {
+    const auto &opt_dns_srv_name{get<"dns_srv_name">()};
+    res += "[DNS SRV: ";
+    res += (opt_dns_srv_name.has_value() ? opt_dns_srv_name.value()
+                                         : "<unspecified>");
+    res += ']';
+
+  } else {
+    const auto &opt_host{get<"host">()};
+    res += (opt_host.has_value() ? opt_host.value() : "<unspecified host>");
+    res += ':';
+    const auto &opt_port{get<"port">()};
+    res += (opt_port.has_value() ? std::to_string(opt_port.value())
+                                 : "<unspecified port>");
+  }
+  res += (has_password() ? " (password ***hidden***)" : " (no password)");
+  return res;
+}
+
+void connection_config::validate() const {
+  const auto has_dns_srv_name{get<"dns_srv_name">().has_value()};
+  const auto has_host{get<"host">().has_value()};
+  const auto has_port{get<"port">().has_value()};
+
+  const bool valid{(has_dns_srv_name && !has_host && !has_port) ||
+                   (!has_dns_srv_name && has_host && has_port)};
+  if (!valid) {
+    util::exception_location().raise<std::invalid_argument>(
+        "error validating connection config: "
+        "either dns_srv_name or both host and port must be specified");
+  }
 }
 
 } // namespace easymysql

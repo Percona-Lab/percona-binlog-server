@@ -288,16 +288,36 @@ connection::connection(const connection_config &config)
 
   process_connection_config(config);
 
-  if (mysql_real_connect(casted_impl,
-                         /*        host */ config.get<"host">().c_str(),
-                         /*        user */ config.get<"user">().c_str(),
-                         /*    password */ config.get<"password">().c_str(),
-                         /*          db */ nullptr,
-                         /*        port */ config.get<"port">(),
-                         /* unix socket */ nullptr,
-                         /*       flags */ 0) == nullptr) {
-    raise_core_error_from_connection("cannot establish MySQL connection",
-                                     *this);
+  const std::string empty_string{};
+  if (config.has_dns_srv_name()) {
+    const auto &opt_dns_srv_name{config.get<"dns_srv_name">()};
+    const auto &dns_srv_name{
+        opt_dns_srv_name.has_value() ? opt_dns_srv_name.value() : empty_string};
+    if (mysql_real_connect_dns_srv(
+            casted_impl,
+            /* dns_srv_name */ dns_srv_name.c_str(),
+            /*         user */ config.get<"user">().c_str(),
+            /*       passwd */ config.get<"password">().c_str(),
+            /*           db */ nullptr,
+            /*  client_flag */ 0) == nullptr) {
+      raise_core_error_from_connection("cannot establish MySQL connection",
+                                       *this);
+    }
+  } else {
+    const auto &opt_host{config.get<"host">()};
+    const auto &host{opt_host.has_value() ? opt_host.value() : empty_string};
+    const auto port{config.get<"port">().value_or(0U)};
+    if (mysql_real_connect(casted_impl,
+                           /*        host */ host.c_str(),
+                           /*        user */ config.get<"user">().c_str(),
+                           /*      passwd */ config.get<"password">().c_str(),
+                           /*          db */ nullptr,
+                           /*        port */ port,
+                           /* unix_socket */ nullptr,
+                           /* client_flag */ 0) == nullptr) {
+      raise_core_error_from_connection("cannot establish MySQL connection",
+                                       *this);
+    }
   }
 }
 

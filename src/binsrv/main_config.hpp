@@ -46,6 +46,8 @@ public:
 
 private:
   impl_type impl_;
+
+  void validate() const;
 };
 
 } // namespace binsrv

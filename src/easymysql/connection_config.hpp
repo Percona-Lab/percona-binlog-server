@@ -21,6 +21,7 @@
 #include <cstdint>
 #include <string>
 
+#include "easymysql/config_common_types.hpp"
 #include "easymysql/ssl_config.hpp" // IWYU pragma: export
 #include "easymysql/tls_config.hpp" // IWYU pragma: export
 
@@ -31,8 +32,9 @@ namespace easymysql {
 struct [[nodiscard]] connection_config
     : util::nv_tuple<
           // clang-format off
-          util::nv<"host"           , std::string>,
-          util::nv<"port"           , std::uint16_t>,
+          util::nv<"host"           , optional_string>,
+          util::nv<"port"           , optional_uint16_t>,
+          util::nv<"dns_srv_name"   , optional_string>,
           util::nv<"user"           , std::string>,
           util::nv<"password"       , std::string>,
           util::nv<"connect_timeout", std::uint32_t>,
@@ -46,7 +48,13 @@ struct [[nodiscard]] connection_config
     return !get<"password">().empty();
   }
 
+  [[nodiscard]] bool has_dns_srv_name() const noexcept {
+    return get<"dns_srv_name">().has_value();
+  }
+
   [[nodiscard]] std::string get_connection_string() const;
+
+  void validate() const;
 };
 
 } // namespace easymysql

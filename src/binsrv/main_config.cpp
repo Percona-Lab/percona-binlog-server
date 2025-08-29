@@ -62,6 +62,10 @@ main_config::main_config(std::string_view file_name) {
 
   auto json_value = boost::json::parse(file_content);
   util::nv_tuple_from_json(json_value, impl_);
+
+  validate();
 }
+
+void main_config::validate() const { root().get<"connection">().validate(); }
 
 } // namespace binsrv
