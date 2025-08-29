@@ -29,16 +29,10 @@
 // Needed for log_severity's operator <<
 #include "binsrv/log_severity.hpp" // IWYU pragma: keep
 
-#include "util/command_line_helpers_fwd.hpp"
 #include "util/exception_location_helpers.hpp"
-#include "util/nv_tuple_from_command_line.hpp"
 #include "util/nv_tuple_from_json.hpp"
 
 namespace binsrv {
-
-main_config::main_config(util::command_line_arg_view arguments) {
-  util::nv_tuple_from_command_line(arguments, impl_);
-}
 
 main_config::main_config(std::string_view file_name) {
   static constexpr std::size_t max_file_size{1048576U};

@@ -25,6 +25,7 @@
 #include <iostream>
 #include <locale>
 #include <memory>
+#include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -58,10 +59,59 @@
 
 #include "util/byte_span_fwd.hpp"
 #include "util/command_line_helpers.hpp"
+#include "util/ct_string.hpp"
 #include "util/exception_location_helpers.hpp"
 #include "util/nv_tuple.hpp"
 
 namespace {
+
+using log_optional_string = std::optional<std::string>;
+
+template <typename T> log_optional_string to_log_string(const T &value) {
+  return boost::lexical_cast<std::string>(value);
+}
+
+log_optional_string to_log_string(bool value) {
+  return {value ? "true" : "false"};
+}
+
+template <typename T>
+log_optional_string to_log_string(const std::optional<T> &value) {
+  if (!value.has_value()) {
+    return {};
+  }
+  return to_log_string(value.value());
+}
+
+template <util::ct_string CTS, util::derived_from_named_value_tuple Config>
+void log_config_param(binsrv::basic_logger &logger, const Config &config,
+                      std::string_view label) {
+  const auto opt_log_string{to_log_string(config.template get<CTS>())};
+  if (opt_log_string.has_value()) {
+    std::string msg{label};
+    msg += ": ";
+    msg += opt_log_string.value();
+    logger.log(binsrv::log_severity::info, msg);
+  }
+}
+
+void log_ssl_config_info(binsrv::basic_logger &logger,
+                         const easymysql::ssl_config &ssl_config) {
+  log_config_param<"mode">(logger, ssl_config, "SSL mode");
+  log_config_param<"ca">(logger, ssl_config, "SSL ca");
+  log_config_param<"capath">(logger, ssl_config, "SSL capath");
+  log_config_param<"crl">(logger, ssl_config, "SSL crl");
+  log_config_param<"crlpath">(logger, ssl_config, "SSL crlpath");
+  log_config_param<"cert">(logger, ssl_config, "SSL cert");
+  log_config_param<"key">(logger, ssl_config, "SSL key");
+  log_config_param<"cipher">(logger, ssl_config, "SSL cipher");
+}
+
+void log_tls_config_info(binsrv::basic_logger &logger,
+                         const easymysql::tls_config &tls_config) {
+  log_config_param<"ciphersuites">(logger, tls_config, "TLS ciphersuites");
+  log_config_param<"version">(logger, tls_config, "TLS version");
+}
 
 void log_connection_config_info(
     binsrv::basic_logger &logger,
@@ -71,26 +121,33 @@ void log_connection_config_info(
   msg += connection_config.get_connection_string();
   logger.log(binsrv::log_severity::info, msg);
 
-  msg = "mysql connect timeout (seconds): ";
-  msg += std::to_string(connection_config.get<"connect_timeout">());
-  logger.log(binsrv::log_severity::info, msg);
+  log_config_param<"connect_timeout">(logger, connection_config,
+                                      "mysql connect timeout (seconds)");
+  log_config_param<"read_timeout">(logger, connection_config,
+                                   "mysql read timeout (seconds)");
+  log_config_param<"write_timeout">(logger, connection_config,
+                                    "mysql write timeout (seconds)");
 
-  msg = "mysql read timeout (seconds): ";
-  msg += std::to_string(connection_config.get<"read_timeout">());
-  logger.log(binsrv::log_severity::info, msg);
-
-  msg = "mysql write timeout (seconds): ";
-  msg += std::to_string(connection_config.get<"write_timeout">());
-  logger.log(binsrv::log_severity::info, msg);
+  const auto &optional_ssl_config{connection_config.get<"ssl">()};
+  if (optional_ssl_config.has_value()) {
+    log_ssl_config_info(logger, optional_ssl_config.value());
+  }
+  const auto &optional_tls_config{connection_config.get<"tls">()};
+  if (optional_tls_config.has_value()) {
+    log_tls_config_info(logger, optional_tls_config.value());
+  }
 }
 
-void log_replication_info(
+void log_replication_config_info(
     binsrv::basic_logger &logger,
     const easymysql::replication_config &replication_config) {
-  std::string msg;
-  msg = "mysql replication server id: ";
-  msg += std::to_string(replication_config.get<"server_id">());
-  logger.log(binsrv::log_severity::info, msg);
+
+  log_config_param<"server_id">(logger, replication_config,
+                                "mysql replication server id");
+  log_config_param<"idle_time">(logger, replication_config,
+                                "mysql replication idle time (seconds)");
+  log_config_param<"verify_checksum">(
+      logger, replication_config, "mysql replication checksum verification");
 }
 
 void log_storage_info(binsrv::basic_logger &logger,
@@ -392,23 +449,16 @@ int main(int argc, char *argv[]) {
   const auto number_of_cmd_args = std::size(cmd_args);
   const auto executable_name = util::extract_executable_name(cmd_args);
 
+  static constexpr std::size_t expected_number_of_cmd_args{3U};
   binsrv::operation_mode_type operation_mode{
       binsrv::operation_mode_type::delimiter};
   auto cmd_args_validated{
-      (number_of_cmd_args == binsrv::main_config::flattened_size + 2U ||
-       number_of_cmd_args == 3U) &&
+      number_of_cmd_args == expected_number_of_cmd_args &&
       boost::conversion::try_lexical_convert(cmd_args[1], operation_mode) &&
       operation_mode != binsrv::operation_mode_type::delimiter};
 
   if (!cmd_args_validated) {
-    std::cerr << "usage: " << executable_name << " (fetch|pull))"
-              << " <logger.level> <logger.file> <connection.host>"
-                 " <connection.port> <connection.user> <connection.password>"
-                 " <connection.connect_timeout> <connection.read_timeout> "
-                 "<connection.write_timeout>"
-                 " <replication.server_id> <replication.idle_time>"
-                 " <storage.uri>\n"
-              << "       " << executable_name
+    std::cerr << "usage: " << executable_name
               << " (fetch|pull)) <json_config_file>\n";
     return exit_code;
   }
@@ -437,18 +487,10 @@ int main(int argc, char *argv[]) {
     logger->log(binsrv::log_severity::delimiter, msg);
 
     binsrv::main_config_ptr config;
-    if (number_of_cmd_args == 3U) {
-      logger->log(binsrv::log_severity::delimiter,
-                  "reading configuration from the JSON file.");
-      config = std::make_shared<binsrv::main_config>(cmd_args[2]);
-    } else if (number_of_cmd_args == binsrv::main_config::flattened_size + 2U) {
-      logger->log(binsrv::log_severity::delimiter,
-                  "reading configuration from the command line "
-                  "arguments.");
-      config = std::make_shared<binsrv::main_config>(cmd_args.subspan(2U));
-    } else {
-      assert(false);
-    }
+    assert(number_of_cmd_args == expected_number_of_cmd_args);
+    logger->log(binsrv::log_severity::delimiter,
+                "reading configuration from the JSON file.");
+    config = std::make_shared<binsrv::main_config>(cmd_args[2]);
     assert(config);
 
     const auto &logger_config = config->root().get<"logger">();
@@ -499,7 +541,7 @@ int main(int argc, char *argv[]) {
     log_connection_config_info(*logger, connection_config);
 
     const auto &replication_config = config->root().get<"replication">();
-    log_replication_info(*logger, replication_config);
+    log_replication_config_info(*logger, replication_config);
 
     const auto server_id{replication_config.get<"server_id">()};
     const auto idle_time_seconds{replication_config.get<"idle_time">()};

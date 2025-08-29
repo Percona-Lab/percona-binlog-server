@@ -2,8 +2,16 @@
 # Creates a data directory and a JSON configuration file for the Binlog Server Utility
 #
 # Usage:
+#   --let $binsrv_connection_user = repl_user (optional)
+#   --let $binsrv_connection_host = 127.0.0.1 (optional)
+#   --let $binsrv_connection_password = password (optional)
 #   --let $binsrv_connect_timeout = 20
 #   --let $binsrv_read_timeout = 60
+#   --let $binsrv_ssl_mode = disabled | preferred | required | validate_ca | validate_identity (optional)
+#   --let $binsrv_ssl_ca = /path/to/ca.pem (optional)
+#   --let $binsrv_ssl_cert = /path/to/client-cert.pem (optional)
+#   --let $binsrv_ssl_key = /path/to/client-key.pem (optional)
+#   --let $binsrv_tls_version = TLSv1.2 (optional)
 #   --let $binsrv_idle_time = 10
 #   --let $binsrv_verify_checksum = TRUE | FALSE
 #   --source set_up_binsrv_environment.inc
@@ -38,10 +46,13 @@ if ($storage_backend == s3)
 --let $binsrv_log_path = $MYSQL_TMP_DIR/binsrv_utility.log
 eval SET @log_path = '$binsrv_log_path';
 
-SET @delimiter_pos = INSTR(USER(), '@');
-SET @connection_user = SUBSTRING(USER(), 1, @delimiter_pos - 1);
-SET @connection_host = SUBSTRING(USER(), @delimiter_pos + 1);
-SET @connection_host = IF(@connection_host = 'localhost', '127.0.0.1', @connection_host);
+if ($binsrv_connection_host == "")
+{
+  if ($binsrv_connection_user == "")
+  {
+    --source detect_connection_user_and_host.inc
+  }
+}
 
 eval SET @binsrv_config_json = JSON_OBJECT(
   'logger', JSON_OBJECT(
@@ -49,10 +60,10 @@ eval SET @binsrv_config_json = JSON_OBJECT(
     'file', @log_path
   ),
   'connection', JSON_OBJECT(
-     'host', @connection_host,
+     'host', '$binsrv_connection_host',
      'port', @@global.port,
-     'user', @connection_user,
-     'password', '',
+     'user', '$binsrv_connection_user',
+     'password', '$binsrv_connection_password',
      'connect_timeout', $binsrv_connect_timeout,
      'read_timeout', $binsrv_read_timeout,
      'write_timeout', 60
@@ -66,6 +77,28 @@ eval SET @binsrv_config_json = JSON_OBJECT(
      'uri', @storage_uri
   )
 );
+
+if ($binsrv_ssl_mode != "")
+{
+  eval SET @binsrv_config_json = JSON_INSERT(@binsrv_config_json, '$.connection.ssl', JSON_OBJECT('mode', '$binsrv_ssl_mode'));
+  if ($binsrv_ssl_ca != "")
+  {
+    eval SET @binsrv_config_json = JSON_INSERT(@binsrv_config_json, '$.connection.ssl.ca', '$binsrv_ssl_ca');
+  }
+  if ($binsrv_ssl_cert != "")
+  {
+    eval SET @binsrv_config_json = JSON_INSERT(@binsrv_config_json, '$.connection.ssl.cert', '$binsrv_ssl_cert');
+  }
+  if ($binsrv_ssl_key != "")
+  {
+    eval SET @binsrv_config_json = JSON_INSERT(@binsrv_config_json, '$.connection.ssl.key', '$binsrv_ssl_key');
+  }
+}
+
+if ($binsrv_tls_version != "")
+{
+  eval SET @binsrv_config_json = JSON_INSERT(@binsrv_config_json, '$.connection.tls', JSON_OBJECT('version', '$binsrv_tls_version'));
+}
 
 --let $binsrv_config_file_path = $MYSQL_TMP_DIR/binsrv_config.json
 --let $write_var = `SELECT @binsrv_config_json`

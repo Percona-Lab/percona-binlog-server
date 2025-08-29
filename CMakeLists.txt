@@ -246,12 +246,13 @@ set(source_files
 
   src/util/nv_tuple_fwd.hpp
   src/util/nv_tuple.hpp
-  src/util/nv_tuple_from_command_line.hpp
   src/util/nv_tuple_from_json.hpp
 
   src/util/redirectable.hpp
 
   # mysql wrapper library files
+  src/easymysql/config_common_types.hpp
+
   src/easymysql/core_error_helpers_private.hpp
   src/easymysql/core_error_helpers_private.cpp
   src/easymysql/core_error.hpp
@@ -272,6 +273,15 @@ set(source_files
 
   src/easymysql/replication_config_fwd.hpp
   src/easymysql/replication_config.hpp
+
+  src/easymysql/ssl_config_fwd.hpp
+  src/easymysql/ssl_config.hpp
+
+  src/easymysql/ssl_mode_type_fwd.hpp
+  src/easymysql/ssl_mode_type.hpp
+
+  src/easymysql/tls_config_fwd.hpp
+  src/easymysql/tls_config.hpp
 )
 
 add_executable(binlog_server ${source_files})

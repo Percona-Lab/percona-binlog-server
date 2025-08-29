@@ -28,69 +28,111 @@ namespace util {
 
 namespace detail {
 
-using annotated_json_extract_exception =
-    mixin_exception_adapter<std::invalid_argument, string_view_composite_name>;
+// A helper class that stores a pointer to a stack of labels used as a path
+// in JSON hierarchy for diagnostic. An instance of this class is supposed to
+// be used as a 'Context' parameter for 'tag_invoke()' functions. As these
+// functions accept Context by a const reference, we use a trick here with
+// another level of indirection via a pointer to a non-const
+// 'string_view_composite_name' and declaring all modyfying methods of this
+// class as const.
+// This class also serves the purpose of ADL - it is supposed to be used in
+// 'tag_invoke()' overloads in order to be able to convert instances of
+// classes declared in different namespaces.
+class extraction_context {
+public:
+  explicit extraction_context(string_view_composite_name &label_stack) noexcept
+      : label_stack_{&label_stack} {}
 
-template <named_value NV>
-auto extract_element_from_json_value(const boost::json::object &json_object) {
-  const auto *json_subvalue = json_object.if_contains(NV::name.sv());
-  if (json_subvalue == nullptr) {
-    throw annotated_json_extract_exception{NV::name.sv(),
-                                           "path does not exist"};
+  void push_back(std::string_view label) const {
+    label_stack_->push_back(label);
   }
+  void pop_back() const noexcept { label_stack_->pop_back(); }
+  [[nodiscard]] std::string to_string() const {
+    if (label_stack_->is_empty()) {
+      return "<root_element>";
+    }
+    return label_stack_->str();
+  }
+
+private:
+  string_view_composite_name *label_stack_;
+};
+
+// An exception class that is capable of storing info about the JSON locations
+// where the error occurred (e.g. 'key1.subkey1.subsubkey1').
+// using annotated_json_extract_exception =
+//    mixin_exception_adapter<std::invalid_argument,
+//    string_view_composite_name>;
+
+// A helper function that extracts a single nv value from the specified JSON
+// object and is used by the tag_invoke() overload for nv_tuple<..>.
+template <named_value NV>
+auto extract_element_from_json_value(const boost::json::object &json_object,
+                                     const extraction_context &extraction_ctx) {
+  const auto subvalue_it{json_object.find(NV::name.sv())};
+  const auto &json_subvalue =
+      (subvalue_it != json_object.end() ? subvalue_it->value()
+                                        : boost::json::value{});
 
   using element_type = typename NV::type;
-  try {
-    if constexpr (is_derived_from_named_value_tuple_v<element_type>) {
-      return boost::json::value_to<
-          extract_named_value_tuple_base_t<element_type>>(*json_subvalue);
-    } else if constexpr (std::is_enum_v<element_type>) {
-      const auto &value_str = json_subvalue->as_string();
-      return boost::lexical_cast<element_type>(
-          static_cast<std::string_view>(value_str));
-    } else {
-      return boost::json::value_to<element_type>(*json_subvalue);
-    }
-  } catch (annotated_json_extract_exception &ex) {
-    // catching exception here by non-const reference to be
-    // able to add more info in it
-    ex.push_back(NV::name.sv());
-    throw;
-  } catch (const std::exception &) {
-    throw annotated_json_extract_exception{NV::name.sv(),
-                                           "cannot extract element"};
-  }
+  // If an exception is thrown in the following 'value_to()' call, the
+  // 'extraction_ctx' will still hold the JSON path to the element that
+  // could not be converted.
+  extraction_ctx.push_back(NV::name.sv());
+  auto res{boost::json::value_to<element_type>(json_subvalue, extraction_ctx)};
+  extraction_ctx.pop_back();
+  return res;
 }
 
+// The tag_invoke() overload for nv_tuple<..>.
 template <named_value... NVPack>
 nv_tuple<NVPack...>
 tag_invoke(boost::json::value_to_tag<nv_tuple<NVPack...>> /*unused*/,
-           const boost::json::value &json_value) {
-  if (!json_value.is_object()) {
-    throw annotated_json_extract_exception{string_view_composite_name{},
-                                           "element is not a json object"};
-  }
+           const boost::json::value &json_value,
+           const extraction_context &extraction_ctx) {
   const boost::json::object &json_object = json_value.as_object();
-  return nv_tuple<NVPack...>{
-      {extract_element_from_json_value<NVPack>(json_object)}...};
+  return nv_tuple<NVPack...>{{extract_element_from_json_value<NVPack>(
+      json_object, extraction_ctx)}...};
+}
+
+// The tag_invoke() overload for classes derived from nv_tuple<..>.
+// Currently these derived classes are not supposed to have any extra members.
+template <derived_from_named_value_tuple T>
+T tag_invoke(boost::json::value_to_tag<T> /*unused*/,
+             const boost::json::value &json_value,
+             const extraction_context &extraction_ctx) {
+  return T{boost::json::value_to<extract_named_value_tuple_base_t<T>>(
+      json_value, extraction_ctx)};
+}
+
+// The tag_invoke() overload for enumerations that can be converted from
+// std::strings via boost::lexical_cast (have overloaded operator >>).
+template <typename T>
+  requires std::is_enum_v<T>
+T tag_invoke(boost::json::value_to_tag<T> /*unused*/,
+             const boost::json::value &json_value,
+             const extraction_context & /*extraction_ctx*/) {
+  const auto &value_str = json_value.as_string();
+  return boost::lexical_cast<T>(static_cast<std::string_view>(value_str));
 }
 
 } // namespace detail
 
-using detail::tag_invoke;
-
+// Primary nv_tuple<..> extraction function.
 template <named_value... NVPack>
 void nv_tuple_from_json(const boost::json::value &json_value,
                         nv_tuple<NVPack...> &obj) {
+  string_view_composite_name label_stack{};
+  const detail::extraction_context extraction_ctx{label_stack};
   try {
-    obj = boost::json::value_to<nv_tuple<NVPack...>>(json_value);
-  } catch (const detail::annotated_json_extract_exception &ex) {
-    std::string label = ex.str_reverse();
-    if (label.empty()) {
-      label = "<root_element>";
-    }
+    // Here we use detail::extraction_context in order to be able to work with
+    // classes declared in different namespace but for whom tag_invoke()
+    // functions were declared in the util::detail namespace.
+    obj =
+        boost::json::value_to<nv_tuple<NVPack...>>(json_value, extraction_ctx);
+  } catch (const std::exception &ex) {
     util::exception_location().raise<std::invalid_argument>(
-        "unable to extract \"" + label + "\" - " + ex.what());
+        "unable to extract \"" + extraction_ctx.to_string() + "\"");
   }
 }
 

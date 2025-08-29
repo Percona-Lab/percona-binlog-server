@@ -16,8 +16,10 @@
 #include "easymysql/connection.hpp"
 
 #include <cassert>
+#include <concepts>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -30,10 +32,76 @@
 #include "easymysql/connection_config.hpp"
 #include "easymysql/connection_deimpl_private.hpp"
 #include "easymysql/core_error_helpers_private.hpp"
+#include "easymysql/ssl_mode_type.hpp"
 
 #include "util/byte_span_fwd.hpp"
 #include "util/conversion_helpers.hpp"
+#include "util/ct_string.hpp"
 #include "util/exception_location_helpers.hpp"
+#include "util/nv_tuple_fwd.hpp"
+
+namespace {
+
+// enum mysql_ssl_mode (SSL_MODE_XXX) constants
+// https://github.com/mysql/mysql-server/blob/mysql-8.0.43/include/mysql.h#L271
+// https://github.com/mysql/mysql-server/blob/mysql-8.4.6/include/mysql.h#L272
+auto convert_ssl_mode_to_native(easymysql::ssl_mode_type ssl_mode) noexcept {
+  switch (ssl_mode) {
+  case easymysql::ssl_mode_type::disabled:
+    return SSL_MODE_DISABLED;
+  case easymysql::ssl_mode_type::preferred:
+    return SSL_MODE_PREFERRED;
+  case easymysql::ssl_mode_type::required:
+    return SSL_MODE_REQUIRED;
+  case easymysql::ssl_mode_type::verify_ca:
+    return SSL_MODE_VERIFY_CA;
+  case easymysql::ssl_mode_type::verify_identity:
+    return SSL_MODE_VERIFY_IDENTITY;
+
+  default:
+    assert(false);
+  }
+  // this return should never happen
+  return mysql_ssl_mode{};
+}
+
+[[nodiscard]] bool
+set_generic_mysql_option_helper(MYSQL *impl, mysql_option option_id,
+                                const std::string &value) noexcept {
+  return mysql_options(impl, option_id, value.c_str()) == 0;
+}
+template <std::unsigned_integral T>
+[[nodiscard]] bool set_generic_mysql_option_helper(MYSQL *impl,
+                                                   mysql_option option_id,
+                                                   T value) noexcept {
+  const unsigned int casted_value{value};
+  return mysql_options(impl, option_id, &casted_value) == 0;
+}
+[[nodiscard]] bool
+set_generic_mysql_option_helper(MYSQL *impl, mysql_option option_id,
+                                easymysql::ssl_mode_type value) noexcept {
+  const unsigned int converted_value{convert_ssl_mode_to_native(value)};
+  return set_generic_mysql_option_helper(impl, option_id, converted_value);
+}
+
+template <typename T>
+[[nodiscard]] bool
+set_generic_mysql_option_helper(MYSQL *impl, mysql_option option_id,
+                                const std::optional<T> &value) noexcept {
+  if (!value.has_value()) {
+    return true;
+  }
+  return set_generic_mysql_option_helper(impl, option_id, value.value());
+}
+
+template <util::ct_string CTS, util::derived_from_named_value_tuple Config>
+[[nodiscard]] bool set_generic_mysql_option(const Config &config, MYSQL *impl,
+                                            mysql_option option_id) noexcept {
+  const auto &value{config.template get<CTS>()};
+  return set_generic_mysql_option_helper(impl, option_id, value);
+}
+
+} // anonymous namespace
 
 namespace easymysql {
 
@@ -112,6 +180,104 @@ private:
 
 connection::connection() noexcept = default;
 
+void connection::process_ssl_config(const ssl_config &config) {
+  auto *casted_impl = mysql_deimpl::get(mysql_impl_);
+
+  // MYSQL_OPT_SSL_MODE
+  if (!set_generic_mysql_option<"mode">(config, casted_impl,
+                                        MYSQL_OPT_SSL_MODE)) {
+    raise_core_error_from_connection("cannot set MySQL SSL mode", *this);
+  }
+
+  // MYSQL_OPT_SSL_CA
+  if (!set_generic_mysql_option<"ca">(config, casted_impl, MYSQL_OPT_SSL_CA)) {
+    raise_core_error_from_connection("cannot set MySQL SSL CA", *this);
+  }
+
+  // MYSQL_OPT_SSL_CAPATH
+  if (!set_generic_mysql_option<"capath">(config, casted_impl,
+                                          MYSQL_OPT_SSL_CAPATH)) {
+    raise_core_error_from_connection("cannot set MySQL SSL CAPATH", *this);
+  }
+
+  // MYSQL_OPT_SSL_CRL
+  if (!set_generic_mysql_option<"crl">(config, casted_impl,
+                                       MYSQL_OPT_SSL_CRL)) {
+    raise_core_error_from_connection("cannot set MySQL SSL CRL", *this);
+  }
+
+  // MYSQL_OPT_SSL_CRLPATH
+  if (!set_generic_mysql_option<"crlpath">(config, casted_impl,
+                                           MYSQL_OPT_SSL_CRLPATH)) {
+    raise_core_error_from_connection("cannot set MySQL SSL CRLPATH", *this);
+  }
+
+  // MYSQL_OPT_SSL_CERT
+  if (!set_generic_mysql_option<"cert">(config, casted_impl,
+                                        MYSQL_OPT_SSL_CERT)) {
+    raise_core_error_from_connection("cannot set MySQL SSL CERT", *this);
+  }
+
+  // MYSQL_OPT_SSL_KEY
+  if (!set_generic_mysql_option<"key">(config, casted_impl,
+                                       MYSQL_OPT_SSL_KEY)) {
+    raise_core_error_from_connection("cannot set MySQL SSL KEY", *this);
+  }
+
+  // MYSQL_OPT_SSL_CIPHER
+  if (!set_generic_mysql_option<"cipher">(config, casted_impl,
+                                          MYSQL_OPT_SSL_CIPHER)) {
+    raise_core_error_from_connection("cannot set MySQL SSL CIPHER", *this);
+  }
+}
+
+void connection::process_tls_config(const tls_config &config) {
+  auto *casted_impl = mysql_deimpl::get(mysql_impl_);
+
+  // MYSQL_OPT_TLS_CIPHERSUITES
+  if (!set_generic_mysql_option<"ciphersuites">(config, casted_impl,
+                                                MYSQL_OPT_TLS_CIPHERSUITES)) {
+    raise_core_error_from_connection("cannot set MySQL TLS CIPHERSUITES",
+                                     *this);
+  }
+
+  // MYSQL_OPT_TLS_VERSION
+  if (!set_generic_mysql_option<"version">(config, casted_impl,
+                                           MYSQL_OPT_TLS_VERSION)) {
+    raise_core_error_from_connection("cannot set MySQL TLS VERSION", *this);
+  }
+}
+
+void connection::process_connection_config(const connection_config &config) {
+  auto *casted_impl = mysql_deimpl::get(mysql_impl_);
+
+  // MYSQL_OPT_CONNECT_TIMEOUT
+  if (!set_generic_mysql_option<"connect_timeout">(config, casted_impl,
+                                                   MYSQL_OPT_CONNECT_TIMEOUT)) {
+    raise_core_error_from_connection("cannot set MySQL connect timeout", *this);
+  }
+  // MYSQL_OPT_READ_TIMEOUT
+  if (!set_generic_mysql_option<"read_timeout">(config, casted_impl,
+                                                MYSQL_OPT_READ_TIMEOUT)) {
+    raise_core_error_from_connection("cannot set MySQL read timeout", *this);
+  }
+  // MYSQL_OPT_WRITE_TIMEOUT
+  if (!set_generic_mysql_option<"write_timeout">(config, casted_impl,
+                                                 MYSQL_OPT_WRITE_TIMEOUT)) {
+    raise_core_error_from_connection("cannot set MySQL write timeout", *this);
+  }
+
+  const auto &opt_ssl_config{config.get<"ssl">()};
+  if (opt_ssl_config.has_value()) {
+    process_ssl_config(opt_ssl_config.value());
+  }
+
+  const auto &opt_tls_config{config.get<"tls">()};
+  if (opt_tls_config.has_value()) {
+    process_tls_config(opt_tls_config.value());
+  }
+}
+
 connection::connection(const connection_config &config)
     : mysql_impl_{mysql_init(nullptr)}, rpl_impl_{} {
   if (!mysql_impl_) {
@@ -120,20 +286,7 @@ connection::connection(const connection_config &config)
   }
   auto *casted_impl = mysql_deimpl::get(mysql_impl_);
 
-  const unsigned int connect_timeout{config.get<"connect_timeout">()};
-  if (mysql_options(casted_impl, MYSQL_OPT_CONNECT_TIMEOUT, &connect_timeout) !=
-      0) {
-    raise_core_error_from_connection("cannot set MySQL connect timeout", *this);
-  }
-  const unsigned int read_timeout{config.get<"read_timeout">()};
-  if (mysql_options(casted_impl, MYSQL_OPT_READ_TIMEOUT, &read_timeout) != 0) {
-    raise_core_error_from_connection("cannot set MySQL read timeout", *this);
-  }
-  const unsigned int write_timeout{config.get<"write_timeout">()};
-  if (mysql_options(casted_impl, MYSQL_OPT_WRITE_TIMEOUT, &write_timeout) !=
-      0) {
-    raise_core_error_from_connection("cannot set MySQL write timeout", *this);
-  }
+  process_connection_config(config);
 
   if (mysql_real_connect(casted_impl,
                          /*        host */ config.get<"host">().c_str(),

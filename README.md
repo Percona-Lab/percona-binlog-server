@@ -185,7 +185,21 @@ The Percona Binary Log Server configuration file has the following format.
     "password": "rpl_password",
     "connect_timeout": 20,
     "read_timeout": 60,
-    "write_timeout": 60
+    "write_timeout": 60,
+    "ssl": {
+      "mode": "verify_identity",
+      "ca": "/etc/mysql/ca.pem",
+      "capath": "/etc/mysql/cadir",
+      "crl": "/etc/mysql/crl-client-revoked.crl",
+      "crlpath": "/etc/mysql/crldir",
+      "cert": "/etc/mysql/client-cert.pem",
+      "key": "/etc/mysql/client-key.pem",
+      "cipher": "ECDHE-RSA-AES128-GCM-SHA256"
+    },
+    "tls": {
+      "ciphersuites": "TLS_AES_256_GCM_SHA384",
+      "version": "TLSv1.3"
+    }
   },
   "replication": {
     "server_id": 42,
@@ -221,6 +235,20 @@ Currently we use the following mapping:
 - `<connection.connect_timeout>` - the number of seconds the MySQL client library will wait to establish a connection with a remote host.
 - `<connection.read_timeout>` - the number of seconds the MySQL client library will wait to read data from a remote server (this parameter may affect the responsiveness of the program to graceful termination - see below).
 - `<connection.write_timeout>` - the number of seconds the MySQL client library will wait to write data to a remote server.
+
+#### \<connection.ssl\> optional section
+- `<connection.ssl.mode>` - specifies the desired security state of the connection to the MySQL server, can be one of the `disabled` / `preferred` / `required` / `verify_ca` / `verify_identity` ([--ssl-mode](https://dev.mysql.com/doc/refman/8.4/en/connection-options.html#option_general_ssl-mode) `mysql` utility command line option).
+- `<connection.ssl.ca>` (optional) - specifies the file that contains the list of trusted SSL Certificate Authorities ([--ssl-ca](https://dev.mysql.com/doc/refman/8.4/en/connection-options.html#option_general_ssl-ca) `mysql` utility command line option).
+- `<connection.ssl.capath>` (optional) - specifies the directory that contains trusted SSL Certificate Authority certificate files (an equivalent of the [--ssl-capath](https://dev.mysql.com/doc/refman/8.4/en/connection-options.html#option_general_ssl-capath) `mysql` utility command line option).
+- `<connection.ssl.crl>` (optional) - specifies the file that contains certificate revocation lists ([--ssl-crl](https://dev.mysql.com/doc/refman/8.4/en/connection-options.html#option_general_ssl-crl) `mysql` utility command line option).
+- `<connection.ssl.crlpath>` (optional) - specifies the directory that contains certificate revocation-list files (an equivalent of the [--ssl-crlpath](https://dev.mysql.com/doc/refman/8.4/en/connection-options.html#option_general_ssl-crlpath) `mysql` utility command line option).
+- `<connection.ssl.cert>` (optional) - specifies the file that contains a X.509 client certificate ([--ssl-cert](https://dev.mysql.com/doc/refman/8.4/en/connection-options.html#option_general_ssl-cert) `mysql` utility command line option).
+- `<connection.ssl.key>` (optional) - specifies the file that contains the private key associated with the `<connection.ssl.cert>` ([--ssl-key](https://dev.mysql.com/doc/refman/8.4/en/connection-options.html#option_general_ssl-key) `mysql` utility command line option).
+- `<connection.ssl.cipher>` (optional) - specifies the list of permissible ciphers for connection encryption ([--ssl-cipher](https://dev.mysql.com/doc/refman/8.4/en/connection-options.html#option_general_ssl-cipher) `mysql` utility command line option).
+
+#### \<connection.tls\> optional section
+- `<connection.tls.ca>` (optional) - specifies the list of permissible TLSv1.3 ciphersuites for encrypted connections ([--tls-ciphersuites](https://dev.mysql.com/doc/refman/8.4/en/connection-options.html#option_general_tls-ciphersuites) `mysql` utility command line option).
+- `<connection.tls.version>` (optional) - specifies the list of permissible TLS protocols for encrypted connections ([--tls-version](https://dev.mysql.com/doc/refman/8.4/en/connection-options.html#option_general_tls-version) `mysql` utility command line option).
 
 #### \<replication\> section
 - `<replication.server_id>` - specifies the server ID that the utility will be using when connecting to a remote MySQL server (similar to [--connection-server-id](https://dev.mysql.com/doc/refman/8.0/en/mysqlbinlog.html#option_mysqlbinlog_connection-server-id) `mysqlbinlog` command line option).
