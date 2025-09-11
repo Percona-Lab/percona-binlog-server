@@ -33,14 +33,21 @@ if ($storage_backend == file)
 }
 if ($storage_backend == s3)
 {
-  --let $qualified_bucket = $MTR_BINSRV_AWS_S3_BUCKET
-  if ($MTR_BINSRV_AWS_S3_REGION)
-  {
-    --let $qualified_bucket = $qualified_bucket.$MTR_BINSRV_AWS_S3_REGION
-  }
   --let $binsrv_storage_path = `SELECT CONCAT('/mtr-', UUID())`
-  eval SET @storage_uri = CONCAT('s3://', '$MTR_BINSRV_AWS_ACCESS_KEY_ID', ':', '$MTR_BINSRV_AWS_SECRET_ACCESS_KEY', '@', '$qualified_bucket',  '$binsrv_storage_path');
   --let $aws_s3_bucket = $MTR_BINSRV_AWS_S3_BUCKET
+  if ($MTR_BINSRV_AWS_S3_ENDPOINT != '')
+  {
+    eval SET @storage_uri = CONCAT('http://', '$MTR_BINSRV_AWS_ACCESS_KEY_ID', ':', '$MTR_BINSRV_AWS_SECRET_ACCESS_KEY', '@', '$MTR_BINSRV_AWS_S3_ENDPOINT', '/$MTR_BINSRV_AWS_S3_BUCKET', '$binsrv_storage_path');
+  }
+  if ($MTR_BINSRV_AWS_S3_ENDPOINT == '')
+  {
+    --let $qualified_bucket = $MTR_BINSRV_AWS_S3_BUCKET
+    if ($MTR_BINSRV_AWS_S3_REGION)
+    {
+      --let $qualified_bucket = $qualified_bucket.$MTR_BINSRV_AWS_S3_REGION
+    }
+    eval SET @storage_uri = CONCAT('s3://', '$MTR_BINSRV_AWS_ACCESS_KEY_ID', ':', '$MTR_BINSRV_AWS_SECRET_ACCESS_KEY', '@', '$qualified_bucket',  '$binsrv_storage_path');
+  }
 }
 
 --let $binsrv_log_path = $MYSQL_TMP_DIR/binsrv_utility.log
@@ -74,6 +81,7 @@ eval SET @binsrv_config_json = JSON_OBJECT(
      'verify_checksum', $binsrv_verify_checksum
   ),
   'storage', JSON_OBJECT(
+     'backend', '$storage_backend',
      'uri', @storage_uri
   )
 );

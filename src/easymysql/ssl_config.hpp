@@ -21,7 +21,7 @@
 #include <cstdint>
 
 #include "easymysql/config_common_types.hpp"
-#include "easymysql/ssl_mode_type.hpp"
+#include "easymysql/ssl_mode_type_fwd.hpp"
 
 #include "util/nv_tuple.hpp"
 

@@ -213,6 +213,9 @@ set(source_files
   src/binsrv/storage_backend_factory.hpp
   src/binsrv/storage_backend_factory.cpp
 
+  src/binsrv/storage_backend_type_fwd.hpp
+  src/binsrv/storage_backend_type.hpp
+
   src/binsrv/storage_config_fwd.hpp
   src/binsrv/storage_config.hpp
 

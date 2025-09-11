@@ -13,9 +13,17 @@ following:
    * MTR_BINSRV_AWS_SECRET_ACCESS_KEY - AWS secret access key
    * MTR_BINSRV_AWS_S3_BUCKET - AWS S3 bucket name
    * MTR_BINSRV_AWS_S3_REGION - AWS S3 region (optional)
+   * MTR_BINSRV_AWS_S3_ENDPOINT - an endpoint (<host>[:<port>]) of an S3-compatible server (optional)
    BINSRV=<build_directory_path>/binlog_server \
    MTR_BINSRV_AWS_ACCESS_KEY_ID=... \
    MTR_BINSRV_AWS_SECRET_ACCESS_KEY=... \
    MTR_BINSRV_AWS_S3_BUCKET=my-bucket \
    MTR_BINSRV_AWS_S3_REGION=eu-central-1 \
+   ./mysql-test/mtr --suite=binlog_streaming
+   or
+   BINSRV=<build_directory_path>/binlog_server \
+   MTR_BINSRV_AWS_ACCESS_KEY_ID=... \
+   MTR_BINSRV_AWS_SECRET_ACCESS_KEY=... \
+   MTR_BINSRV_AWS_S3_BUCKET=my-bucket \
+   MTR_BINSRV_AWS_S3_ENDPOINT=127.0.0.1:9000 \
    ./mysql-test/mtr --suite=binlog_streaming

@@ -56,6 +56,8 @@
 #include "easymysql/connection_config.hpp"
 #include "easymysql/core_error.hpp"
 #include "easymysql/library.hpp"
+// Needed for ssl_mode_type's operator <<
+#include "easymysql/ssl_mode_type.hpp" // IWYU pragma: keep
 
 #include "util/byte_span_fwd.hpp"
 #include "util/command_line_helpers.hpp"

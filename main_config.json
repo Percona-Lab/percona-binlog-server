@@ -32,6 +32,7 @@
     "verify_checksum": true
   },
   "storage": {
+    "backend": "file",
     "uri": "file:///home/user/vault"
   }
 }

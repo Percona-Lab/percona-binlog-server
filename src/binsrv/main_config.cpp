@@ -28,6 +28,11 @@
 
 // Needed for log_severity's operator <<
 #include "binsrv/log_severity.hpp" // IWYU pragma: keep
+// Needed for storage_backend_type's operator <<
+#include "binsrv/storage_backend_type.hpp" // IWYU pragma: keep
+
+// Needed for ssl_mode_type's operator <<
+#include "easymysql/ssl_mode_type.hpp" // IWYU pragma: keep
 
 #include "util/exception_location_helpers.hpp"
 #include "util/nv_tuple_from_json.hpp"
