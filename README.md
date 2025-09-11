@@ -1,6 +1,6 @@
 # Percona Binary Log Server
 
-`binlog_server` is a command line utility that can be considered as an enhanced version of [mysqlbinlog](https://dev.mysql.com/doc/refman/8.0/en/mysqlbinlog.html) in [--read-from-remote-server](https://dev.mysql.com/doc/refman/8.0/en/mysqlbinlog.html#option_mysqlbinlog_read-from-remote-server) mode which serves as a replication client and can stream binary log events from a remote [Oracle MySQL Server](https://www.mysql.com/) / [Percona Server for MySQL](https://www.percona.com/mysql/software/percona-server-for-mysql) both to a local filesystem and to a cloud storage (currently to `AWS S3`). It is capable of automatically reconnecting to the remote server and resume operation from the point when it was previously stopped / terminated.
+`binlog_server` is a command line utility that can be considered as an enhanced version of [mysqlbinlog](https://dev.mysql.com/doc/refman/8.0/en/mysqlbinlog.html) in [--read-from-remote-server](https://dev.mysql.com/doc/refman/8.0/en/mysqlbinlog.html#option_mysqlbinlog_read-from-remote-server) mode which serves as a replication client and can stream binary log events from a remote [Oracle MySQL Server](https://www.mysql.com/) / [Percona Server for MySQL](https://www.percona.com/mysql/software/percona-server-for-mysql) both to a local filesystem and to a cloud storage (currently to `AWS S3` or `S3`-compatible service like `MinIO`). It is capable of automatically reconnecting to the remote server and resume operation from the point when it was previously stopped / terminated.
 
 It is written in portable c++ following the c++20 standard best practices.
 
@@ -207,6 +207,7 @@ The Percona Binary Log Server configuration file has the following format.
     "verify_checksum": true
   },
   "storage": {
+    "backend": "file",
     "uri": "file:///home/user/vault"
   }
 }
@@ -231,7 +232,7 @@ Currently we use the following mapping:
 - `<connection.host>` - MySQL server host name (e.g. `127.0.0.1`, `192.168.0.100`, `dbsrv.mydomain.com`, etc.). Please do not use `localhost` here as it will be interpreted differently by the `libmysqlclient` and will instruct the library to use Unix socket file for connection instead of TCP protocol - use `127.0.0.1` instead (see [this page](https://dev.mysql.com/doc/c-api/8.0/en/mysql-real-connect.html) for more details).
 - `<connection.port>` - MySQL server port (e.g. `3306` - the default MySQL server port).
 - `<connection.user>` - the name of the MySQL user that has [REPLICATION SLAVE](https://dev.mysql.com/doc/refman/8.0/en/replication-howto-repuser.html) privilege.
-- `<connection.password>` - the password for this MySQL user
+- `<connection.password>` - the password for this MySQL user.
 - `<connection.connect_timeout>` - the number of seconds the MySQL client library will wait to establish a connection with a remote host.
 - `<connection.read_timeout>` - the number of seconds the MySQL client library will wait to read data from a remote server (this parameter may affect the responsiveness of the program to graceful termination - see below).
 - `<connection.write_timeout>` - the number of seconds the MySQL client library will wait to write data to a remote server.
@@ -256,13 +257,17 @@ Currently we use the following mapping:
 - `<replication.verify_checksum>` - a boolean value which specifies whether the utility should verify event checksums.
 
 #### \<storage\> section
+- `<storage.backend>` - the type of the storage where the received binary logs should be stored:
+  - `file` - local filesystem
+  - `s3` - `AWS S3` or `S3`-compatible server (MinIO, etc.)
 - `<storage.uri>` - specifies the location (either local or remote) where the received binary logs should be stored
 
 ##### Storage URI format
 
-The type of the storage where the received binary logs should be stored (currently, on a local filesystem of on AWS S3) is determined by the protocol of the URI.
-- `file://...` - for local filesystem.
-- `s3://...` - for AWS S3.
+- When `<storage.backend>` is set to `file`, `<storage.uri>` must be `file://...`.
+- When `<storage.backend>` is set to `s3`, `<storage.uri>` can be either:
+  - `s3://...` for `AWS S3`,
+  - `http://...` or `https://...` for `S3`-compatible services.
 
 ###### Local filesystem storage URIs
 
@@ -272,7 +277,7 @@ In case of local filesystem, the URIs must have the following format.
 Please notice 3 forward slashes `/` (2 from the protocol part `file://` and 1 from the absolute path).
 
 ###### AWS S3 storage URIs
-In case of AWS S3, the URIs must have the following format.
+In case of `AWS S3`, the URIs must have the following format.
 `s3://[<access_key_id>:<secret_access_key>@]<bucket_name>[.<region>]/<path>`, where:
 - `<access_key_id>` - the AWS key ID (the `<access_key_id>` / `<secret_access_key>` pair is optional),
 - `<secret_access_key>`- the AWS secret access key (the `<access_key_id>` / `<secret_access_key>` pair is optional),
@@ -280,11 +285,18 @@ In case of AWS S3, the URIs must have the following format.
 - `<region>` - the name of the AWS region (e.g. `us-east-1`) where this bucket was created (optional, if omitted, it will be auto-detected),
 - `<path>` - a virtual path (key prefix) inside the bucket under which all the binary log files will be stored.
 
+In case of `S3`-compatible service with custom endpoint, the URIs must have the following format.
+`http[s]://[<access_key_id>:<secret_access_key>@]<host>[:<port>]/<bucket_name>/<path>`, where:
+- `<host>` - either a host name or an IP address of an `S3`-compatible server,
+- `<port>` - the portof an `S3`-compatible server to connect to (optional, if omitted, it will be either 80 or 443, depending of the URI scheme: HTTP or HTTPS).
+Please notice that in this case `<bucket_name>` must be specified as the very first segment of the URI path.
+
 For example:
 - `s3://binsrv-bucket/vault` - no AWS credentials specified, `binsrv-bucket` bucket must be publicly write-accessible, the region will be auto-detected, `/vault` will be the virtual directory.
 - `s3://binsrv-bucket.us-east-1/vault` - no AWS credentials specified, `binsrv-bucket` bucket must be publicly write-accessible, the bucket must be created in the `us-east-1` region, `/vault` will be the virtual directory.
-- `s3://key_id:secret@binsrv-bucket.us-east-1/vault` - `key_id` will be used as `AWS_ACCESS_KEY_ID`, `secret` will be used as `AWS_SECRET_ACCESS_KEY`, `binsrv-bucket` will be the name of the bucket, the bucket must be created in the `us-east-1` region, the bucket may have restricted write access, `/vault` will be the virtual directory.
-
+- `s3://key_id:secret@binsrv-bucket.us-east-1/vault` - `key_id` will be used as `AWS_ACCESS_KEY_ID`, `secret` will be used as `AWS_SECRET_ACCESS_KEY`, `binsrv-bucket` will be the name of the bucket, the bucket must be created in the `us-east-1` region, `/vault` will be the virtual directory.
+- `http://key_id:secret@localhost:9000/binsrv-bucket/vault` - `key_id` will be used as `AWS_ACCESS_KEY_ID`, `secret` will be used as `AWS_SECRET_ACCESS_KEY`, `binsrv-bucket` will be the name of the bucket, `/vault` will be the virtual directory, `localhost:9000` will be the custom endpoint of the `S3`-compatible server, the connection will be established via non-secure HTTP protocol.
+- `https://key_id:secret@192.168.0.100:9000/binsrv-bucket/vault` - `key_id` will be used as `AWS_ACCESS_KEY_ID`, `secret` will be used as `AWS_SECRET_ACCESS_KEY`, `binsrv-bucket` will be the name of the bucket, `/vault` will be the virtual directory, `192.168.0.100:9000` will be the custom endpoint of the `S3`-compatible server, the connection will be established via secure HTTPS protocol.
 
 ### Resuming previous operation
 

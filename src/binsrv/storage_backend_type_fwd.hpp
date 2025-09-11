@@ -13,27 +13,29 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef BINSRV_STORAGE_CONFIG_HPP
-#define BINSRV_STORAGE_CONFIG_HPP
+#ifndef BINSRV_STORAGE_BACKEND_TYPE_FWD_HPP
+#define BINSRV_STORAGE_BACKEND_TYPE_FWD_HPP
 
-#include "binsrv/storage_config_fwd.hpp" // IWYU pragma: export
-
-#include <string>
-
-#include "binsrv/storage_backend_type_fwd.hpp"
-
-#include "util/nv_tuple.hpp"
+#include <concepts>
+#include <cstdint>
+#include <iosfwd>
 
 namespace binsrv {
 
-// clang-format off
-struct [[nodiscard]] storage_config
-    : util::nv_tuple<
-          util::nv<"backend", storage_backend_type>,
-          util::nv<"uri", std::string>
-      > {};
-// clang-format on
+enum class storage_backend_type : std::uint8_t;
+
+template <typename Char, typename Traits>
+  requires std::same_as<Char, char>
+std::basic_ostream<Char, Traits> &
+operator<<(std::basic_ostream<Char, Traits> &output,
+           storage_backend_type storage_backend);
+
+template <typename Char, typename Traits>
+  requires std::same_as<Char, char>
+std::basic_istream<Char, Traits> &
+operator>>(std::basic_istream<Char, Traits> &input,
+           storage_backend_type &storage_backend);
 
 } // namespace binsrv
 
-#endif // BINSRV_STORAGE_CONFIG_HPP
+#endif // BINSRV_STORAGE_BACKEND_TYPE_FWD_HPP

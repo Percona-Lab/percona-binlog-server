@@ -17,7 +17,6 @@
 
 #include <cassert>
 #include <cstddef>
-#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -40,6 +39,8 @@
 #include <aws/core/Aws.h>
 
 #include <aws/core/auth/AWSCredentials.h>
+
+#include <aws/core/http/Scheme.h>
 
 #include <aws/core/utils/memory/AWSMemory.h>
 
@@ -83,9 +84,21 @@ private:
 
 namespace binsrv {
 
-struct simple_aws_credentials {
-  std::string access_key_id;
-  std::string secret_access_key;
+class simple_aws_credentials {
+public:
+  explicit simple_aws_credentials(const boost::urls::url_view_base &uri)
+      : access_key_id_{uri.user()}, secret_access_key_{uri.password()} {}
+
+  [[nodiscard]] const std::string &get_access_key_id() const noexcept {
+    return access_key_id_;
+  }
+  [[nodiscard]] const std::string &get_secret_access_key() const noexcept {
+    return secret_access_key_;
+  }
+
+private:
+  std::string access_key_id_;
+  std::string secret_access_key_;
 };
 
 struct qualified_object_path {
@@ -95,12 +108,19 @@ struct qualified_object_path {
 
 class s3_storage_backend::aws_context : private aws_context_base {
 public:
-  enum class construction_alternative : std::uint8_t { bucket, region };
+  struct bucket_tag {};
+  struct region_tag {};
+  struct endpoint_tag {};
+
   using stream_factory_type = std::function<std::iostream *()>;
   using stream_handler_type = std::function<void(std::size_t, std::iostream &)>;
 
-  aws_context(const simple_aws_credentials &credentials,
-              construction_alternative alternative, const std::string &param);
+  aws_context(bucket_tag tag, const simple_aws_credentials &credentials,
+              const std::string &bucket);
+  aws_context(region_tag tag, const simple_aws_credentials &credentials,
+              const std::string &region);
+  aws_context(endpoint_tag tag, const simple_aws_credentials &credentials,
+              const std::string &endpoint, bool secure_protocol);
 
   aws_context(const aws_context &) = delete;
   aws_context &operator=(const aws_context &) = delete;
@@ -113,8 +133,20 @@ public:
     return !credentials_.IsEmpty();
   }
 
+  [[nodiscard]] bool has_endpoint() const noexcept {
+    return !configuration_.endpointOverride.empty();
+  }
+
+  [[nodiscard]] const std::string &get_endpoint() const noexcept {
+    return configuration_.endpointOverride;
+  }
+
   [[nodiscard]] const std::string &get_region() const noexcept {
     return configuration_.region;
+  }
+
+  [[nodiscard]] std::string_view get_scheme_label() const noexcept {
+    return Aws::Http::SchemeMapper::ToString(configuration_.scheme);
   }
 
   [[nodiscard]] std::string get_bucket_region(const std::string &bucket) const;
@@ -143,36 +175,60 @@ private:
   using s3_crt_client_ptr = std::unique_ptr<Aws::S3Crt::S3CrtClient>;
   s3_crt_client_ptr client_;
 
+  explicit aws_context(const simple_aws_credentials &credentials)
+      : aws_context_base{}, credentials_{credentials.get_access_key_id(),
+                                         credentials.get_secret_access_key()},
+        configuration_{} {}
+
   void get_object_internal(const qualified_object_path &source,
                            const stream_factory_type &stream_factory,
                            const stream_handler_type &stream_handler) const;
 };
 
 s3_storage_backend::aws_context::aws_context(
-    const simple_aws_credentials &credentials,
-    construction_alternative alternative, const std::string &param)
-    : aws_context_base{},
-      credentials_{credentials.access_key_id, credentials.secret_access_key},
-      configuration_{} {
-  // if the provided construction_alternative is 'region', treat param as
-  // AWS S3 region and initialize S3 client with it
-  // otherwise (if the construction_alternative is 'bucket'), treat param as
-  // AWS S3 bucket name, leave the 'region' field in the configuration class
-  // in its default state ("us-east-1") and try to detect AWS S3 region from
-  // from the bucket location
-  if (alternative == construction_alternative::region) {
-    configuration_.region = param;
-  }
+    bucket_tag /*tag*/, const simple_aws_credentials &credentials,
+    const std::string &bucket)
+    : aws_context{credentials} {
+  // if the construction_alternative is 'bucket', leave the 'region' field in
+  // the configuration class in its default state ("us-east-1") and try to
+  // detect AWS S3 region from the bucket location
   client_ =
       std::make_unique<Aws::S3Crt::S3CrtClient>(credentials_, configuration_);
-  if (alternative == construction_alternative::region) {
-    return;
-  }
 
-  configuration_.region = get_bucket_region(param);
+  configuration_.region = get_bucket_region(bucket);
   // reset to nullptr first to make sure we do not have two clients
   // simultaneously
   client_.reset();
+  client_ =
+      std::make_unique<Aws::S3Crt::S3CrtClient>(credentials_, configuration_);
+}
+
+s3_storage_backend::aws_context::aws_context(
+    region_tag /*tag*/, const simple_aws_credentials &credentials,
+    const std::string &region)
+    : aws_context{credentials} {
+  // if the provided construction_alternative is 'region', initialize S3 client
+  // with the provided region parameter
+  configuration_.region = region;
+  client_ =
+      std::make_unique<Aws::S3Crt::S3CrtClient>(credentials_, configuration_);
+}
+
+s3_storage_backend::aws_context::aws_context(
+    endpoint_tag /*tag*/, const simple_aws_credentials &credentials,
+    const std::string &endpoint, bool secure_protocol)
+    : aws_context{credentials} {
+  // if the provided construction_alternative is 'endpoint', initialize S3
+  // client with the provided endpoint parameter
+
+  // configuration_.region should hold the default value which is "us-east-1"
+  configuration_.scheme =
+      (secure_protocol ? Aws::Http::Scheme::HTTPS : Aws::Http::Scheme::HTTP);
+  // In case of alternative S3 endpoints, we always use legacy URL composing
+  // scheme (where bucket name is not a part of the host but the very first
+  // segment of the path).
+  configuration_.useVirtualAddressing = false;
+  configuration_.endpointOverride = endpoint;
   client_ =
       std::make_unique<Aws::S3Crt::S3CrtClient>(credentials_, configuration_);
 }
@@ -400,51 +456,9 @@ s3_storage_backend::s3_storage_backend(const boost::urls::url_view_base &uri)
 
   // "s3://[<access_key_id>:<secret_access_key>@]<bucket_name>[.<region>]/<path>"
   // for AWS S3
-  if (uri.scheme_id() != boost::urls::scheme::unknown ||
-      uri.scheme() != uri_schema) {
-    util::exception_location().raise<std::invalid_argument>(
-        "URI of invalid scheme provided");
-  }
-  if (uri.host_type() != boost::urls::host_type::name || uri.host().empty()) {
-    util::exception_location().raise<std::invalid_argument>(
-        "s3 URI must have host");
-  }
+  // "http[s]://[<access_key_id>:<secret_access_key>@]<endpoint>[:<port>]/<bucket/><path>"
+  // for S3-compatible storages
 
-  static constexpr char host_delimiter{'.'};
-  bucket_ = uri.host();
-  std::string region{};
-  const auto host_fnd{bucket_.find(host_delimiter)};
-  if (host_fnd != std::string::npos) {
-    region.assign(bucket_, host_fnd + 1);
-    bucket_.resize(host_fnd);
-    if (bucket_.empty()) {
-      util::exception_location().raise<std::invalid_argument>(
-          "s3 URI bucket name must not be empty");
-    }
-    if (region.empty()) {
-      util::exception_location().raise<std::invalid_argument>(
-          "s3 URI region must not be empty");
-    }
-    if (region.find(host_delimiter) != std::string::npos) {
-      util::exception_location().raise<std::invalid_argument>(
-          "s3 URI region must not be a qualified name");
-    }
-  }
-
-  if (uri.has_port()) {
-    util::exception_location().raise<std::invalid_argument>(
-        "s3 URI must not have port");
-  }
-
-  simple_aws_credentials credentials;
-  if (uri.has_userinfo()) {
-    if (!uri.has_password()) {
-      util::exception_location().raise<std::invalid_argument>(
-          "s3 URI must have either both user and password or none");
-    }
-    credentials.access_key_id = uri.user();
-    credentials.secret_access_key = uri.password();
-  }
   if (uri.has_query()) {
     util::exception_location().raise<std::invalid_argument>(
         "s3 URI must not have query");
@@ -453,14 +467,29 @@ s3_storage_backend::s3_storage_backend(const boost::urls::url_view_base &uri)
     util::exception_location().raise<std::invalid_argument>(
         "s3 URI must not have fragment");
   }
+  if (uri.has_userinfo()) {
+    if (!uri.has_password()) {
+      util::exception_location().raise<std::invalid_argument>(
+          "s3 URI must have either both user and password or none");
+    }
+  }
 
-  root_path_ = uri.path();
-  if (!region.empty()) {
-    impl_ = std::make_unique<aws_context>(
-        credentials, aws_context::construction_alternative::region, region);
-  } else {
-    impl_ = std::make_unique<aws_context>(
-        credentials, aws_context::construction_alternative::bucket, bucket_);
+  switch (uri.scheme_id()) {
+  case boost::urls::scheme::http:
+  case boost::urls::scheme::https:
+    init_with_endpoint(uri);
+    break;
+  case boost::urls::scheme::unknown:
+    if (uri.scheme() != original_uri_schema) {
+      util::exception_location().raise<std::invalid_argument>(
+          "The only supported custom URI scheme is " +
+          std::string{original_uri_schema});
+    }
+    init_with_bucket_or_region(uri);
+    break;
+  default:
+    util::exception_location().raise<std::invalid_argument>(
+        "URI of invalid scheme provided");
   }
 }
 
@@ -473,6 +502,99 @@ s3_storage_backend::~s3_storage_backend() {
     close_stream_internal();
   } catch (...) { // NOLINT(bugprone-empty-catch)
   }
+}
+
+void s3_storage_backend::init_with_bucket_or_region(
+    const boost::urls::url_view_base &uri) {
+  // "s3://" case
+  assert(uri.scheme_id() == boost::urls::scheme::unknown);
+  assert(uri.scheme() == original_uri_schema);
+
+  if (uri.host_type() != boost::urls::host_type::name || uri.host().empty()) {
+    util::exception_location().raise<std::invalid_argument>(
+        "original s3 URI must have host");
+  }
+  if (uri.has_port()) {
+    util::exception_location().raise<std::invalid_argument>(
+        "original s3 URI must not have port");
+  }
+
+  static constexpr char host_delimiter{'.'};
+  root_path_ = uri.path();
+  bucket_ = uri.host();
+  const auto host_fnd{bucket_.find(host_delimiter)};
+  if (host_fnd == std::string::npos) {
+    // "<bucket_name>" branch (without "<region>")
+    impl_ = std::make_unique<aws_context>(aws_context::bucket_tag{},
+                                          simple_aws_credentials{uri}, bucket_);
+  } else {
+    // "<bucket_name>.<region>" branch
+    const std::string region(bucket_, host_fnd + 1);
+    bucket_.resize(host_fnd);
+    if (bucket_.empty()) {
+      util::exception_location().raise<std::invalid_argument>(
+          "original s3 URI bucket name must not be empty");
+    }
+    if (region.empty()) {
+      util::exception_location().raise<std::invalid_argument>(
+          "original s3 URI region must not be empty");
+    }
+    if (region.find(host_delimiter) != std::string::npos) {
+      util::exception_location().raise<std::invalid_argument>(
+          "original s3 URI region must not be a qualified name");
+    }
+    impl_ = std::make_unique<aws_context>(aws_context::region_tag{},
+                                          simple_aws_credentials{uri}, region);
+  }
+}
+
+void s3_storage_backend::init_with_endpoint(
+    const boost::urls::url_view_base &uri) {
+  // "http[s]://" case
+  assert(uri.scheme_id() == boost::urls::scheme::http ||
+         uri.scheme_id() == boost::urls::scheme::https);
+
+  if (uri.path().empty()) {
+    util::exception_location().raise<std::invalid_argument>(
+        "endpoint s3 URI path must not be empty");
+  }
+
+  // When URI scheme is either HTTP or HTTPS, the host and port
+  // part of this URI are threated as an alternative S3-compatible
+  // server endpoint.
+  const bool secure_protocol{uri.scheme_id() == boost::urls::scheme::https};
+  std::string endpoint{uri.host()};
+  if (uri.has_port()) {
+    static constexpr char port_delimiter{':'};
+    endpoint += port_delimiter;
+    endpoint += uri.port();
+  }
+
+  // Also, as in the case of an S3-compatible storage we use
+  // legacy URL composing scheme (where bucket name is not a
+  // part of the host name but the very first segment of the path).
+  // As the result, in the provided storage URI configuration parameter we
+  // consider its first path segment a buckedt name.
+  const std::filesystem::path uri_path{uri.path()};
+  auto uri_path_it{std::begin(uri_path)};
+  assert(uri_path_it != std::end(uri_path));
+  assert(*uri_path_it == "/");
+  root_path_.assign(*uri_path_it);
+  ++uri_path_it;
+
+  if (uri_path_it == std::end(uri_path)) {
+    util::exception_location().raise<std::invalid_argument>(
+        "endpoint s3 URI path must include at least on segment");
+  }
+  bucket_ = *uri_path_it;
+  ++uri_path_it;
+  for (; uri_path_it != std::end(uri_path); ++uri_path_it) {
+    root_path_ /= *uri_path_it;
+  }
+
+  impl_ = std::make_unique<aws_context>(aws_context::endpoint_tag{},
+                                        simple_aws_credentials{uri}, endpoint,
+                                        secure_protocol);
 }
 
 [[nodiscard]] storage_object_name_container
@@ -544,8 +666,15 @@ void s3_storage_backend::do_close_stream() {
   res += std::to_string(options.sdkVersion.patch);
   res += ") - ";
 
-  res += "region: ";
-  res += impl_->get_region();
+  if (impl_->has_endpoint()) {
+    res += "endpoint: ";
+    res += impl_->get_scheme_label();
+    res += "://";
+    res += impl_->get_endpoint();
+  } else {
+    res += "region: ";
+    res += impl_->get_region();
+  }
   res += ", bucket: ";
   res += bucket_;
   res += ", path: ";

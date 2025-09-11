@@ -33,7 +33,7 @@ class [[nodiscard]] s3_storage_backend final : public basic_storage_backend {
 public:
   static constexpr std::size_t max_memory_object_size{1048576U};
 
-  static constexpr std::string_view uri_schema{"s3"};
+  static constexpr std::string_view original_uri_schema{"s3"};
 
   explicit s3_storage_backend(const boost::urls::url_view_base &uri);
   s3_storage_backend(const s3_storage_backend &) = delete;
@@ -61,6 +61,9 @@ private:
   class aws_context;
   using aws_context_ptr = std::unique_ptr<aws_context>;
   aws_context_ptr impl_;
+
+  void init_with_bucket_or_region(const boost::urls::url_view_base &uri);
+  void init_with_endpoint(const boost::urls::url_view_base &uri);
 
   [[nodiscard]] storage_object_name_container do_list_objects() override;
 
