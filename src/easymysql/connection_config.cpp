@@ -29,13 +29,12 @@ std::string connection_config::get_connection_string() const {
   if (has_dns_srv_name()) {
     const auto &opt_dns_srv_name{get<"dns_srv_name">()};
     res += "[DNS SRV: ";
-    res += (opt_dns_srv_name.has_value() ? opt_dns_srv_name.value()
-                                         : "<unspecified>");
+    res += opt_dns_srv_name.value_or("<unspecified>");
     res += ']';
 
   } else {
     const auto &opt_host{get<"host">()};
-    res += (opt_host.has_value() ? opt_host.value() : "<unspecified host>");
+    res += opt_host.value_or("<unspecified host>");
     res += ':';
     const auto &opt_port{get<"port">()};
     res += (opt_port.has_value() ? std::to_string(opt_port.value())

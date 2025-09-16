@@ -207,8 +207,9 @@ The Percona Binary Log Server configuration file has the following format.
     "verify_checksum": true
   },
   "storage": {
-    "backend": "file",
-    "uri": "file:///home/user/vault"
+    "backend": "s3",
+    "uri": "https://key_id:secret@192.168.0.100:9000/binsrv-bucket/vault",
+    "fs_buffer_directory": "/tmp/binsrv"
   }
 }
 ```
@@ -261,6 +262,7 @@ Currently we use the following mapping:
   - `file` - local filesystem
   - `s3` - `AWS S3` or `S3`-compatible server (MinIO, etc.)
 - `<storage.uri>` - specifies the location (either local or remote) where the received binary logs should be stored
+- `<storage.fs_buffer_directory>` (optional) - specifies the location on the local filesystem where partially downloaded binlog files should be stored. If not specified, the value of the default OS temporary directory will be used (e.g. '/tmp' on Linux). Currently, this parameter is meaningful only for non-`file` storage backends.
 
 ##### Storage URI format
 
@@ -288,7 +290,7 @@ In case of `AWS S3`, the URIs must have the following format.
 In case of `S3`-compatible service with custom endpoint, the URIs must have the following format.
 `http[s]://[<access_key_id>:<secret_access_key>@]<host>[:<port>]/<bucket_name>/<path>`, where:
 - `<host>` - either a host name or an IP address of an `S3`-compatible server,
-- `<port>` - the portof an `S3`-compatible server to connect to (optional, if omitted, it will be either 80 or 443, depending of the URI scheme: HTTP or HTTPS).
+- `<port>` - the port of an `S3`-compatible server to connect to (optional, if omitted, it will be either 80 or 443, depending of the URI scheme: HTTP or HTTPS).
 Please notice that in this case `<bucket_name>` must be specified as the very first segment of the URI path.
 
 For example:

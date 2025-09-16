@@ -33,6 +33,7 @@ if ($storage_backend == file)
 }
 if ($storage_backend == s3)
 {
+  --let $binsrv_buffer_path = $MYSQL_TMP_DIR/buffer
   --let $binsrv_storage_path = `SELECT CONCAT('/mtr-', UUID())`
   --let $aws_s3_bucket = $MTR_BINSRV_AWS_S3_BUCKET
   if ($MTR_BINSRV_AWS_S3_ENDPOINT != '')
@@ -85,6 +86,10 @@ eval SET @binsrv_config_json = JSON_OBJECT(
      'uri', @storage_uri
   )
 );
+if ($storage_backend == s3)
+{
+  eval SET @binsrv_config_json = JSON_INSERT(@binsrv_config_json, '$.storage.fs_buffer_directory', '$binsrv_buffer_path');
+}
 
 if ($binsrv_ssl_mode != "")
 {
@@ -134,4 +139,8 @@ if ($have_windows) {
 if ($storage_backend == file)
 {
   --mkdir $binsrv_storage_path
+}
+if ($storage_backend == s3)
+{
+  --mkdir $binsrv_buffer_path
 }

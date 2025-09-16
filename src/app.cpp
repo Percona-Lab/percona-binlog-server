@@ -45,6 +45,8 @@
 #include "binsrv/operation_mode_type.hpp"
 #include "binsrv/storage.hpp"
 #include "binsrv/storage_backend_factory.hpp"
+// needed for storage_backend_type' s operator <<
+#include "binsrv/storage_backend_type.hpp" // IWYU pragma: keep
 
 #include "binsrv/event/code_type.hpp"
 #include "binsrv/event/event.hpp"
@@ -61,24 +63,23 @@
 
 #include "util/byte_span_fwd.hpp"
 #include "util/command_line_helpers.hpp"
+#include "util/common_optional_types.hpp"
 #include "util/ct_string.hpp"
 #include "util/exception_location_helpers.hpp"
 #include "util/nv_tuple.hpp"
 
 namespace {
 
-using log_optional_string = std::optional<std::string>;
-
-template <typename T> log_optional_string to_log_string(const T &value) {
+template <typename T> util::optional_string to_log_string(const T &value) {
   return boost::lexical_cast<std::string>(value);
 }
 
-log_optional_string to_log_string(bool value) {
+util::optional_string to_log_string(bool value) {
   return {value ? "true" : "false"};
 }
 
 template <typename T>
-log_optional_string to_log_string(const std::optional<T> &value) {
+util::optional_string to_log_string(const std::optional<T> &value) {
   if (!value.has_value()) {
     return {};
   }
@@ -150,6 +151,25 @@ void log_replication_config_info(
                                 "mysql replication idle time (seconds)");
   log_config_param<"verify_checksum">(
       logger, replication_config, "mysql replication checksum verification");
+}
+
+void log_storage_config_info(binsrv::basic_logger &logger,
+                             const binsrv::storage_config &storage_config) {
+
+  log_config_param<"backend">(logger, storage_config,
+                              "binlog storage backend type");
+  // not printing "uri" here deliberately to avoid credentials leaking
+  log_config_param<"fs_buffer_directory">(
+      logger, storage_config,
+      "binlog storage backend filesystem buffer directory");
+}
+
+void log_storage_backend_info(
+    binsrv::basic_logger &logger,
+    const binsrv::basic_storage_backend &storage_backend) {
+  std::string msg{"created binlog storage backend: "};
+  msg += storage_backend.get_description();
+  logger.log(binsrv::log_severity::info, msg);
 }
 
 void log_storage_info(binsrv::basic_logger &logger,
@@ -527,11 +547,10 @@ int main(int argc, char *argv[]) {
     const volatile std::atomic_flag &termination_flag{global_termination_flag};
 
     const auto &storage_config = config->root().get<"storage">();
+    log_storage_config_info(*logger, storage_config);
     auto storage_backend{
         binsrv::storage_backend_factory::create(storage_config)};
-    msg = "created binlog storage backend: ";
-    msg += storage_backend->get_description();
-    logger->log(binsrv::log_severity::info, msg);
+    log_storage_backend_info(*logger, *storage_backend);
 
     binsrv::storage storage{std::move(storage_backend)};
     logger->log(binsrv::log_severity::info,

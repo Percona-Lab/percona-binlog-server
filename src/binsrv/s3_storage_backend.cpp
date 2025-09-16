@@ -31,6 +31,7 @@
 #include <utility>
 
 #include <boost/url/host_type.hpp>
+#include <boost/url/parse.hpp>
 #include <boost/url/scheme.hpp>
 #include <boost/url/url_view_base.hpp>
 
@@ -57,6 +58,7 @@
 #include <aws/s3-crt/model/PutObjectRequest.h>
 
 #include "binsrv/s3_error_helpers_private.hpp"
+#include "binsrv/storage_config.hpp"
 
 #include "util/byte_span.hpp"
 #include "util/exception_location_helpers.hpp"
@@ -449,10 +451,44 @@ void s3_storage_backend::aws_context::get_object_internal(
   }
 }
 
-s3_storage_backend::s3_storage_backend(const boost::urls::url_view_base &uri)
+s3_storage_backend::s3_storage_backend(const storage_config &config)
     : bucket_{}, root_path_{}, current_name_{}, uuid_generator_{},
-      current_tmp_file_path_{}, tmp_fstream_{}, impl_{} {
+      tmp_file_directory_{}, current_tmp_file_path_{}, tmp_fstream_{}, impl_{} {
   // TODO: take into account S3 limits (like 5GB single file upload)
+
+  const auto &opt_fs_buffer_directory{config.get<"fs_buffer_directory">()};
+  if (opt_fs_buffer_directory.has_value()) {
+    tmp_file_directory_ = *opt_fs_buffer_directory;
+  } else {
+    tmp_file_directory_ = boost::uuids::to_string(uuid_generator_());
+  }
+
+  const auto tmp_file_directory_status{
+      std::filesystem::status(tmp_file_directory_)};
+  if (tmp_file_directory_status.type() ==
+      std::filesystem::file_type::not_found) {
+    std::error_code fs_error{};
+    std::filesystem::create_directories(tmp_file_directory_, fs_error);
+    if (fs_error) {
+      util::exception_location().raise<std::invalid_argument>(
+          "unable to create storage backend filesystem buffer directory \"" +
+          tmp_file_directory_.string() + "\"");
+    }
+  } else if (tmp_file_directory_status.type() !=
+             std::filesystem::file_type::directory) {
+    util::exception_location().raise<std::invalid_argument>(
+        "the specified storage backend filesystem buffer directory \"" +
+        tmp_file_directory_.string() + "\" is not a directory");
+  }
+
+  const auto &backend_uri = config.get<"uri">();
+
+  const auto uri_parse_result{boost::urls::parse_absolute_uri(backend_uri)};
+  if (!uri_parse_result) {
+    util::exception_location().raise<std::invalid_argument>(
+        "invalid storage backend URI");
+  }
+  const auto &uri{*uri_parse_result};
 
   // "s3://[<access_key_id>:<secret_access_key>@]<bucket_name>[.<region>]/<path>"
   // for AWS S3
@@ -694,10 +730,7 @@ s3_storage_backend::get_object_path(std::string_view name) const {
 
 [[nodiscard]] std::filesystem::path
 s3_storage_backend::generate_tmp_file_path() {
-  // TODO: change this temp_directory_path() to a configuration parameter
-  auto result{std::filesystem::temp_directory_path()};
-  result /= boost::uuids::to_string(uuid_generator_());
-  return result;
+  return tmp_file_directory_ / boost::uuids::to_string(uuid_generator_());
 }
 
 void s3_storage_backend::close_stream_internal() {

@@ -7,6 +7,7 @@ if ($storage_backend == file)
 if ($storage_backend == s3)
 {
   --exec $aws_cli s3 rm s3://$aws_s3_bucket$binsrv_storage_path/ --recursive > /dev/null
+  --force-rmdir $binsrv_buffer_path
 }
 
 --echo
