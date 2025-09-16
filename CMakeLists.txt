@@ -228,6 +228,8 @@ set(source_files
   src/util/command_line_helpers.hpp
   src/util/command_line_helpers.cpp
 
+  src/util/common_optional_types.hpp
+
   src/util/conversion_helpers.hpp
 
   src/util/composite_name_fwd.hpp
@@ -254,8 +256,6 @@ set(source_files
   src/util/redirectable.hpp
 
   # mysql wrapper library files
-  src/easymysql/config_common_types.hpp
-
   src/easymysql/core_error_helpers_private.hpp
   src/easymysql/core_error_helpers_private.cpp
   src/easymysql/core_error.hpp

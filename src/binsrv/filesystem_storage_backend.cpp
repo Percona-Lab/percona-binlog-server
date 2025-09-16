@@ -25,8 +25,10 @@
 #include <string_view>
 
 #include <boost/url/host_type.hpp>
+#include <boost/url/parse.hpp>
 #include <boost/url/scheme.hpp>
-#include <boost/url/url_view_base.hpp>
+
+#include "binsrv/storage_config.hpp"
 
 #include "util/byte_span.hpp"
 #include "util/exception_location_helpers.hpp"
@@ -34,9 +36,18 @@
 namespace binsrv {
 
 filesystem_storage_backend::filesystem_storage_backend(
-    const boost::urls::url_view_base &uri)
+    const storage_config &config)
     : root_path_{}, ofs_{} {
   // TODO: switch to utf8 file names
+
+  const auto &backend_uri = config.get<"uri">();
+
+  const auto uri_parse_result{boost::urls::parse_absolute_uri(backend_uri)};
+  if (!uri_parse_result) {
+    util::exception_location().raise<std::invalid_argument>(
+        "invalid storage backend URI");
+  }
+  const auto &uri{*uri_parse_result};
 
   // "file://<path>" for local filesystem
   if (uri.scheme_id() != boost::urls::scheme::file ||

@@ -26,6 +26,7 @@
 #include <boost/uuid/uuid_generators.hpp>
 
 #include "binsrv/basic_storage_backend.hpp" // IWYU pragma: export
+#include "binsrv/storage_config_fwd.hpp"
 
 namespace binsrv {
 
@@ -35,7 +36,7 @@ public:
 
   static constexpr std::string_view original_uri_schema{"s3"};
 
-  explicit s3_storage_backend(const boost::urls::url_view_base &uri);
+  explicit s3_storage_backend(const storage_config &config);
   s3_storage_backend(const s3_storage_backend &) = delete;
   s3_storage_backend &operator=(const s3_storage_backend &) = delete;
   s3_storage_backend(s3_storage_backend &&) = delete;
@@ -55,6 +56,7 @@ private:
   std::filesystem::path root_path_;
   std::string current_name_;
   boost::uuids::random_generator uuid_generator_;
+  std::filesystem::path tmp_file_directory_;
   std::filesystem::path current_tmp_file_path_;
   std::fstream tmp_fstream_;
 

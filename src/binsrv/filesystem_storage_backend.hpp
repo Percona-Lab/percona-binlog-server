@@ -20,9 +20,8 @@
 #include <fstream>
 #include <string_view>
 
-#include <boost/url/url_view_base.hpp>
-
 #include "binsrv/basic_storage_backend.hpp" // IWYU pragma: export
+#include "binsrv/storage_config_fwd.hpp"
 
 namespace binsrv {
 
@@ -33,7 +32,7 @@ public:
 
   static constexpr std::string_view uri_schema{"file"};
 
-  explicit filesystem_storage_backend(const boost::urls::url_view_base &uri);
+  explicit filesystem_storage_backend(const storage_config &config);
 
   [[nodiscard]] const std::filesystem::path &get_root_path() const noexcept {
     return root_path_;

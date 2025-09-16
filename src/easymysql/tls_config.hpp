@@ -18,8 +18,7 @@
 
 #include "easymysql/tls_config_fwd.hpp" // IWYU pragma: export
 
-#include "easymysql/config_common_types.hpp"
-
+#include "util/common_optional_types.hpp"
 #include "util/nv_tuple.hpp"
 
 namespace easymysql {
@@ -27,8 +26,8 @@ namespace easymysql {
 // clang-format off
 struct [[nodiscard]] tls_config
     : util::nv_tuple<
-          util::nv<"ciphersuites", optional_string>,
-          util::nv<"version"     , optional_string>
+          util::nv<"ciphersuites", util::optional_string>,
+          util::nv<"version"     , util::optional_string>
           > {};
 // clang-format on
 

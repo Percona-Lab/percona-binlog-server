@@ -13,14 +13,14 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef EASYMYSQL_CONFIG_COMMON_TYPES_HPP
-#define EASYMYSQL_CONFIG_COMMON_TYPES_HPP
+#ifndef UTIL_COMMON_OPTIONAL_TYPES_HPP
+#define UTIL_COMMON_OPTIONAL_TYPES_HPP
 
 #include <cstdint>
 #include <optional>
 #include <string>
 
-namespace easymysql {
+namespace util {
 
 using optional_string = std::optional<std::string>;
 
@@ -29,6 +29,6 @@ using optional_uint16_t = std::optional<std::uint16_t>;
 using optional_uint32_t = std::optional<std::uint32_t>;
 using optional_uint64_t = std::optional<std::uint64_t>;
 
-} // namespace easymysql
+} // namespace util
 
-#endif // EASYMYSQL_CONFIG_COMMON_TYPES_HPP
+#endif // UTIL_COMMON_OPTIONAL_TYPES_HPP

@@ -21,10 +21,10 @@
 #include <cstdint>
 #include <string>
 
-#include "easymysql/config_common_types.hpp"
 #include "easymysql/ssl_config.hpp" // IWYU pragma: export
 #include "easymysql/tls_config.hpp" // IWYU pragma: export
 
+#include "util/common_optional_types.hpp"
 #include "util/nv_tuple.hpp"
 
 namespace easymysql {
@@ -32,9 +32,9 @@ namespace easymysql {
 struct [[nodiscard]] connection_config
     : util::nv_tuple<
           // clang-format off
-          util::nv<"host"           , optional_string>,
-          util::nv<"port"           , optional_uint16_t>,
-          util::nv<"dns_srv_name"   , optional_string>,
+          util::nv<"host"           , util::optional_string>,
+          util::nv<"port"           , util::optional_uint16_t>,
+          util::nv<"dns_srv_name"   , util::optional_string>,
           util::nv<"user"           , std::string>,
           util::nv<"password"       , std::string>,
           util::nv<"connect_timeout", std::uint32_t>,

@@ -22,6 +22,7 @@
 
 #include "binsrv/storage_backend_type_fwd.hpp"
 
+#include "util/common_optional_types.hpp"
 #include "util/nv_tuple.hpp"
 
 namespace binsrv {
@@ -30,7 +31,8 @@ namespace binsrv {
 struct [[nodiscard]] storage_config
     : util::nv_tuple<
           util::nv<"backend", storage_backend_type>,
-          util::nv<"uri", std::string>
+          util::nv<"uri", std::string>,
+          util::nv<"fs_buffer_directory", util::optional_string>
       > {};
 // clang-format on
 

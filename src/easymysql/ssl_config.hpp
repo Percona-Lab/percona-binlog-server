@@ -20,9 +20,9 @@
 
 #include <cstdint>
 
-#include "easymysql/config_common_types.hpp"
 #include "easymysql/ssl_mode_type_fwd.hpp"
 
+#include "util/common_optional_types.hpp"
 #include "util/nv_tuple.hpp"
 
 namespace easymysql {
@@ -31,13 +31,13 @@ namespace easymysql {
 struct [[nodiscard]] ssl_config
     : util::nv_tuple<
           util::nv<"mode"   , ssl_mode_type>,
-          util::nv<"ca"     , optional_string>,
-          util::nv<"capath" , optional_string>,
-          util::nv<"crl"    , optional_string>,
-          util::nv<"crlpath", optional_string>,
-          util::nv<"cert"   , optional_string>,
-          util::nv<"key"    , optional_string>,
-          util::nv<"cipher" , optional_string>
+          util::nv<"ca"     , util::optional_string>,
+          util::nv<"capath" , util::optional_string>,
+          util::nv<"crl"    , util::optional_string>,
+          util::nv<"crlpath", util::optional_string>,
+          util::nv<"cert"   , util::optional_string>,
+          util::nv<"key"    , util::optional_string>,
+          util::nv<"cipher" , util::optional_string>
           > {};
 // clang-format on
 
