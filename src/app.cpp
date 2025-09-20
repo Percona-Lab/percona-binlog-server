@@ -37,15 +37,14 @@
 #include <boost/lexical_cast/try_lexical_convert.hpp>
 
 #include "binsrv/basic_logger.hpp"
-#include "binsrv/basic_storage_backend.hpp"
 #include "binsrv/exception_handling_helpers.hpp"
 #include "binsrv/log_severity.hpp"
 #include "binsrv/logger_factory.hpp"
 #include "binsrv/main_config.hpp"
 #include "binsrv/operation_mode_type.hpp"
+#include "binsrv/size_unit.hpp"
 #include "binsrv/storage.hpp"
-#include "binsrv/storage_backend_factory.hpp"
-// needed for storage_backend_type' s operator <<
+// needed for storage_backend_type's operator <<
 #include "binsrv/storage_backend_type.hpp" // IWYU pragma: keep
 
 #include "binsrv/event/code_type.hpp"
@@ -72,6 +71,10 @@ namespace {
 
 template <typename T> util::optional_string to_log_string(const T &value) {
   return boost::lexical_cast<std::string>(value);
+}
+
+util::optional_string to_log_string(const binsrv::size_unit &value) {
+  return value.get_description();
 }
 
 util::optional_string to_log_string(bool value) {
@@ -162,19 +165,17 @@ void log_storage_config_info(binsrv::basic_logger &logger,
   log_config_param<"fs_buffer_directory">(
       logger, storage_config,
       "binlog storage backend filesystem buffer directory");
-}
-
-void log_storage_backend_info(
-    binsrv::basic_logger &logger,
-    const binsrv::basic_storage_backend &storage_backend) {
-  std::string msg{"created binlog storage backend: "};
-  msg += storage_backend.get_description();
-  logger.log(binsrv::log_severity::info, msg);
+  log_config_param<"checkpoint_size">(
+      logger, storage_config, "binlog storage backend checkpointing size");
 }
 
 void log_storage_info(binsrv::basic_logger &logger,
                       const binsrv::storage &storage) {
-  std::string msg{};
+  std::string msg{"created binlog storage with the following backend: "};
+  msg += storage.get_backend_description();
+  logger.log(binsrv::log_severity::info, msg);
+
+  msg.clear();
   if (storage.has_current_binlog_name()) {
     msg = "binlog storage initialized at \"";
     msg += storage.get_current_binlog_name();
@@ -548,14 +549,8 @@ int main(int argc, char *argv[]) {
 
     const auto &storage_config = config->root().get<"storage">();
     log_storage_config_info(*logger, storage_config);
-    auto storage_backend{
-        binsrv::storage_backend_factory::create(storage_config)};
-    log_storage_backend_info(*logger, *storage_backend);
 
-    binsrv::storage storage{std::move(storage_backend)};
-    logger->log(binsrv::log_severity::info,
-                "created binlog storage with the provided backend");
-
+    binsrv::storage storage{storage_config};
     log_storage_info(*logger, storage);
 
     const auto &connection_config = config->root().get<"connection">();

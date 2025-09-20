@@ -45,7 +45,7 @@ struct transparent_string_like_hash {
     return std::hash<std::string>{}(key);
   }
 };
-// the container thatr uses transparent_string_like_hash also needs a
+// the container that uses transparent_string_like_hash also needs a
 // transparent version of KeyEqual template argument (std::equal_to<void>)
 using storage_object_name_container =
     std::unordered_map<std::string, std::uint64_t, transparent_string_like_hash,

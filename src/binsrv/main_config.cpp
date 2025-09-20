@@ -22,12 +22,14 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <type_traits>
 
 #include <boost/json/parse.hpp>
 #include <boost/json/src.hpp> // IWYU pragma: keep
 
 // Needed for log_severity's operator <<
 #include "binsrv/log_severity.hpp" // IWYU pragma: keep
+#include "binsrv/size_unit_fwd.hpp"
 // Needed for storage_backend_type's operator <<
 #include "binsrv/storage_backend_type.hpp" // IWYU pragma: keep
 
@@ -36,6 +38,22 @@
 
 #include "util/exception_location_helpers.hpp"
 #include "util/nv_tuple_from_json.hpp"
+#include "util/nv_tuple_fwd.hpp"
+
+// As this file is the only place where we call util::nv_tuple_from_json(),
+// which in turns calls tag_invoke() from the boost::json, we give the
+// serialization/unserialization hints for this library here (instead of
+// polluting each individual class definition).
+template <>
+struct util::is_string_convertable<binsrv::size_unit> : std::true_type {};
+template <>
+struct util::is_string_convertable<binsrv::log_severity> : std::true_type {};
+template <>
+struct util::is_string_convertable<binsrv::storage_backend_type>
+    : std::true_type {};
+template <>
+struct util::is_string_convertable<easymysql::ssl_mode_type> : std::true_type {
+};
 
 namespace binsrv {
 

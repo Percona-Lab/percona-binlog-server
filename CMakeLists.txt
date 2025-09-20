@@ -198,6 +198,10 @@ set(source_files
   src/binsrv/operation_mode_type_fwd.hpp
   src/binsrv/operation_mode_type.hpp
 
+  src/binsrv/size_unit_fwd.hpp
+  src/binsrv/size_unit.hpp
+  src/binsrv/size_unit.cpp
+
   src/binsrv/s3_error_helpers_private.hpp
   src/binsrv/s3_error_helpers_private.cpp
   src/binsrv/s3_error.hpp

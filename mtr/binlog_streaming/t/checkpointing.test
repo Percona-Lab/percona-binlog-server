@@ -1,0 +1,66 @@
+--source ../include/have_binsrv.inc
+
+--source ../include/v80_v84_compatibility_defines.inc
+
+--echo *** Resetting replication at the very beginning of the test.
+--disable_query_log
+eval $stmt_reset_binary_logs_and_gtids;
+--enable_query_log
+
+--echo *** Creating a simple table.
+CREATE TABLE t1(
+  id SERIAL,
+  val CHAR(64) CHARACTER SET ascii NOT NULL,
+  PRIMARY KEY(id)
+) ENGINE=InnoDB;
+
+# This workload generates 4 binlog files, ~5MB each
+--let $number_of_binlog_files = 4
+--let $number_of_transactions_within_binlog_file = 64
+--let $number_of_statements_within_transaction = 512
+
+--echo *** Filling the table with a large number of records, periodically flushing binary logs.
+--disable_query_log
+--let $binlog_idx = 0
+while ($binlog_idx < $number_of_binlog_files)
+{
+  --let $transaction_idx = 0
+  while ($transaction_idx < $number_of_transactions_within_binlog_file)
+  {
+    START TRANSACTION;
+    --let $statement_idx = 0
+    while ($statement_idx < $number_of_statements_within_transaction)
+    {
+      eval INSERT INTO t1(val) VALUES(SHA2(LAST_INSERT_ID(), 256));
+      --inc $statement_idx
+    }
+    COMMIT;
+    --inc $transaction_idx
+  }
+  FLUSH BINARY LOGS;
+  --inc $binlog_idx
+}
+--enable_query_log
+
+--echo *** Dropping the table.
+DROP TABLE t1;
+
+# identifying backend storage type ('file' or 's3')
+--source ../include/identify_storage_backend.inc
+
+# creating data directory, configuration file, etc.
+--let $binsrv_connect_timeout = 20
+--let $binsrv_read_timeout = 60
+--let $binsrv_idle_time = 10
+--let $binsrv_verify_checksum = TRUE
+# enabling checkointing at about 40% of expected single binlog file size, so that checkpointing
+# will happen twice before rotation
+--let $binsrv_checkpoint_size = 2M
+--source ../include/set_up_binsrv_environment.inc
+
+--echo
+--echo *** Executing the Binlog Server utility to download all binlog data
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+# cleaning up
+--source ../include/tear_down_binsrv_environment.inc

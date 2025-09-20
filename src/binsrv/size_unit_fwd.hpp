@@ -13,31 +13,30 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef BINSRV_STORAGE_CONFIG_HPP
-#define BINSRV_STORAGE_CONFIG_HPP
+#ifndef BINSRV_SIZE_UNIT_FWD_HPP
+#define BINSRV_SIZE_UNIT_FWD_HPP
 
-#include "binsrv/storage_config_fwd.hpp" // IWYU pragma: export
-
-#include <string>
-
-#include "binsrv/size_unit.hpp"
-#include "binsrv/storage_backend_type_fwd.hpp"
-
-#include "util/common_optional_types.hpp"
-#include "util/nv_tuple.hpp"
+#include <concepts>
+#include <istream>
+#include <optional>
+#include <ostream>
 
 namespace binsrv {
 
-// clang-format off
-struct [[nodiscard]] storage_config
-    : util::nv_tuple<
-          util::nv<"backend", storage_backend_type>,
-          util::nv<"uri", std::string>,
-          util::nv<"fs_buffer_directory", util::optional_string>,
-          util::nv<"checkpoint_size", optional_size_unit>
-      > {};
-// clang-format on
+class size_unit;
+
+using optional_size_unit = std::optional<size_unit>;
+
+template <typename Char, typename Traits>
+  requires std::same_as<Char, char>
+std::basic_ostream<Char, Traits> &
+operator<<(std::basic_ostream<Char, Traits> &output, const size_unit &unit);
+
+template <typename Char, typename Traits>
+  requires std::same_as<Char, char>
+std::basic_istream<Char, Traits> &
+operator>>(std::basic_istream<Char, Traits> &input, size_unit &unit);
 
 } // namespace binsrv
 
-#endif // BINSRV_STORAGE_CONFIG_HPP
+#endif // BINSRV_SIZE_UNIT_FWD_HPP

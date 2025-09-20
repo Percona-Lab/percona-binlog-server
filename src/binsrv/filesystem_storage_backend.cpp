@@ -113,19 +113,19 @@ filesystem_storage_backend::do_get_object(std::string_view name) {
                            std::ios_base::in | std::ios_base::binary};
   if (!object_ifs.is_open()) {
     util::exception_location().raise<std::runtime_error>(
-        "cannot open undellying object file");
+        "cannot open underlying object file");
   }
   auto file_size = std::filesystem::file_size(object_path);
   if (file_size > max_memory_object_size) {
     util::exception_location().raise<std::out_of_range>(
-        "undellying object file is too large to be loaded in memory");
+        "underlying object file is too large to be loaded in memory");
   }
 
   std::string file_content(file_size, 'x');
   if (!object_ifs.read(std::data(file_content),
                        static_cast<std::streamoff>(file_size))) {
     util::exception_location().raise<std::runtime_error>(
-        "cannot read undellying object file content");
+        "cannot read underlying object file content");
   }
   return file_content;
 }
@@ -139,13 +139,13 @@ void filesystem_storage_backend::do_put_object(std::string_view name,
                                             std::ios_base::trunc};
   if (!object_ofs.is_open()) {
     util::exception_location().raise<std::runtime_error>(
-        "cannot open undellying object file for writing");
+        "cannot open underlying object file for writing");
   }
   const auto content_sv = util::as_string_view(content);
   if (!object_ofs.write(std::data(content_sv),
                         static_cast<std::streamoff>(std::size(content_sv)))) {
     util::exception_location().raise<std::runtime_error>(
-        "cannot write date to undellying object file");
+        "cannot write date to underlying object file");
   }
 }
 
@@ -174,6 +174,10 @@ void filesystem_storage_backend::do_write_data_to_stream(
     util::exception_location().raise<std::runtime_error>(
         "cannot write data to the underlying stream file");
   }
+}
+
+void filesystem_storage_backend::do_flush_stream() {
+  assert(ofs_.is_open());
   if (!ofs_.flush()) {
     util::exception_location().raise<std::runtime_error>(
         "cannot flush the underlying stream file");

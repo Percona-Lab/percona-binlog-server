@@ -58,6 +58,14 @@ void basic_storage_backend::write_data_to_stream(util::const_byte_span data) {
   do_write_data_to_stream(data);
 }
 
+void basic_storage_backend::flush_stream() {
+  if (!stream_open_) {
+    util::exception_location().raise<std::logic_error>(
+        "cannot flush the stream as it has not been opened");
+  }
+  do_flush_stream();
+}
+
 void basic_storage_backend::close_stream() {
   if (!stream_open_) {
     util::exception_location().raise<std::logic_error>(
