@@ -25,6 +25,8 @@
 #include <utility>
 
 #include "binsrv/basic_storage_backend.hpp"
+#include "binsrv/storage_backend_factory.hpp"
+#include "binsrv/storage_config.hpp"
 
 #include "binsrv/event/protocol_traits_fwd.hpp"
 
@@ -33,8 +35,14 @@
 
 namespace binsrv {
 
-storage::storage(basic_storage_backend_ptr backend)
-    : backend_{std::move(backend)}, binlog_names_{} {
+storage::storage(const storage_config &config) : backend_{}, binlog_names_{} {
+  const auto &checkpoint_size_opt{config.get<"checkpoint_size">()};
+  if (checkpoint_size_opt.has_value()) {
+    checkpoint_size_ = checkpoint_size_opt.value().get_value();
+  }
+
+  backend_ = storage_backend_factory::create(config);
+
   const auto storage_objects{backend_->list_objects()};
   if (storage_objects.empty()) {
     // initialized on a new / empty storage - no other actions required
@@ -67,6 +75,10 @@ storage::~storage() {
   }
 }
 
+[[nodiscard]] std::string storage::get_backend_description() const {
+  return backend_->get_description();
+}
+
 [[nodiscard]] bool
 storage::check_binlog_name(std::string_view binlog_name) noexcept {
   // TODO: parse binlog name into "base name" and "rotation number"
@@ -96,21 +108,36 @@ void storage::open_binlog(std::string_view binlog_name) {
     // writing the magic binlog footprint only if this is a newly
     // created file
     backend_->write_data_to_stream(event::magic_binlog_payload);
+    backend_->flush_stream();
 
     binlog_names_.emplace_back(binlog_name);
     save_binlog_index();
     position_ = event::magic_binlog_offset;
   }
+  if (size_checkpointing_enabled()) {
+    last_checkpoint_position_ = position_;
+  }
 }
 
 void storage::write_event(util::const_byte_span event_data) {
   backend_->write_data_to_stream(event_data);
-  position_ += std::size(event_data);
+
+  const auto event_data_size{std::size(event_data)};
+  position_ += event_data_size;
+  if (size_checkpointing_enabled()) {
+    if (position_ >= last_checkpoint_position_ + checkpoint_size_) {
+      backend_->flush_stream();
+      last_checkpoint_position_ = position_;
+    }
+  }
 }
 
 void storage::close_binlog() {
   backend_->close_stream();
   position_ = 0ULL;
+  if (size_checkpointing_enabled()) {
+    last_checkpoint_position_ = position_;
+  }
 }
 
 void storage::load_binlog_index() {

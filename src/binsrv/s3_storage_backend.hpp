@@ -76,6 +76,7 @@ private:
   void do_open_stream(std::string_view name,
                       storage_backend_open_stream_mode mode) override;
   void do_write_data_to_stream(util::const_byte_span data) override;
+  void do_flush_stream() override;
   void do_close_stream() override;
 
   [[nodiscard]] std::string do_get_description() const override;
@@ -83,6 +84,7 @@ private:
   [[nodiscard]] std::filesystem::path
   get_object_path(std::string_view name) const;
   [[nodiscard]] std::filesystem::path generate_tmp_file_path();
+  void upload_tmp_stream_internal();
   void close_stream_internal();
 };
 

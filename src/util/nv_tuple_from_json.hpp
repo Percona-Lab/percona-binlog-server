@@ -105,10 +105,10 @@ T tag_invoke(boost::json::value_to_tag<T> /*unused*/,
       json_value, extraction_ctx)};
 }
 
-// The tag_invoke() overload for enumerations that can be converted from
-// std::strings via boost::lexical_cast (have overloaded operator >>).
-template <typename T>
-  requires std::is_enum_v<T>
+// The tag_invoke() overload for types that can be converted from
+// std::strings via boost::lexical_cast (explicitly marked as convertible
+// via util::string_convertable<...> specialization).
+template <string_convertable T>
 T tag_invoke(boost::json::value_to_tag<T> /*unused*/,
              const boost::json::value &json_value,
              const extraction_context & /*extraction_ctx*/) {

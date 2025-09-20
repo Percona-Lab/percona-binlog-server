@@ -1,0 +1,26 @@
+*** Resetting replication at the very beginning of the test.
+*** Creating a simple table.
+CREATE TABLE t1(
+id SERIAL,
+val CHAR(64) CHARACTER SET ascii NOT NULL,
+PRIMARY KEY(id)
+) ENGINE=InnoDB;
+*** Filling the table with a large number of records, periodically flushing binary logs.
+*** Dropping the table.
+DROP TABLE t1;
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+
+*** Executing the Binlog Server utility to download all binlog data
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.

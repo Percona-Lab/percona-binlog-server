@@ -77,6 +77,14 @@ template <typename NVTuple>
 using extract_named_value_tuple_base_t =
     typename extract_named_value_tuple_base<NVTuple>::type;
 
+template <typename T> struct is_string_convertable : std::false_type {};
+
+template <typename T>
+inline constexpr bool is_string_convertable_v = is_string_convertable<T>::value;
+
+template <typename T>
+concept string_convertable = is_string_convertable_v<T>;
+
 } // namespace util
 
 #endif // UTIL_NV_TUPLE_FWD_HPP

@@ -23,6 +23,7 @@
 #include <vector>
 
 #include "binsrv/basic_storage_backend_fwd.hpp"
+#include "binsrv/storage_config_fwd.hpp"
 
 #include "util/byte_span_fwd.hpp"
 
@@ -34,7 +35,7 @@ public:
   static constexpr std::string_view default_binlog_index_entry_path{"."};
 
   // passing by value as we are going to move from this unique_ptr
-  explicit storage(basic_storage_backend_ptr backend);
+  explicit storage(const storage_config &config);
 
   storage(const storage &) = delete;
   storage &operator=(const storage &) = delete;
@@ -43,6 +44,8 @@ public:
 
   // desctuctor is explicitly defined as default here to complete the rule of 5
   ~storage();
+
+  [[nodiscard]] std::string get_backend_description() const;
 
   [[nodiscard]] bool has_current_binlog_name() const noexcept {
     return !binlog_names_.empty();
@@ -69,6 +72,13 @@ private:
   using binlog_name_container = std::vector<std::string>;
   binlog_name_container binlog_names_;
   std::uint64_t position_{0ULL};
+
+  std::uint64_t checkpoint_size_{0ULL};
+  std::uint64_t last_checkpoint_position_{0ULL};
+
+  [[nodiscard]] bool size_checkpointing_enabled() const noexcept {
+    return checkpoint_size_ != 0;
+  }
 
   void load_binlog_index();
   void validate_binlog_index(const storage_object_name_container &object_names);

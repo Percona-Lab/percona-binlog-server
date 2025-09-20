@@ -51,6 +51,7 @@ private:
   void do_open_stream(std::string_view name,
                       storage_backend_open_stream_mode mode) override;
   void do_write_data_to_stream(util::const_byte_span data) override;
+  void do_flush_stream() override;
   void do_close_stream() override;
 
   [[nodiscard]] std::string do_get_description() const override;

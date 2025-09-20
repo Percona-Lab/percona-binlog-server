@@ -14,6 +14,7 @@
 #   --let $binsrv_tls_version = TLSv1.2 (optional)
 #   --let $binsrv_idle_time = 10
 #   --let $binsrv_verify_checksum = TRUE | FALSE
+#   --let $binsrv_checkpoint_size = 2M (optional)
 #   --source set_up_binsrv_environment.inc
 
 --echo
@@ -89,6 +90,11 @@ eval SET @binsrv_config_json = JSON_OBJECT(
 if ($storage_backend == s3)
 {
   eval SET @binsrv_config_json = JSON_INSERT(@binsrv_config_json, '$.storage.fs_buffer_directory', '$binsrv_buffer_path');
+}
+
+if ($binsrv_checkpoint_size != "")
+{
+  eval SET @binsrv_config_json = JSON_INSERT(@binsrv_config_json, '$.storage.checkpoint_size', '$binsrv_checkpoint_size');
 }
 
 if ($binsrv_ssl_mode != "")

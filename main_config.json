@@ -33,6 +33,8 @@
   },
   "storage": {
     "backend": "file",
-    "uri": "file:///home/user/vault"
+    "uri": "file:///home/user/vault",
+    "fs_buffer_directory": "/tmp/binsrv",
+    "checkpoint_size": "2M"
   }
 }

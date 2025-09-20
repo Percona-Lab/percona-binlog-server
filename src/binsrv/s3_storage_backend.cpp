@@ -481,7 +481,7 @@ s3_storage_backend::s3_storage_backend(const storage_config &config)
         tmp_file_directory_.string() + "\" is not a directory");
   }
 
-  const auto &backend_uri = config.get<"uri">();
+  const auto &backend_uri{config.get<"uri">()};
 
   const auto uri_parse_result{boost::urls::parse_absolute_uri(backend_uri)};
   if (!uri_parse_result) {
@@ -673,7 +673,7 @@ void s3_storage_backend::do_open_stream(std::string_view name,
 
 void s3_storage_backend::do_write_data_to_stream(util::const_byte_span data) {
   assert(tmp_fstream_.is_open());
-  const auto data_sv = util::as_string_view(data);
+  const auto data_sv{util::as_string_view(data)};
   if (!tmp_fstream_.write(std::data(data_sv),
                           static_cast<std::streamoff>(std::size(data_sv)))) {
     util::exception_location().raise<std::runtime_error>(
@@ -684,6 +684,8 @@ void s3_storage_backend::do_write_data_to_stream(util::const_byte_span data) {
         "cannot flush the temporary file for S3 object");
   }
 }
+
+void s3_storage_backend::do_flush_stream() { upload_tmp_stream_internal(); }
 
 void s3_storage_backend::do_close_stream() {
   assert(tmp_fstream_.is_open());
@@ -733,12 +735,15 @@ s3_storage_backend::generate_tmp_file_path() {
   return tmp_file_directory_ / boost::uuids::to_string(uuid_generator_());
 }
 
-void s3_storage_backend::close_stream_internal() {
+void s3_storage_backend::upload_tmp_stream_internal() {
   // S3 object may already exist, it is OK to overwrite it here
   impl_->put_object_from_stream(
       {.bucket = bucket_, .object_path = get_object_path(current_name_)},
       tmp_fstream_);
+}
 
+void s3_storage_backend::close_stream_internal() {
+  upload_tmp_stream_internal();
   tmp_fstream_.close();
   // we allow std::filesystem::remove() here to fail - worst case scenario
   // we will have a temorary file not removed
