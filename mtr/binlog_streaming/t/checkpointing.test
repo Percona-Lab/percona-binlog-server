@@ -48,14 +48,33 @@ DROP TABLE t1;
 # identifying backend storage type ('file' or 's3')
 --source ../include/identify_storage_backend.inc
 
+# identifying interval checkpointing mode from the conbination
+--let $extracted_init_connect_variable_name = binsrv_checkpointing
+--source ../include/extract_init_connect_variable_value.inc
+
+
 # creating data directory, configuration file, etc.
 --let $binsrv_connect_timeout = 20
 --let $binsrv_read_timeout = 60
 --let $binsrv_idle_time = 10
 --let $binsrv_verify_checksum = TRUE
-# enabling checkointing at about 40% of expected single binlog file size, so that checkpointing
-# will happen twice before rotation
---let $binsrv_checkpoint_size = 2M
+# Enabling checkointing at about 40% of expected single binlog file size, so that it
+# will happen twice before rotation.
+# Like wise, from the time point of view, make interval pretty low so that
+# at lease a few interval checkpointing events will happen.
+if ($extracted_init_connect_variable_value == 'size')
+{
+  --let $binsrv_checkpoint_size = 2M
+}
+if ($extracted_init_connect_variable_value == 'interval')
+{
+  --let $binsrv_checkpoint_interval = 5s
+}
+if ($extracted_init_connect_variable_value == 'interval')
+{
+  --let $binsrv_checkpoint_size = 2M
+  --let $binsrv_checkpoint_interval = 5s
+}
 --source ../include/set_up_binsrv_environment.inc
 
 --echo

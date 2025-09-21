@@ -18,6 +18,7 @@
 
 #include "binsrv/storage_fwd.hpp" // IWYU pragma: export
 
+#include <chrono>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -73,11 +74,19 @@ private:
   binlog_name_container binlog_names_;
   std::uint64_t position_{0ULL};
 
-  std::uint64_t checkpoint_size_{0ULL};
+  std::uint64_t checkpoint_size_bytes_{0ULL};
   std::uint64_t last_checkpoint_position_{0ULL};
 
+  std::chrono::steady_clock::duration checkpoint_interval_seconds_{};
+  std::chrono::steady_clock::time_point last_checkpoint_timestamp_{};
+
   [[nodiscard]] bool size_checkpointing_enabled() const noexcept {
-    return checkpoint_size_ != 0;
+    return checkpoint_size_bytes_ != 0;
+  }
+
+  [[nodiscard]] bool interval_checkpointing_enabled() const noexcept {
+    return checkpoint_interval_seconds_ !=
+           std::chrono::steady_clock::duration{};
   }
 
   void load_binlog_index();

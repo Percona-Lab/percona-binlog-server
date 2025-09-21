@@ -32,6 +32,7 @@
 #include "binsrv/size_unit_fwd.hpp"
 // Needed for storage_backend_type's operator <<
 #include "binsrv/storage_backend_type.hpp" // IWYU pragma: keep
+#include "binsrv/time_unit_fwd.hpp"
 
 // Needed for ssl_mode_type's operator <<
 #include "easymysql/ssl_mode_type.hpp" // IWYU pragma: keep
@@ -46,6 +47,8 @@
 // polluting each individual class definition).
 template <>
 struct util::is_string_convertable<binsrv::size_unit> : std::true_type {};
+template <>
+struct util::is_string_convertable<binsrv::time_unit> : std::true_type {};
 template <>
 struct util::is_string_convertable<binsrv::log_severity> : std::true_type {};
 template <>

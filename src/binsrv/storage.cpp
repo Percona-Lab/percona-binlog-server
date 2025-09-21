@@ -16,6 +16,7 @@
 #include "binsrv/storage.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cstddef>
 #include <filesystem>
 #include <sstream>
@@ -38,7 +39,13 @@ namespace binsrv {
 storage::storage(const storage_config &config) : backend_{}, binlog_names_{} {
   const auto &checkpoint_size_opt{config.get<"checkpoint_size">()};
   if (checkpoint_size_opt.has_value()) {
-    checkpoint_size_ = checkpoint_size_opt.value().get_value();
+    checkpoint_size_bytes_ = checkpoint_size_opt.value().get_value();
+  }
+
+  const auto &checkpoint_interval_opt{config.get<"checkpoint_interval">()};
+  if (checkpoint_interval_opt.has_value()) {
+    checkpoint_interval_seconds_ =
+        std::chrono::seconds{checkpoint_interval_opt.value().get_value()};
   }
 
   backend_ = storage_backend_factory::create(config);
@@ -117,6 +124,9 @@ void storage::open_binlog(std::string_view binlog_name) {
   if (size_checkpointing_enabled()) {
     last_checkpoint_position_ = position_;
   }
+  if (interval_checkpointing_enabled()) {
+    last_checkpoint_timestamp_ = std::chrono::steady_clock::now();
+  }
 }
 
 void storage::write_event(util::const_byte_span event_data) {
@@ -124,11 +134,14 @@ void storage::write_event(util::const_byte_span event_data) {
 
   const auto event_data_size{std::size(event_data)};
   position_ += event_data_size;
-  if (size_checkpointing_enabled()) {
-    if (position_ >= last_checkpoint_position_ + checkpoint_size_) {
-      backend_->flush_stream();
-      last_checkpoint_position_ = position_;
-    }
+  const auto now_ts{std::chrono::steady_clock::now()};
+  if ((size_checkpointing_enabled() &&
+       (position_ >= last_checkpoint_position_ + checkpoint_size_bytes_)) ||
+      (interval_checkpointing_enabled() &&
+       (now_ts >= last_checkpoint_timestamp_ + checkpoint_interval_seconds_))) {
+    backend_->flush_stream();
+    last_checkpoint_position_ = position_;
+    last_checkpoint_timestamp_ = now_ts;
   }
 }
 
@@ -137,6 +150,9 @@ void storage::close_binlog() {
   position_ = 0ULL;
   if (size_checkpointing_enabled()) {
     last_checkpoint_position_ = position_;
+  }
+  if (interval_checkpointing_enabled()) {
+    last_checkpoint_timestamp_ = std::chrono::steady_clock::now();
   }
 }
 
