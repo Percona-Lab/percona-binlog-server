@@ -46,6 +46,7 @@
 #include "binsrv/storage.hpp"
 // needed for storage_backend_type's operator <<
 #include "binsrv/storage_backend_type.hpp" // IWYU pragma: keep
+#include "binsrv/time_unit.hpp"
 
 #include "binsrv/event/code_type.hpp"
 #include "binsrv/event/event.hpp"
@@ -74,6 +75,10 @@ template <typename T> util::optional_string to_log_string(const T &value) {
 }
 
 util::optional_string to_log_string(const binsrv::size_unit &value) {
+  return value.get_description();
+}
+
+util::optional_string to_log_string(const binsrv::time_unit &value) {
   return value.get_description();
 }
 
@@ -167,6 +172,8 @@ void log_storage_config_info(binsrv::basic_logger &logger,
       "binlog storage backend filesystem buffer directory");
   log_config_param<"checkpoint_size">(
       logger, storage_config, "binlog storage backend checkpointing size");
+  log_config_param<"checkpoint_interval">(
+      logger, storage_config, "binlog storage backend checkpointing interval");
 }
 
 void log_storage_info(binsrv::basic_logger &logger,

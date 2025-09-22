@@ -210,7 +210,8 @@ The Percona Binary Log Server configuration file has the following format.
     "backend": "s3",
     "uri": "https://key_id:secret@192.168.0.100:9000/binsrv-bucket/vault",
     "fs_buffer_directory": "/tmp/binsrv",
-    "checkpoint_size": "128M"
+    "checkpoint_size": "128M",
+    "checkpoint_interval": "30s"
   }
 }
 ```
@@ -264,13 +265,18 @@ Currently we use the following mapping:
   - `s3` - `AWS S3` or `S3`-compatible server (MinIO, etc.)
 - `<storage.uri>` - specifies the location (either local or remote) where the received binary logs should be stored
 - `<storage.fs_buffer_directory>` (optional) - specifies the location on the local filesystem where partially downloaded binlog files should be stored. If not specified, the value of the default OS temporary directory will be used (e.g. '/tmp' on Linux). Currently, this parameter is meaningful only for non-`file` storage backends.
-- `<storage.checkpoint_interval>` (optional) - specifies data portion size after achieving which backend storage should flush its internal buffers and write received binlog data permanently. The value is expected to be a string containing an integer followed by an optional suffix 'K' / 'M' / 'G' / 'T' / 'P', e.g. /\d+\[KMGTP\]?/:
+- `<storage.checkpoint_size>` (optional) - specifies data portion size after receiving which backend storage should flush its internal buffers and write received binlog data permanently. If not set or set to zero, checkpointing by size will be disabled. The value is expected to be a string containing an integer followed by an optional suffix 'K' / 'M' / 'G' / 'T' / 'P', e.g. /\d+\[KMGTP\]?/:
   - 'no suffix' (e.g. "42") means no multiplier, the size will be interpreted in bytes ('42 * 1' bytes)
   - 'K' (e.g. "42K") means '2^10' multiplier ('42 * 1024' bytes)
   - 'M' (e.g. "42M") means '2^20' multiplier ('42 * 1048576' bytes)
   - 'G' (e.g. "42G") means '2^30' multiplier ('42 * 2^20' bytes)
   - 'T' (e.g. "42T") means '2^40' multiplier ('42 * 2^40' bytes)
   - 'P' (e.g. "42P") means '2^50' multiplier ('42 * 2^50' bytes)
+- `<storage.checkpoint_interval>` (optional) - specifies time interval after achieving which backend storage should flush its internal buffers and write received binlog data permanently. If not set or set to zero, checkpointing by time interval will be disabled. The value is expected to be a string containing an integer followed by an optional suffix 's' / 'm' / 'h' / 'd' , e.g. /\d+\[smhd\]?/:
+  - 'no suffix' (e.g. "42")  or 's' (e.g. "42s") means seconds
+  - 'm' (e.g. "42m") means minutes ('42 * 60' seconds)
+  - 'h' (e.g. "42h") means hours ('42 * 60 * 60' seconds)
+  - 'd' (e.g. "42d") means days ('42 * 60 * 60 *24' seconds)
 
 ##### Storage URI format
 
@@ -309,7 +315,7 @@ For example:
 - `https://key_id:secret@192.168.0.100:9000/binsrv-bucket/vault` - `key_id` will be used as `AWS_ACCESS_KEY_ID`, `secret` will be used as `AWS_SECRET_ACCESS_KEY`, `binsrv-bucket` will be the name of the bucket, `/vault` will be the virtual directory, `192.168.0.100:9000` will be the custom endpoint of the `S3`-compatible server, the connection will be established via secure HTTPS protocol.
 
 ##### Checkpointing on S3
-Please note that S3 API does not provide a way to append a portion of data to an existing object. Currently, in our S3 storage backend "append" operations are implemented as complete object overwrites meaning data re-uploads. Practically, if your typical binlog file size is '1G' and you set `<storage.checkpoint_interval>` to '256M', you will upload '256M + 512M + 768M + 1024M = 2560M' (about 2.5 times more then your binlog file size in this example). So, keep balance between the value of this parameter and your tipical binlog size.
+Please note that S3 API does not provide a way to append a portion of data to an existing object. Currently, in our S3 storage backend "append" operations are implemented as complete object overwrites meaning data re-uploads. Practically, if your typical binlog file size is '1G' and you set `<storage.checkpoint_size>` to '256M', you will upload '256M + 512M + 768M + 1024M = 2560M' (about 2.5 times more then your binlog file size in this example). So, keep balance between the value of this parameter and your tipical binlog size. Similar concerns can be rised regarding enabling `<storage.checkpoint_interval>`.
 
 ### Resuming previous operation
 

@@ -13,7 +13,7 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#include "binsrv/size_unit.hpp"
+#include "binsrv/time_unit.hpp"
 
 #include <algorithm>
 #include <charconv>
@@ -28,19 +28,19 @@
 
 namespace binsrv {
 
-size_unit::size_unit(std::string_view value_sv)
-    : base_value_{}, shift_index_{0U} {
+time_unit::time_unit(std::string_view value_sv)
+    : base_value_{}, multiplier_index_{0U} {
   const char *value_ptr{std::data(value_sv)};
   if (value_ptr == nullptr) {
     util::exception_location().raise<std::invalid_argument>(
-        "unable to construct size unit from nullptr");
+        "unable to construct time unit from nullptr");
   }
   const char *value_en{std::next(value_ptr, std::ssize(value_sv))};
   const auto [parse_ptr,
               parse_error]{std::from_chars(value_ptr, value_en, base_value_)};
   if (parse_error != std::errc{}) {
     util::exception_location().raise<std::invalid_argument>(
-        "unable to parse numeric part in the size unit");
+        "unable to parse numeric part in the time unit");
   }
   if (parse_ptr == value_en) {
     // no unit prefix specified, leave value as is
@@ -48,37 +48,38 @@ size_unit::size_unit(std::string_view value_sv)
   }
   if (std::next(parse_ptr) != value_en) {
     util::exception_location().raise<std::invalid_argument>(
-        "unit prefix in the size unit is expected to be a single character");
+        "unit prefix in the time unit is expected to be a single character");
   }
 
-  const auto *const shifts_bg{std::cbegin(shifts)};
-  const auto *const shifts_en{std::cend(shifts)};
+  const auto *const multipliers_bg{std::cbegin(multipliers)};
+  const auto *const multipliers_en{std::cend(multipliers)};
 
   // deliberately skipping the very first element
-  const auto *const shifts_it{
-      std::find_if(std::next(shifts_bg), shifts_en,
-                   [symbol = *parse_ptr](const auto &shift_pair) {
-                     return shift_pair.first == symbol;
+  const auto *const multipliers_it{
+      std::find_if(multipliers_bg, multipliers_en,
+                   [symbol = *parse_ptr](const auto &maltiplier_pair) {
+                     return maltiplier_pair.first == symbol;
                    })};
-  if (shifts_it == shifts_en) {
+  if (multipliers_it == multipliers_en) {
     util::exception_location().raise<std::invalid_argument>(
-        "unknown unit prefix in the size unit");
+        "unknown unit prefix in the time unit");
   }
 
   if (base_value_ == 0ULL) {
-    // Zero with any multipliyer is still zero, leaving shift_index_ as zero as
-    // well.
+    // Zero with any multipliyer is still zero, leaving multiplier_index_ as
+    // zero as well.
     return;
   }
 
-  if (base_value_ > (std::numeric_limits<decltype(base_value_)>::max() >>
-                     shifts_it->second)) {
+  if (base_value_ > (std::numeric_limits<decltype(base_value_)>::max() /
+                     multipliers_it->second)) {
     util::exception_location().raise<std::out_of_range>(
-        "the specified size unit cannot be represented in a 64-bit unsigned "
+        "the specified time unit cannot be represented in a 64-bit unsigned "
         "integer");
   }
 
-  shift_index_ = static_cast<std::size_t>(std::distance(shifts_bg, shifts_it));
+  multiplier_index_ =
+      static_cast<std::size_t>(std::distance(multipliers_bg, multipliers_it));
 }
 
 } // namespace binsrv

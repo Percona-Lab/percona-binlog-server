@@ -15,6 +15,7 @@
 #   --let $binsrv_idle_time = 10
 #   --let $binsrv_verify_checksum = TRUE | FALSE
 #   --let $binsrv_checkpoint_size = 2M (optional)
+#   --let $binsrv_checkpoint_interval = 30s (optional)
 #   --source set_up_binsrv_environment.inc
 
 --echo
@@ -95,6 +96,11 @@ if ($storage_backend == s3)
 if ($binsrv_checkpoint_size != "")
 {
   eval SET @binsrv_config_json = JSON_INSERT(@binsrv_config_json, '$.storage.checkpoint_size', '$binsrv_checkpoint_size');
+}
+
+if ($binsrv_checkpoint_interval != "")
+{
+  eval SET @binsrv_config_json = JSON_INSERT(@binsrv_config_json, '$.storage.checkpoint_interval', '$binsrv_checkpoint_interval');
 }
 
 if ($binsrv_ssl_mode != "")

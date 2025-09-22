@@ -22,6 +22,7 @@
 
 #include "binsrv/size_unit.hpp"
 #include "binsrv/storage_backend_type_fwd.hpp"
+#include "binsrv/time_unit.hpp"
 
 #include "util/common_optional_types.hpp"
 #include "util/nv_tuple.hpp"
@@ -34,7 +35,8 @@ struct [[nodiscard]] storage_config
           util::nv<"backend", storage_backend_type>,
           util::nv<"uri", std::string>,
           util::nv<"fs_buffer_directory", util::optional_string>,
-          util::nv<"checkpoint_size", optional_size_unit>
+          util::nv<"checkpoint_size", optional_size_unit>,
+          util::nv<"checkpoint_interval", optional_time_unit>
       > {};
 // clang-format on
 

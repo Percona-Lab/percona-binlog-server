@@ -223,6 +223,10 @@ set(source_files
   src/binsrv/storage_config_fwd.hpp
   src/binsrv/storage_config.hpp
 
+  src/binsrv/time_unit_fwd.hpp
+  src/binsrv/time_unit.hpp
+  src/binsrv/time_unit.cpp
+
   # various utility files
   src/util/byte_span_fwd.hpp
   src/util/byte_span.hpp
