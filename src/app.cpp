@@ -36,6 +36,8 @@
 #include <boost/lexical_cast.hpp>
 #include <boost/lexical_cast/try_lexical_convert.hpp>
 
+#include "app_version.hpp"
+
 #include "binsrv/basic_logger.hpp"
 #include "binsrv/exception_handling_helpers.hpp"
 #include "binsrv/log_severity.hpp"
@@ -69,6 +71,47 @@
 #include "util/nv_tuple.hpp"
 
 namespace {
+
+[[nodiscard]] bool check_cmd_args(const util::command_line_arg_view &cmd_args,
+                                  binsrv::operation_mode_type &operation_mode,
+                                  std::string_view &config_file_path) noexcept {
+  const auto number_of_cmd_args = std::size(cmd_args);
+
+  static constexpr std::size_t expected_number_of_cmd_args_min{2U};
+
+  if (number_of_cmd_args < expected_number_of_cmd_args_min) {
+    return false;
+  }
+
+  operation_mode = binsrv::operation_mode_type::delimiter;
+
+  if (!boost::conversion::try_lexical_convert(cmd_args[1], operation_mode)) {
+    return false;
+  }
+
+  if (operation_mode == binsrv::operation_mode_type::delimiter) {
+    return false;
+  }
+
+  static constexpr std::size_t expected_number_of_cmd_args_with_config{3U};
+
+  switch (operation_mode) {
+  case binsrv::operation_mode_type::fetch:
+  case binsrv::operation_mode_type::pull:
+    if (number_of_cmd_args != expected_number_of_cmd_args_with_config) {
+      return false;
+    }
+    config_file_path = cmd_args[expected_number_of_cmd_args_with_config - 1U];
+    return true;
+  case binsrv::operation_mode_type::version:
+    return number_of_cmd_args == expected_number_of_cmd_args_min;
+    break;
+  default:
+    // should never be here
+    assert(false);
+    return false;
+  }
+}
 
 template <typename T> util::optional_string to_log_string(const T &value) {
   return boost::lexical_cast<std::string>(value);
@@ -473,25 +516,28 @@ extern "C" void custom_signal_handler(int /*signo*/) {
 int main(int argc, char *argv[]) {
   using namespace std::string_literals;
 
-  int exit_code = EXIT_FAILURE;
-
   const auto cmd_args = util::to_command_line_agg_view(argc, argv);
-  const auto number_of_cmd_args = std::size(cmd_args);
   const auto executable_name = util::extract_executable_name(cmd_args);
 
-  static constexpr std::size_t expected_number_of_cmd_args{3U};
   binsrv::operation_mode_type operation_mode{
       binsrv::operation_mode_type::delimiter};
-  auto cmd_args_validated{
-      number_of_cmd_args == expected_number_of_cmd_args &&
-      boost::conversion::try_lexical_convert(cmd_args[1], operation_mode) &&
-      operation_mode != binsrv::operation_mode_type::delimiter};
-
-  if (!cmd_args_validated) {
+  std::string_view config_file_path;
+  const auto cmd_args_checked{
+      check_cmd_args(cmd_args, operation_mode, config_file_path)};
+  if (!cmd_args_checked) {
     std::cerr << "usage: " << executable_name
-              << " (fetch|pull)) <json_config_file>\n";
-    return exit_code;
+              << " (fetch|pull)) <json_config_file>\n"
+              << "       " << executable_name << " version\n";
+    return EXIT_FAILURE;
   }
+
+  if (operation_mode == binsrv::operation_mode_type::version) {
+    std::cout << app_version.get_string() << '\n';
+    return EXIT_SUCCESS;
+  }
+
+  int exit_code = EXIT_FAILURE;
+
   binsrv::basic_logger_ptr logger;
 
   try {
@@ -508,19 +554,10 @@ int main(int argc, char *argv[]) {
     logger->log(binsrv::log_severity::delimiter,
                 util::get_readable_command_line_arguments(cmd_args));
 
-    assert(operation_mode == binsrv::operation_mode_type::fetch ||
-           operation_mode == binsrv::operation_mode_type::pull);
-    std::string msg;
-    msg = '\'';
-    msg += boost::lexical_cast<std::string>(operation_mode);
-    msg += "' operation mode specified";
-    logger->log(binsrv::log_severity::delimiter, msg);
-
     binsrv::main_config_ptr config;
-    assert(number_of_cmd_args == expected_number_of_cmd_args);
     logger->log(binsrv::log_severity::delimiter,
                 "reading configuration from the JSON file.");
-    config = std::make_shared<binsrv::main_config>(cmd_args[2]);
+    config = std::make_shared<binsrv::main_config>(config_file_path);
     assert(config);
 
     const auto &logger_config = config->root().get<"logger">();
@@ -539,6 +576,17 @@ int main(int argc, char *argv[]) {
     logger->log(binsrv::log_severity::delimiter,
                 "logging level set to \""s + std::string{log_level_label} +
                     '"');
+
+    logger->log(binsrv::log_severity::delimiter,
+                "application version: " + app_version.get_string());
+
+    assert(operation_mode == binsrv::operation_mode_type::fetch ||
+           operation_mode == binsrv::operation_mode_type::pull);
+    std::string msg;
+    msg = '\'';
+    msg += boost::lexical_cast<std::string>(operation_mode);
+    msg += "' operation mode specified";
+    logger->log(binsrv::log_severity::delimiter, msg);
 
     // setting custom SIGINT and SIGTERM signal handlers
     if (std::signal(SIGTERM, &custom_signal_handler) == SIG_ERR) {

@@ -32,8 +32,9 @@ namespace binsrv {
 // NOLINTBEGIN(cppcoreguidelines-macro-usage)
 // clang-format off
 #define BINSRV_OPERATION_MODE_TYPE_X_SEQUENCE() \
-  BINSRV_OPERATION_MODE_TYPE_X_MACRO(fetch),  \
-  BINSRV_OPERATION_MODE_TYPE_X_MACRO(pull )
+  BINSRV_OPERATION_MODE_TYPE_X_MACRO(fetch  ),  \
+  BINSRV_OPERATION_MODE_TYPE_X_MACRO(pull   ),  \
+  BINSRV_OPERATION_MODE_TYPE_X_MACRO(version)
 // clang-format on
 
 #define BINSRV_OPERATION_MODE_TYPE_X_MACRO(X) X

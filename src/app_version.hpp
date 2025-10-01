@@ -13,13 +13,11 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef BINSRV_EVENT_SERVER_VERSION_FWD_HPP
-#define BINSRV_EVENT_SERVER_VERSION_FWD_HPP
+#ifndef APP_VERSION_HPP
+#define APP_VERSION_HPP
 
-namespace binsrv::event {
+#include "util/semantic_version.hpp"
 
-class server_version;
+static constexpr util::semantic_version app_version{0U, 1U, 0U};
 
-} // namespace binsrv::event
-
-#endif // BINSRV_EVENT_SERVER_VERSION_FWD_HPP
+#endif // APP_VERSION_HPP

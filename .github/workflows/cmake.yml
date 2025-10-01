@@ -241,6 +241,10 @@ jobs:
       # Run Clang Tidy
       run: run-clang-tidy-19 -header-filter=.* -j=${{steps.cpu-cores.outputs.count}} -use-color -p=${{github.workspace}}/src-build-${{matrix.config.label}}
 
+    - name: Application version
+      working-directory: ${{github.workspace}}/src-build-${{matrix.config.label}}
+      run: ./binlog_server version
+
     - name: MTR tests
       if: matrix.config.run_mtr
       working-directory: /usr/lib/mysql-test
