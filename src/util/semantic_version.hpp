@@ -13,24 +13,28 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef BINSRV_EVENT_SERVER_VERSION_HPP
-#define BINSRV_EVENT_SERVER_VERSION_HPP
+#ifndef UTIL_SEMANTIC_VERSION_HPP
+#define UTIL_SEMANTIC_VERSION_HPP
 
-#include "binsrv/event/server_version_fwd.hpp" // IWYU pragma: export
+#include "util/semantic_version_fwd.hpp" // IWYU pragma: export
 
 #include <cstdint>
+#include <string>
 #include <string_view>
 
-namespace binsrv::event {
+namespace util {
 
-class [[nodiscard]] server_version {
+class [[nodiscard]] semantic_version {
 private:
+  static constexpr char component_delimiter{'.'};
+  static constexpr char extra_delimiter{'-'};
+
   static constexpr std::uint32_t minor_multiplier{100U};
   static constexpr std::uint32_t major_multiplier{minor_multiplier *
                                                   minor_multiplier};
 
 public:
-  constexpr explicit server_version(
+  constexpr explicit semantic_version(
       std::uint32_t encoded_server_version) noexcept
       : major_{static_cast<std::uint8_t>(encoded_server_version /
                                          major_multiplier % minor_multiplier)},
@@ -40,10 +44,10 @@ public:
                                          minor_multiplier)} {}
 
   // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
-  constexpr server_version(std::uint8_t major, std::uint8_t minor,
-                           std::uint8_t patch) noexcept
+  constexpr semantic_version(std::uint8_t major, std::uint8_t minor,
+                             std::uint8_t patch) noexcept
       : major_{major}, minor_{minor}, patch_{patch} {}
-  explicit server_version(std::string_view version_string);
+  explicit semantic_version(std::string_view version_string);
 
   [[nodiscard]] constexpr std::uint8_t get_major() const noexcept {
     return major_;
@@ -59,9 +63,19 @@ public:
     return (major_ * major_multiplier) + (minor_ * minor_multiplier) + patch_;
   }
 
+  [[nodiscard]] std::string get_string() const {
+    std::string result{};
+    result += std::to_string(major_);
+    result += component_delimiter;
+    result += std::to_string(minor_);
+    result += component_delimiter;
+    result += std::to_string(patch_);
+    return result;
+  }
+
   [[nodiscard]] friend constexpr auto
-  operator<=>(const server_version &first,
-              const server_version &second) = default;
+  operator<=>(const semantic_version &first,
+              const semantic_version &second) = default;
 
 private:
   std::uint8_t major_;
@@ -69,6 +83,6 @@ private:
   std::uint8_t patch_;
 };
 
-} // namespace binsrv::event
+} // namespace util
 
-#endif // BINSRV_EVENT_SERVER_VERSION_HPP
+#endif // UTIL_SEMANTIC_VERSION_HPP

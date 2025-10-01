@@ -13,7 +13,7 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#include "binsrv/event/server_version.hpp"
+#include "util/semantic_version.hpp"
 
 #include <charconv>
 #include <cstdint>
@@ -25,15 +25,16 @@
 
 #include "util/exception_location_helpers.hpp"
 
-namespace binsrv::event {
+namespace util {
 
-server_version::server_version(std::string_view version_string)
+semantic_version::semantic_version(std::string_view version_string)
     : major_{}, minor_{}, patch_{} {
-  const auto dash_pos{version_string.find('-')};
+  const auto dash_pos{version_string.find(extra_delimiter)};
   if (dash_pos != std::string::npos) {
     version_string.remove_suffix(version_string.size() - dash_pos);
   }
-  auto split_result{std::ranges::views::split(version_string, '.')};
+  auto split_result{
+      std::ranges::views::split(version_string, component_delimiter)};
   auto version_it{std::ranges::begin(split_result)};
   const auto version_en{std::ranges::end(split_result)};
 
@@ -65,4 +66,4 @@ server_version::server_version(std::string_view version_string)
   }
 }
 
-} // namespace binsrv::event
+} // namespace util

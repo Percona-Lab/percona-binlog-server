@@ -30,11 +30,11 @@
 
 #include "binsrv/event/code_type.hpp"
 #include "binsrv/event/protocol_traits.hpp"
-#include "binsrv/event/server_version.hpp"
 
 #include "util/byte_span.hpp"
 #include "util/byte_span_extractors.hpp"
 #include "util/exception_location_helpers.hpp"
+#include "util/semantic_version.hpp"
 
 namespace binsrv::event {
 
@@ -120,7 +120,7 @@ generic_post_header_impl<code_type::format_description>::get_server_version()
 [[nodiscard]] std::uint32_t generic_post_header_impl<
     code_type::format_description>::get_encoded_server_version()
     const noexcept {
-  return server_version{get_server_version()}.get_encoded();
+  return util::semantic_version{get_server_version()}.get_encoded();
 }
 
 [[nodiscard]] std::string generic_post_header_impl<
