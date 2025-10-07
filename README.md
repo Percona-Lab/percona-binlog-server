@@ -146,18 +146,31 @@ The result binary can be found under the following path `ws/percona-binlog-serve
 
 Please run
 ```bash
-./binlog_server <operation_mode> <json_config_file>`
+./binlog_server <operation_mode> [ <json_config_file> ]
 ```
 where
-`<operation_mode>` can be either `fetch` or `pull`
+`<operation_mode>` can be either `version`, `fetch`, or `pull`
 and
-`<json_config_file>` is a path to a JSON configuration file (described below).
+`<json_config_file>` is an optional parameter (required only when `<operation_mode>` is not `version`) that represents a path to a JSON configuration file (described below).
 
 ### Operation modes
 
-Percona Binary Log Server utility can operate in two modes:
+Percona Binary Log Server utility can operate in three modes:
+- 'version'
 - 'fetch'
 - 'pull'
+
+#### 'version' operation mode
+
+In this mode the utility simply prints its current [semantic version](https://en.wikipedia.org/wiki/Software_versioning) (embedded into the binary) to the standard output and exits with "success" (`0`) exit code.
+For instance,
+```bash
+./binlog_server version
+```
+may print
+```
+0.1.0
+```
 
 #### 'fetch' operation mode
 
