@@ -51,8 +51,8 @@
 #include "binsrv/time_unit.hpp"
 
 #include "binsrv/event/code_type.hpp"
+#include "binsrv/event/common_header_flag_type.hpp"
 #include "binsrv/event/event.hpp"
-#include "binsrv/event/flag_type.hpp"
 #include "binsrv/event/protocol_traits_fwd.hpp"
 #include "binsrv/event/reader_context.hpp"
 
@@ -325,7 +325,7 @@ void process_binlog_event(const binsrv::event::event &current_event,
   const auto code = current_common_header.get_type_code();
 
   const auto is_artificial{current_common_header.get_flags().has_element(
-      binsrv::event::flag_type::artificial)};
+      binsrv::event::common_header_flag_type::artificial)};
   const auto is_pseudo{current_common_header.get_next_event_position_raw() ==
                        0U};
 

@@ -24,7 +24,7 @@
 #include <string_view>
 
 #include "binsrv/event/code_type_fwd.hpp"
-#include "binsrv/event/flag_type_fwd.hpp"
+#include "binsrv/event/common_header_flag_type_fwd.hpp"
 #include "binsrv/event/protocol_traits_fwd.hpp"
 
 #include "util/byte_span_fwd.hpp"
@@ -66,7 +66,7 @@ public:
   }
 
   [[nodiscard]] std::uint16_t get_flags_raw() const noexcept { return flags_; }
-  [[nodiscard]] flag_set get_flags() const noexcept;
+  [[nodiscard]] common_header_flag_set get_flags() const noexcept;
   [[nodiscard]] std::string get_readable_flags() const;
 
 private:

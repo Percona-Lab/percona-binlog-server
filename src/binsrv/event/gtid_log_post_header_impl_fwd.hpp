@@ -13,20 +13,22 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef BINSRV_EVENT_FLAG_TYPE_FWD_HPP
-#define BINSRV_EVENT_FLAG_TYPE_FWD_HPP
+#ifndef BINSRV_EVENT_GTID_LOG_POST_HEADER_IMPL_FWD_HPP
+#define BINSRV_EVENT_GTID_LOG_POST_HEADER_IMPL_FWD_HPP
 
-#include <cstdint>
+#include <iosfwd>
 
-#include "util/flag_set_fwd.hpp"
+#include "binsrv/event/code_type.hpp"
+#include "binsrv/event/generic_post_header_fwd.hpp"
 
 namespace binsrv::event {
 
-// NOLINTNEXTLINE(readability-enum-initial-value,cert-int09-c)
-enum class flag_type : std::uint16_t;
+template <> class generic_post_header_impl<code_type::gtid_log>;
 
-using flag_set = util::flag_set<flag_type>;
+std::ostream &
+operator<<(std::ostream &output,
+           const generic_post_header_impl<code_type::gtid_log> &obj);
 
 } // namespace binsrv::event
 
-#endif // BINSRV_EVENT_FLAG_TYPE_FWD_HPP
+#endif // BINSRV_EVENT_GTID_LOG_POST_HEADER_IMPL_FWD_HPP

@@ -23,8 +23,8 @@
 #include <utility>
 
 #include "binsrv/event/code_type.hpp"
+#include "binsrv/event/common_header_flag_type.hpp"
 #include "binsrv/event/event.hpp"
-#include "binsrv/event/flag_type.hpp"
 #include "binsrv/event/protocol_traits.hpp"
 
 #include "util/conversion_helpers.hpp"
@@ -66,8 +66,8 @@ reader_context::process_event_in_initial_state(const event &current_event) {
   const auto &common_header{current_event.get_common_header()};
 
   // in the "initial" state we expect only artificial rotate events
-  const auto is_artificial{
-      common_header.get_flags().has_element(flag_type::artificial)};
+  const auto is_artificial{common_header.get_flags().has_element(
+      common_header_flag_type::artificial)};
   const auto is_artificial_rotate{
       common_header.get_type_code() == code_type::rotate && is_artificial};
   if (!is_artificial_rotate) {
@@ -168,8 +168,8 @@ reader_context::process_event_in_format_description_processed_state(
   assert(state_ == state_type::format_description_processed);
   const auto &common_header{current_event.get_common_header()};
   const auto code{common_header.get_type_code()};
-  const auto is_artificial{
-      common_header.get_flags().has_element(flag_type::artificial)};
+  const auto is_artificial{common_header.get_flags().has_element(
+      common_header_flag_type::artificial)};
 
   // early return here with "false" return code so that the while loop
   // in the main 'process_event()' method would repeat processing this

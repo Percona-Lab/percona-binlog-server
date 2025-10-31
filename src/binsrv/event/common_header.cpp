@@ -26,7 +26,7 @@
 #include <boost/date_time/posix_time/time_formatters.hpp>
 
 #include "binsrv/event/code_type.hpp"
-#include "binsrv/event/flag_type.hpp"
+#include "binsrv/event/common_header_flag_type.hpp"
 
 #include "util/byte_span_extractors.hpp"
 #include "util/byte_span_fwd.hpp"
@@ -106,8 +106,8 @@ common_header::get_readable_type_code() const noexcept {
   return to_string_view(get_type_code());
 }
 
-[[nodiscard]] flag_set common_header::get_flags() const noexcept {
-  return flag_set{get_flags_raw()};
+[[nodiscard]] common_header_flag_set common_header::get_flags() const noexcept {
+  return common_header_flag_set{get_flags_raw()};
 }
 
 [[nodiscard]] std::string common_header::get_readable_flags() const {
