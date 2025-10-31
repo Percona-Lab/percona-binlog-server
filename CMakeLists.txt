@@ -96,6 +96,9 @@ set(source_files
   src/binsrv/event/common_header.hpp
   src/binsrv/event/common_header.cpp
 
+  src/binsrv/event/common_header_flag_type_fwd.hpp
+  src/binsrv/event/common_header_flag_type.hpp
+
   src/binsrv/event/empty_body_fwd.hpp
   src/binsrv/event/empty_body.hpp
   src/binsrv/event/empty_body.cpp
@@ -107,9 +110,6 @@ set(source_files
   src/binsrv/event/event_fwd.hpp
   src/binsrv/event/event.hpp
   src/binsrv/event/event.cpp
-
-  src/binsrv/event/flag_type_fwd.hpp
-  src/binsrv/event/flag_type.hpp
 
   src/binsrv/event/footer_fwd.hpp
   src/binsrv/event/footer.hpp
@@ -128,6 +128,17 @@ set(source_files
 
   src/binsrv/event/generic_post_header_fwd.hpp
   src/binsrv/event/generic_post_header.hpp
+
+  src/binsrv/event/gtid_log_flag_type_fwd.hpp
+  src/binsrv/event/gtid_log_flag_type.hpp
+
+  src/binsrv/event/gtid_log_body_impl_fwd.hpp
+  src/binsrv/event/gtid_log_body_impl.hpp
+  src/binsrv/event/gtid_log_body_impl.cpp
+
+  src/binsrv/event/gtid_log_post_header_impl_fwd.hpp
+  src/binsrv/event/gtid_log_post_header_impl.hpp
+  src/binsrv/event/gtid_log_post_header_impl.cpp
 
   src/binsrv/event/protocol_traits_fwd.hpp
   src/binsrv/event/protocol_traits.hpp
@@ -158,6 +169,9 @@ set(source_files
   src/binsrv/event/unknown_post_header_fwd.hpp
   src/binsrv/event/unknown_post_header.hpp
   src/binsrv/event/unknown_post_header.cpp
+
+  # gtid data structure files
+  src/binsrv/gtid/common_types.hpp
 
   # binlog files
   src/binsrv/basic_logger_fwd.hpp
@@ -299,9 +313,8 @@ set(source_files
 
 add_executable(binlog_server ${source_files})
 target_link_libraries(binlog_server
-  PUBLIC
-    binlog_server_compiler_flags
   PRIVATE
+    binlog_server_compiler_flags
     Boost::headers Boost::url
     ZLIB::ZLIB
     MySQL::client
