@@ -13,6 +13,10 @@ env:
   BOOST_MAJOR: 1
   BOOST_MINOR: 88
   BOOST_PATCH: 0
+  MYSQL_DOWNLOADS_URL: https://dev.mysql.com/get/Downloads
+  MYSQL_80_VERSION: 8.0.44
+  MYSQL_84_VERSION: 8.4.7
+  MYSQL_GLIBC_SUFFIX: linux-glibc2.28-x86_64
 
 jobs:
   formatting-check:
@@ -118,22 +122,21 @@ jobs:
         sudo apt-get update
         sudo apt-get install libmysqlclient-dev libcurl4-openssl-dev
 
-    - name: Install MySQL server and MTR
-      if: matrix.config.run_mtr
-      run: |
-        sudo apt-get install mysql-client mysql-server mysql-testsuite apparmor-utils
-
     - name: Install Clang dependencies on ubuntu
       if: startsWith(matrix.config.name, 'Clang')
       run: |
-        sudo apt-get update
         sudo apt-get install clang-19 lld-19 clang-tidy-19 libc++-19-dev libc++abi-19-dev
 
     - name: Install GCC dependencies on ubuntu
       if: startsWith(matrix.config.name, 'GCC')
       run: |
-        sudo apt-get update
         sudo apt-get install g++-14
+
+    - name: Fixing libaio1 for MySQL Server tarball
+      if: matrix.config.run_mtr
+      run: |
+        sudo apt-get install libaio-dev
+        sudo ln -s libaio.so /lib/x86_64-linux-gnu/libaio.so.1
 
     - name: Info CMake
       run: cmake --version
@@ -245,21 +248,63 @@ jobs:
       working-directory: ${{github.workspace}}/src-build-${{matrix.config.label}}
       run: ./binlog_server version
 
-    - name: MTR tests
+    - name: Creating DIST directory for MySQL Server tarballs
       if: matrix.config.run_mtr
-      working-directory: /usr/lib/mysql-test
+      run: mkdir -p ${{github.workspace}}/dist
+
+    - name: Unpacking MySQL Server 8.0 tarballs
+      if: matrix.config.run_mtr
+      working-directory: ${{github.workspace}}/dist
       run: |
-        # TODO: consider adding ${{runner.temp}}/mtrvardir into the list of
-        # writable directories in '/etc/apparmor.d/usr.sbin.mysqld' AppArmor
-        # profile instead of disabling it completely.
-        # Disabling MySQL Server Apparmor profile as we are creating a custom data directory
-        sudo ln -s /etc/apparmor.d/usr.sbin.mysqld /etc/apparmor.d/disable
-        sudo apparmor_parser -R /etc/apparmor.d/usr.sbin.mysqld
-        # Linking the "binlog_streaming" from the source tree into the MTR suits directory on the system
-        sudo ln -s ${{github.workspace}}/src/mtr/binlog_streaming /usr/lib/mysql-test/suite/binlog_streaming
-        # Running MTR from the system package
+        # https://dev.mysql.com/get/Downloads/MySQL-8.0/mysql-8.0.44-linux-glibc2.28-x86_64.tar.xz
+        DIST_BASE_NAME=${{format('mysql-{0}-{1}', env.MYSQL_80_VERSION, env.MYSQL_GLIBC_SUFFIX)}}
+        DIST_TARBALL_FILE_NAME=${DIST_BASE_NAME}.tar.xz
+        wget -q ${{env.MYSQL_DOWNLOADS_URL}}/MySQL-8.0/${DIST_TARBALL_FILE_NAME}
+        tar xf ${DIST_TARBALL_FILE_NAME}
+        rm -f ${DIST_TARBALL_FILE_NAME}
+        # https://dev.mysql.com/get/Downloads/MySQL-8.0/mysql-test-8.0.44-linux-glibc2.28-x86_64.tar.xz
+        TEST_TARBALL_FILE_NAME=${{format('mysql-test-{0}-{1}.tar.xz', env.MYSQL_80_VERSION, env.MYSQL_GLIBC_SUFFIX)}}
+        wget -q ${{env.MYSQL_DOWNLOADS_URL}}/MySQL-8.0/${TEST_TARBALL_FILE_NAME}
+        tar xf ${TEST_TARBALL_FILE_NAME}
+        rm -f ${TEST_TARBALL_FILE_NAME}
+        # Linking the "binlog_streaming" from the source tree into the MTR suits directory
+        sudo ln -s ${{github.workspace}}/src/mtr/binlog_streaming ${{github.workspace}}/dist/${DIST_BASE_NAME}/mysql-test/suite/binlog_streaming
+        ./${DIST_BASE_NAME}/bin/mysqld --version
+
+    - name: Unpacking MySQL Server 8.4 tarballs
+      if: matrix.config.run_mtr
+      working-directory: ${{github.workspace}}/dist
+      run: |
+        # https://dev.mysql.com/get/Downloads/MySQL-8.4/mysql-8.4.7-linux-glibc2.28-x86_64-minimal.tar.xz
+        DIST_BASE_NAME=${{format('mysql-{0}-{1}-minimal', env.MYSQL_84_VERSION, env.MYSQL_GLIBC_SUFFIX)}}
+        DIST_TARBALL_FILE_NAME=${DIST_BASE_NAME}.tar.xz
+        wget -q ${{env.MYSQL_DOWNLOADS_URL}}/MySQL-8.4/${DIST_TARBALL_FILE_NAME}
+        tar xf ${DIST_TARBALL_FILE_NAME}
+        rm -f ${DIST_TARBALL_FILE_NAME}
+        # https://dev.mysql.com/get/Downloads/MySQL-8.4/mysql-test-8.4.7-linux-glibc2.28-x86_64-minimal.tar.xz
+        TEST_TARBALL_FILE_NAME=${{format('mysql-test-{0}-{1}-minimal.tar.xz', env.MYSQL_84_VERSION, env.MYSQL_GLIBC_SUFFIX)}}
+        wget -q ${{env.MYSQL_DOWNLOADS_URL}}/MySQL-8.4/${TEST_TARBALL_FILE_NAME}
+        tar xf ${TEST_TARBALL_FILE_NAME}
+        rm -f ${TEST_TARBALL_FILE_NAME}
+        # Linking the "binlog_streaming" from the source tree into the MTR suits directory
+        sudo ln -s ${{github.workspace}}/src/mtr/binlog_streaming ${{github.workspace}}/dist/${DIST_BASE_NAME}/mysql-test/suite/binlog_streaming
+        ./${DIST_BASE_NAME}/bin/mysqld --version
+
+    - name: MTR 8.0 tests
+      if: matrix.config.run_mtr
+      working-directory: ${{github.workspace}}/dist/${{format('mysql-{0}-{1}', env.MYSQL_80_VERSION, env.MYSQL_GLIBC_SUFFIX)}}/mysql-test
+      run: |
         BINSRV=${{github.workspace}}/src-build-${{matrix.config.label}}/binlog_server ./mtr \
-          --client-bindir=/usr/lib/mysql-test/bin --vardir=${{runner.temp}}/mtrvardir \
+          --vardir=${{runner.temp}}/mtrvardir80 \
+          --force --max-test-fail=0 --retry=0 --nounit-tests --big-test --repeat=2 --parallel=${{steps.cpu-cores.outputs.count}} \
+          --suite=binlog_streaming ${{matrix.config.mtr_options}}
+
+    - name: MTR 8.4 tests
+      if: matrix.config.run_mtr
+      working-directory: ${{github.workspace}}/dist/${{format('mysql-{0}-{1}-minimal', env.MYSQL_84_VERSION, env.MYSQL_GLIBC_SUFFIX)}}/mysql-test
+      run: |
+        BINSRV=${{github.workspace}}/src-build-${{matrix.config.label}}/binlog_server ./mtr \
+          --vardir=${{runner.temp}}/mtrvardir84 \
           --force --max-test-fail=0 --retry=0 --nounit-tests --big-test --repeat=2 --parallel=${{steps.cpu-cores.outputs.count}} \
           --suite=binlog_streaming ${{matrix.config.mtr_options}}
 
