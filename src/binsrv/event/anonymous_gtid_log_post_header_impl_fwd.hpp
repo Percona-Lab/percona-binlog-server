@@ -13,16 +13,16 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef BINSRV_EVENT_GTID_LOG_BODY_IMPL_FWD_HPP
-#define BINSRV_EVENT_GTID_LOG_BODY_IMPL_FWD_HPP
+#ifndef BINSRV_EVENT_ANONYMOUS_GTID_LOG_POST_HEADER_IMPL_FWD_HPP
+#define BINSRV_EVENT_ANONYMOUS_GTID_LOG_POST_HEADER_IMPL_FWD_HPP
 
 #include "binsrv/event/code_type.hpp"
-#include "binsrv/event/generic_body_fwd.hpp"
+#include "binsrv/event/generic_post_header_fwd.hpp"
 
 namespace binsrv::event {
 
-template <> class generic_body_impl<code_type::gtid_log>;
+template <> class generic_post_header_impl<code_type::anonymous_gtid_log>;
 
 } // namespace binsrv::event
 
-#endif // BINSRV_EVENT_GTID_LOG_BODY_IMPL_FWD_HPP
+#endif // BINSRV_EVENT_ANONYMOUS_GTID_LOG_POST_HEADER_IMPL_FWD_HPP

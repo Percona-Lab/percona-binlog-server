@@ -13,7 +13,7 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#include "binsrv/event/gtid_log_post_header_impl.hpp"
+#include "binsrv/event/gtid_log_post_header.hpp"
 
 #include <algorithm>
 #include <cstdint>
@@ -28,7 +28,6 @@
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_io.hpp>
 
-#include "binsrv/event/code_type.hpp"
 #include "binsrv/event/gtid_log_flag_type.hpp"
 
 #include "binsrv/gtid/common_types.hpp"
@@ -40,8 +39,7 @@
 
 namespace binsrv::event {
 
-generic_post_header_impl<code_type::gtid_log>::generic_post_header_impl(
-    util::const_byte_span portion) {
+gtid_log_post_header::gtid_log_post_header(util::const_byte_span portion) {
   // TODO: rework with direct member initialization
 
   /*
@@ -108,10 +106,9 @@ generic_post_header_impl<code_type::gtid_log>::generic_post_header_impl(
   util::extract_fixed_int_from_byte_span(remainder, flags_);
   util::extract_byte_array_from_byte_span(remainder, uuid_);
   util::extract_fixed_int_from_byte_span(remainder, gno_);
-  if (gno_ < gtid::min_gno || gno_ >= gtid::max_gno) {
-    util::exception_location().raise<std::invalid_argument>(
-        "invalid gno in gtid_log post-header");
-  }
+
+  // TODO: for gtid_log (not anonymous gtid_log) add validation of gno -
+  //       (gno >= gtid::min_gno && gno_ < gtid::max_gno)
   util::extract_fixed_int_from_byte_span(remainder, logical_ts_code_);
   if (logical_ts_code_ != expected_logical_ts_code) {
     util::exception_location().raise<std::invalid_argument>(
@@ -122,17 +119,15 @@ generic_post_header_impl<code_type::gtid_log>::generic_post_header_impl(
 }
 
 [[nodiscard]] gtid_log_flag_set
-generic_post_header_impl<code_type::gtid_log>::get_flags() const noexcept {
+gtid_log_post_header::get_flags() const noexcept {
   return gtid_log_flag_set{get_flags_raw()};
 }
 
-[[nodiscard]] std::string
-generic_post_header_impl<code_type::gtid_log>::get_readable_flags() const {
+[[nodiscard]] std::string gtid_log_post_header::get_readable_flags() const {
   return to_string(get_flags());
 }
 
-[[nodiscard]] gtid::uuid
-generic_post_header_impl<code_type::gtid_log>::get_uuid() const noexcept {
+[[nodiscard]] gtid::uuid gtid_log_post_header::get_uuid() const noexcept {
   gtid::uuid result;
   const auto &uuid_raw{get_uuid_raw()};
   static_assert(std::tuple_size_v<decltype(uuid_)> ==
@@ -143,14 +138,12 @@ generic_post_header_impl<code_type::gtid_log>::get_uuid() const noexcept {
               boost::uuids::uuid::static_size(), std::begin(result));
   return result;
 }
-[[nodiscard]] std::string
-generic_post_header_impl<code_type::gtid_log>::get_readable_uuid() const {
+[[nodiscard]] std::string gtid_log_post_header::get_readable_uuid() const {
   return boost::uuids::to_string(get_uuid());
 }
 
-std::ostream &
-operator<<(std::ostream &output,
-           const generic_post_header_impl<code_type::gtid_log> &obj) {
+std::ostream &operator<<(std::ostream &output,
+                         const gtid_log_post_header &obj) {
   return output << "flags: " << obj.get_readable_flags()
                 << ", uuid: " << obj.get_readable_uuid()
                 << ", gno: " << obj.get_gno() << ", logical_ts_code: "
