@@ -16,18 +16,12 @@
 #ifndef BINSRV_EVENT_GTID_LOG_POST_HEADER_IMPL_FWD_HPP
 #define BINSRV_EVENT_GTID_LOG_POST_HEADER_IMPL_FWD_HPP
 
-#include <iosfwd>
-
 #include "binsrv/event/code_type.hpp"
 #include "binsrv/event/generic_post_header_fwd.hpp"
 
 namespace binsrv::event {
 
 template <> class generic_post_header_impl<code_type::gtid_log>;
-
-std::ostream &
-operator<<(std::ostream &output,
-           const generic_post_header_impl<code_type::gtid_log> &obj);
 
 } // namespace binsrv::event
 

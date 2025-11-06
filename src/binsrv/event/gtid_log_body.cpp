@@ -13,7 +13,7 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#include "binsrv/event/gtid_log_body_impl.hpp"
+#include "binsrv/event/gtid_log_body.hpp"
 
 #include <cstdint>
 #include <ctime>
@@ -27,8 +27,6 @@
 #include <boost/date_time/posix_time/ptime.hpp>
 #include <boost/date_time/posix_time/time_formatters_limited.hpp>
 
-#include "binsrv/event/code_type.hpp"
-
 #include "util/byte_span.hpp"
 #include "util/byte_span_extractors.hpp"
 #include "util/exception_location_helpers.hpp"
@@ -36,8 +34,7 @@
 
 namespace binsrv::event {
 
-generic_body_impl<code_type::gtid_log>::generic_body_impl(
-    util::const_byte_span portion) {
+gtid_log_body::gtid_log_body(util::const_byte_span portion) {
   // TODO: rework with direct member initialization
 
   // make sure we did OK with data members reordering
@@ -105,8 +102,8 @@ generic_body_impl<code_type::gtid_log>::generic_body_impl(
         "extra bytes in the gtid_log event body");
   }
 }
-[[nodiscard]] std::string generic_body_impl<
-    code_type::gtid_log>::get_readable_immediate_commit_timestamp() const {
+[[nodiscard]] std::string
+gtid_log_body::get_readable_immediate_commit_timestamp() const {
   // threre is still no way to get string representationof the
   // std::chrono::high_resolution_clock::time_point using standard stdlib means,
   // so using boost::posix_time::ptime here
@@ -118,31 +115,26 @@ generic_body_impl<code_type::gtid_log>::generic_body_impl(
 }
 
 [[nodiscard]] util::semantic_version
-generic_body_impl<code_type::gtid_log>::get_original_server_version()
-    const noexcept {
+gtid_log_body::get_original_server_version() const noexcept {
   return util::semantic_version{get_original_server_version_raw()};
 }
 
 [[nodiscard]] std::string
-generic_body_impl<code_type::gtid_log>::get_readable_original_server_version()
-    const {
+gtid_log_body::get_readable_original_server_version() const {
   return get_original_server_version().get_string();
 }
 
 [[nodiscard]] util::semantic_version
-generic_body_impl<code_type::gtid_log>::get_immediate_server_version()
-    const noexcept {
+gtid_log_body::get_immediate_server_version() const noexcept {
   return util::semantic_version{get_immediate_server_version_raw()};
 }
 
 [[nodiscard]] std::string
-generic_body_impl<code_type::gtid_log>::get_readable_immediate_server_version()
-    const {
+gtid_log_body::get_readable_immediate_server_version() const {
   return get_immediate_server_version().get_string();
 }
 
-std::ostream &operator<<(std::ostream &output,
-                         const generic_body_impl<code_type::gtid_log> &obj) {
+std::ostream &operator<<(std::ostream &output, const gtid_log_body &obj) {
   output << "immediate_commit_timestamp: "
          << obj.get_readable_immediate_commit_timestamp();
   if (obj.has_original_commit_timestamp()) {

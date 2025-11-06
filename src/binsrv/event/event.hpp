@@ -31,6 +31,8 @@
 #include <boost/mp11/integer_sequence.hpp>
 #include <boost/mp11/list.hpp>
 
+#include "binsrv/event/anonymous_gtid_log_body_impl.hpp" // IWYU pragma: export
+#include "binsrv/event/anonymous_gtid_log_post_header_impl.hpp" // IWYU pragma: export
 #include "binsrv/event/code_type.hpp"
 #include "binsrv/event/common_header.hpp"                // IWYU pragma: export
 #include "binsrv/event/footer.hpp"                       // IWYU pragma: export

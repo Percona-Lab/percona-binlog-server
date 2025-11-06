@@ -86,6 +86,12 @@ set(source_files
   src/app_version.hpp
 
   # binlog event data structure files
+  src/binsrv/event/anonymous_gtid_log_body_impl_fwd.hpp
+  src/binsrv/event/anonymous_gtid_log_body_impl.hpp
+
+  src/binsrv/event/anonymous_gtid_log_post_header_impl_fwd.hpp
+  src/binsrv/event/anonymous_gtid_log_post_header_impl.hpp
+
   src/binsrv/event/checksum_algorithm_type_fwd.hpp
   src/binsrv/event/checksum_algorithm_type.hpp
 
@@ -132,13 +138,19 @@ set(source_files
   src/binsrv/event/gtid_log_flag_type_fwd.hpp
   src/binsrv/event/gtid_log_flag_type.hpp
 
+  src/binsrv/event/gtid_log_body_fwd.hpp
+  src/binsrv/event/gtid_log_body.hpp
+  src/binsrv/event/gtid_log_body.cpp
+
   src/binsrv/event/gtid_log_body_impl_fwd.hpp
   src/binsrv/event/gtid_log_body_impl.hpp
-  src/binsrv/event/gtid_log_body_impl.cpp
+
+  src/binsrv/event/gtid_log_post_header_fwd.hpp
+  src/binsrv/event/gtid_log_post_header.hpp
+  src/binsrv/event/gtid_log_post_header.cpp
 
   src/binsrv/event/gtid_log_post_header_impl_fwd.hpp
   src/binsrv/event/gtid_log_post_header_impl.hpp
-  src/binsrv/event/gtid_log_post_header_impl.cpp
 
   src/binsrv/event/protocol_traits_fwd.hpp
   src/binsrv/event/protocol_traits.hpp

@@ -13,16 +13,17 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef BINSRV_EVENT_GTID_LOG_BODY_IMPL_FWD_HPP
-#define BINSRV_EVENT_GTID_LOG_BODY_IMPL_FWD_HPP
+#ifndef BINSRV_EVENT_GTID_LOG_BODY_FWD_HPP
+#define BINSRV_EVENT_GTID_LOG_BODY_FWD_HPP
 
-#include "binsrv/event/code_type.hpp"
-#include "binsrv/event/generic_body_fwd.hpp"
+#include <iosfwd>
 
 namespace binsrv::event {
 
-template <> class generic_body_impl<code_type::gtid_log>;
+class gtid_log_body;
+
+std::ostream &operator<<(std::ostream &output, const gtid_log_body &obj);
 
 } // namespace binsrv::event
 
-#endif // BINSRV_EVENT_GTID_LOG_BODY_IMPL_FWD_HPP
+#endif // BINSRV_EVENT_GTID_LOG_BODY_FWD_HPP
