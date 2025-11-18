@@ -27,6 +27,7 @@
 
 #include "binsrv/event/protocol_traits.hpp"
 
+#include "util/bounded_string_storage_fwd.hpp"
 #include "util/byte_span_fwd.hpp"
 
 namespace binsrv::event {
@@ -44,7 +45,8 @@ public:
            1U;
   }
 
-  using server_version_storage = std::array<std::byte, server_version_length>;
+  using server_version_storage =
+      util::bounded_string_storage<server_version_length>;
 
   generic_post_header_impl(std::uint32_t encoded_server_version,
                            util::const_byte_span portion);

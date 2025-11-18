@@ -13,22 +13,16 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef BINSRV_GTID_COMMON_TYPES_HPP
-#define BINSRV_GTID_COMMON_TYPES_HPP
+#ifndef BINSRV_EVENT_GTID_TAGGED_LOG_POST_HEADER_IMPL_FWD_HPP
+#define BINSRV_EVENT_GTID_TAGGED_LOG_POST_HEADER_IMPL_FWD_HPP
 
-#include <array>
-#include <cstddef>
-#include <cstdint>
-#include <limits>
+#include "binsrv/event/code_type.hpp"
+#include "binsrv/event/generic_post_header_fwd.hpp"
 
-#include <boost/uuid/uuid.hpp>
+namespace binsrv::event {
 
-namespace binsrv::gtid {
+template <> class generic_post_header_impl<code_type::gtid_tagged_log>;
 
-using uuid = boost::uuids::uuid;
-inline constexpr std::size_t uuid_length{boost::uuids::uuid::static_size()};
-using uuid_storage = std::array<std::byte, uuid_length>;
+} // namespace binsrv::event
 
-} // namespace binsrv::gtid
-
-#endif // BINSRV_GTID_COMMON_TYPES_HPP
+#endif // BINSRV_EVENT_GTID_TAGGED_LOG_POST_HEADER_IMPL_FWD_HPP

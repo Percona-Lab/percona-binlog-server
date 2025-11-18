@@ -31,6 +31,7 @@
 #include "binsrv/event/code_type.hpp"
 #include "binsrv/event/protocol_traits.hpp"
 
+#include "util/bounded_string_storage.hpp"
 #include "util/byte_span.hpp"
 #include "util/byte_span_extractors.hpp"
 #include "util/exception_location_helpers.hpp"
@@ -106,15 +107,7 @@ generic_post_header_impl<code_type::format_description>::
 [[nodiscard]] std::string_view
 generic_post_header_impl<code_type::format_description>::get_server_version()
     const noexcept {
-  // in case when every byte of the server version is significant
-  // we cannot rely on std::string_view::string_view(const char*)
-  // constructor as '\0' character will never be found
-  auto result{util::as_string_view(server_version_)};
-  auto position{result.find('\0')};
-  if (position != std::string_view::npos) {
-    result.remove_suffix(std::size(result) - position);
-  }
-  return result;
+  return util::to_string_view(server_version_);
 }
 
 [[nodiscard]] std::uint32_t generic_post_header_impl<

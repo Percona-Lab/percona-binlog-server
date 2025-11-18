@@ -152,6 +152,13 @@ set(source_files
   src/binsrv/event/gtid_log_post_header_impl_fwd.hpp
   src/binsrv/event/gtid_log_post_header_impl.hpp
 
+  src/binsrv/event/gtid_tagged_log_body_impl_fwd.hpp
+  src/binsrv/event/gtid_tagged_log_body_impl.hpp
+  src/binsrv/event/gtid_tagged_log_body_impl.cpp
+
+  src/binsrv/event/gtid_tagged_log_post_header_impl_fwd.hpp
+  src/binsrv/event/gtid_tagged_log_post_header_impl.hpp
+
   src/binsrv/event/protocol_traits_fwd.hpp
   src/binsrv/event/protocol_traits.hpp
   src/binsrv/event/protocol_traits.cpp
@@ -252,6 +259,9 @@ set(source_files
   src/binsrv/time_unit.cpp
 
   # various utility files
+  src/util/bounded_string_storage_fwd.hpp
+  src/util/bounded_string_storage.hpp
+
   src/util/byte_span_fwd.hpp
   src/util/byte_span.hpp
   src/util/byte_span_extractors.hpp
