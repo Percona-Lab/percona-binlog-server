@@ -450,6 +450,7 @@ void receive_binlog_events(
     logger.log(binsrv::log_severity::info,
                "fetched " + std::to_string(std::size(portion)) +
                    "-byte(s) event from binlog");
+    log_span_dump(logger, portion);
 
     // TODO: just for redirection to another byte stream we need to parse
     //       the ROTATE and FORMAT_DESCRIPTION events only, every other one
@@ -459,7 +460,6 @@ void receive_binlog_events(
     logger.log(binsrv::log_severity::debug,
                "Parsed event:\n" +
                    boost::lexical_cast<std::string>(current_event));
-    log_span_dump(logger, portion);
 
     process_binlog_event(current_event, portion, storage, skip_open_binlog);
   }

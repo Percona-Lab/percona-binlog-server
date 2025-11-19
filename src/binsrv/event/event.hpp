@@ -42,6 +42,8 @@
 #include "binsrv/event/generic_post_header.hpp"       // IWYU pragma: export
 #include "binsrv/event/gtid_log_body_impl.hpp"        // IWYU pragma: export
 #include "binsrv/event/gtid_log_post_header_impl.hpp" // IWYU pragma: export
+#include "binsrv/event/gtid_tagged_log_body_impl.hpp" // IWYU pragma: export
+#include "binsrv/event/gtid_tagged_log_post_header_impl.hpp" // IWYU pragma: export
 #include "binsrv/event/reader_context_fwd.hpp"
 #include "binsrv/event/rotate_body_impl.hpp"        // IWYU pragma: export
 #include "binsrv/event/rotate_post_header_impl.hpp" // IWYU pragma: export

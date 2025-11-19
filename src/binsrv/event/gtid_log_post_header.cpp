@@ -138,6 +138,7 @@ gtid_log_post_header::get_flags() const noexcept {
               boost::uuids::uuid::static_size(), std::begin(result));
   return result;
 }
+
 [[nodiscard]] std::string gtid_log_post_header::get_readable_uuid() const {
   return boost::uuids::to_string(get_uuid());
 }
@@ -146,7 +147,7 @@ std::ostream &operator<<(std::ostream &output,
                          const gtid_log_post_header &obj) {
   return output << "flags: " << obj.get_readable_flags()
                 << ", uuid: " << obj.get_readable_uuid()
-                << ", gno: " << obj.get_gno() << ", logical_ts_code: "
+                << ", gno: " << obj.get_gno_raw() << ", logical_ts_code: "
                 << static_cast<std::uint32_t>(obj.get_logical_ts_code_raw())
                 << ", last_committed: " << obj.get_last_committed_raw()
                 << ", sequence_number: " << obj.get_sequence_number_raw();
