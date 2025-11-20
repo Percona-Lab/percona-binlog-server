@@ -15,6 +15,7 @@
 
 #include "binsrv/event/rotate_body_impl.hpp"
 
+#include <iterator>
 #include <ostream>
 
 #include "binsrv/event/code_type.hpp"
@@ -30,7 +31,7 @@ generic_body_impl<code_type::rotate>::generic_body_impl(
   // no need to check if member reordering is OK as this class has
   // only one member for holding data of varying length
 
-  binlog_.assign(util::as_string_view(portion));
+  binlog_.assign(std::begin(portion), std::end(portion));
 }
 
 std::ostream &operator<<(std::ostream &output,

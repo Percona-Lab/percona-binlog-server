@@ -21,15 +21,19 @@
 #include <string>
 #include <string_view>
 
-#include "util/byte_span_fwd.hpp"
+#include <boost/container/small_vector.hpp>
+
+#include "util/byte_span.hpp"
 
 namespace binsrv::event {
 
 template <> class [[nodiscard]] generic_body_impl<code_type::rotate> {
 public:
-  // TODO: change this to a container with larger buffer for SBO to avoid
-  //       memory allocations (e.g. boost::container::small_vector)
-  using binlog_storage = std::string;
+  static constexpr std::size_t expected_max_binlog_name_length{64U};
+  // TODO: in c++26 change to std::inplace_vector
+  using binlog_storage =
+      boost::container::small_vector<std::byte,
+                                     expected_max_binlog_name_length>;
 
   explicit generic_body_impl(util::const_byte_span portion);
 
@@ -38,7 +42,7 @@ public:
   }
 
   [[nodiscard]] std::string_view get_binlog() const noexcept {
-    return {binlog_};
+    return util::as_string_view(binlog_);
   }
 
 private:

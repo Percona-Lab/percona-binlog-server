@@ -16,13 +16,14 @@
 #ifndef UTIL_BOUNDED_STRING_STORAGE_FWD_HPP
 #define UTIL_BOUNDED_STRING_STORAGE_FWD_HPP
 
-#include <array>
 #include <cstddef>
+
+#include <boost/container/static_vector.hpp>
 
 namespace util {
 
 template <std::size_t N>
-using bounded_string_storage = std::array<std::byte, N>;
+using bounded_string_storage = boost::container::static_vector<std::byte, N>;
 
 } // namespace util
 
