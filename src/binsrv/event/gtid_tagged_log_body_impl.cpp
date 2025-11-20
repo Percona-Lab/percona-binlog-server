@@ -59,9 +59,9 @@ generic_body_impl<code_type::gtid_tagged_log>::generic_body_impl(
   static_assert(
       sizeof *this ==
           boost::alignment::align_up(
-              sizeof flags_ + std::tuple_size_v<decltype(uuid_)> + sizeof gno_ +
-                  std::tuple_size_v<decltype(tag_)> + sizeof last_committed_ +
-                  sizeof sequence_number_ + sizeof immediate_commit_timestamp_ +
+              sizeof flags_ + sizeof uuid_ + sizeof gno_ + sizeof tag_ +
+                  sizeof last_committed_ + sizeof sequence_number_ +
+                  sizeof immediate_commit_timestamp_ +
                   sizeof original_commit_timestamp_ +
                   sizeof transaction_length_ + sizeof original_server_version_ +
                   sizeof immediate_server_version_ +
@@ -297,6 +297,7 @@ void generic_body_impl<code_type::gtid_tagged_log>::process_field_data(
     // Extracting tag (length encoded as varlent int and raw character array)
     std::size_t extracted_tag_length{};
     varlen_int_extractor(remainder, extracted_tag_length, "tag length");
+    tag_.resize(extracted_tag_length);
     const std::span<tag_storage::value_type> tag_subrange{std::data(tag_),
                                                           extracted_tag_length};
     if (!util::extract_byte_span_from_byte_span_checked(remainder,

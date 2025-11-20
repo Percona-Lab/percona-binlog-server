@@ -21,7 +21,6 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
-#include <tuple>
 
 #include <boost/align/align_up.hpp>
 
@@ -64,7 +63,7 @@ generic_post_header_impl<code_type::format_description>::
   */
 
   static_assert(server_version_length ==
-                    std::tuple_size_v<decltype(server_version_)>,
+                    decltype(server_version_)::static_capacity,
                 "mismatch in "
                 "generic_post_header_impl<code_type::format_description>::"
                 "server_version_length");
@@ -72,16 +71,19 @@ generic_post_header_impl<code_type::format_description>::
   // TODO: initialize size_in_bytes directly based on the sum of fields
   // widths instead of this static_assert
   static_assert(
-      sizeof binlog_version_ + std::tuple_size_v<decltype(server_version_)> +
+      sizeof binlog_version_ + decltype(server_version_)::static_capacity +
               sizeof create_timestamp_ + sizeof common_header_length_ +
-              std::tuple_size_v<decltype(post_header_lengths_)> ==
+              sizeof post_header_lengths_ ==
           get_size_in_bytes(latest_known_protocol_server_version),
       "mismatch in "
       "generic_post_header_impl<code_type::format_description>::size_in_bytes");
   // make sure we did OK with data members reordering
   static_assert(sizeof *this ==
                     boost::alignment::align_up(
-                        get_size_in_bytes(latest_known_protocol_server_version),
+                        sizeof binlog_version_ + sizeof server_version_ +
+                            sizeof create_timestamp_ +
+                            sizeof common_header_length_ +
+                            sizeof post_header_lengths_,
                         alignof(decltype(*this))),
                 "inefficient data member reordering in "
                 "generic_post_header_impl<code_type::format_description>");
@@ -93,7 +95,10 @@ generic_post_header_impl<code_type::format_description>::
 
   auto remainder = portion;
   util::extract_fixed_int_from_byte_span(remainder, binlog_version_);
-  util::extract_byte_array_from_byte_span(remainder, server_version_);
+  server_version_.resize(decltype(server_version_)::capacity());
+  util::extract_byte_span_from_byte_span(remainder,
+                                         util::byte_span{server_version_});
+  util::normalize_for_c_str(server_version_);
   util::extract_fixed_int_from_byte_span(remainder, create_timestamp_);
   util::extract_fixed_int_from_byte_span(remainder, common_header_length_);
   const auto expected_subrange_length{

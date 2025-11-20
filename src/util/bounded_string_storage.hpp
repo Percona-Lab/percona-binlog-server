@@ -25,17 +25,20 @@
 namespace util {
 
 template <std::size_t N>
-std::string_view
+[[nodiscard]] std::string_view
 to_string_view(const bounded_string_storage<N> &storage) noexcept {
-  // in case when every byte of the array is significant (non-zero)
-  // we cannot rely on std::string_view::string_view(const char*)
-  // constructor as '\0' character will never be found
-  auto result{util::as_string_view(storage)};
-  auto position{result.find('\0')};
-  if (position != std::string_view::npos) {
-    result.remove_suffix(std::size(result) - position);
+  return util::as_string_view(storage);
+}
+
+template <std::size_t N>
+void normalize_for_c_str(bounded_string_storage<N> &storage) {
+  // in case when every byte of the container is significant (non-zero)
+  // we do not change the size of the container
+  if (const auto begin_it{std::cbegin(storage)}, end_it{std::cend(storage)},
+      zero_it{std::find(begin_it, end_it, std::byte{})};
+      zero_it != end_it) {
+    storage.resize(static_cast<std::size_t>(std::distance(begin_it, zero_it)));
   }
-  return result;
 }
 
 } // namespace util

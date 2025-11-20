@@ -84,9 +84,9 @@ gtid_log_post_header::gtid_log_post_header(util::const_byte_span portion) {
 
   // TODO: initialize size_in_bytes directly based on the sum of fields
   // widths instead of this static_assert
-  static_assert(sizeof flags_ + std::tuple_size_v<decltype(uuid_)> +
-                        sizeof gno_ + sizeof logical_ts_code_ +
-                        sizeof last_committed_ + sizeof sequence_number_ ==
+  static_assert(sizeof flags_ + sizeof uuid_ + sizeof gno_ +
+                        sizeof logical_ts_code_ + sizeof last_committed_ +
+                        sizeof sequence_number_ ==
                     size_in_bytes,
                 "mismatch in gtid_log_event_post_header::size_in_bytes");
   // make sure we did OK with data members reordering
