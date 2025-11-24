@@ -190,7 +190,16 @@ set(source_files
   src/binsrv/event/unknown_post_header.cpp
 
   # gtid data structure files
-  src/binsrv/gtid/common_types.hpp
+  src/binsrv/gtids/common_types.hpp
+  src/binsrv/gtids/gtid_fwd.hpp
+  src/binsrv/gtids/gtid.hpp
+  src/binsrv/gtids/gtid.cpp
+  src/binsrv/gtids/gtid_set_fwd.hpp
+  src/binsrv/gtids/gtid_set.hpp
+  src/binsrv/gtids/gtid_set.cpp
+  src/binsrv/gtids/tag_fwd.hpp
+  src/binsrv/gtids/tag.hpp
+  src/binsrv/gtids/tag.cpp
 
   # binlog files
   src/binsrv/basic_logger_fwd.hpp
@@ -348,3 +357,8 @@ set_target_properties(binlog_server PROPERTIES
   CXX_STANDARD_REQUIRED YES
   CXX_EXTENSIONS NO
 )
+
+include(CTest)
+if(BUILD_TESTING)
+  add_subdirectory(tests)
+endif()

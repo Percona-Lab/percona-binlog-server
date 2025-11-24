@@ -40,7 +40,7 @@
 #include "binsrv/event/code_type.hpp"
 #include "binsrv/event/gtid_log_flag_type.hpp"
 
-#include "binsrv/gtid/common_types.hpp"
+#include "binsrv/gtids/common_types.hpp"
 
 #include "util/bounded_string_storage.hpp"
 #include "util/byte_span.hpp"
@@ -152,9 +152,9 @@ generic_body_impl<code_type::gtid_tagged_log>::get_readable_flags() const {
   return to_string(get_flags());
 }
 
-[[nodiscard]] gtid::uuid
+[[nodiscard]] gtids::uuid
 generic_body_impl<code_type::gtid_tagged_log>::get_uuid() const noexcept {
-  gtid::uuid result;
+  gtids::uuid result;
   const auto &uuid_raw{get_uuid_raw()};
   static_assert(std::tuple_size_v<decltype(uuid_)> ==
                 boost::uuids::uuid::static_size());
@@ -298,8 +298,8 @@ void generic_body_impl<code_type::gtid_tagged_log>::process_field_data(
     std::size_t extracted_tag_length{};
     varlen_int_extractor(remainder, extracted_tag_length, "tag length");
     tag_.resize(extracted_tag_length);
-    const std::span<tag_storage::value_type> tag_subrange{std::data(tag_),
-                                                          extracted_tag_length};
+    const std::span<gtids::tag_storage::value_type> tag_subrange{
+        std::data(tag_), extracted_tag_length};
     if (!util::extract_byte_span_from_byte_span_checked(remainder,
                                                         tag_subrange)) {
       util::exception_location().raise<std::invalid_argument>(

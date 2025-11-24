@@ -13,22 +13,18 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef BINSRV_GTID_COMMON_TYPES_HPP
-#define BINSRV_GTID_COMMON_TYPES_HPP
+#ifndef BINSRV_GTIDS_GTID_FWD_HPP
+#define BINSRV_GTIDS_GTID_FWD_HPP
 
-#include <array>
 #include <cstddef>
-#include <cstdint>
-#include <limits>
+#include <iosfwd>
 
-#include <boost/uuid/uuid.hpp>
+namespace binsrv::gtids {
 
-namespace binsrv::gtid {
+class gtid;
 
-using uuid = boost::uuids::uuid;
-inline constexpr std::size_t uuid_length{boost::uuids::uuid::static_size()};
-using uuid_storage = std::array<std::byte, uuid_length>;
+std::ostream &operator<<(std::ostream &output, const gtid &obj);
 
-} // namespace binsrv::gtid
+} // namespace binsrv::gtids
 
-#endif // BINSRV_GTID_COMMON_TYPES_HPP
+#endif // BINSRV_GTIDS_GTID_FWD_HPP
