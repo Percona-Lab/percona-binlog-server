@@ -23,7 +23,7 @@
 
 #include "binsrv/event/gtid_log_flag_type_fwd.hpp"
 
-#include "binsrv/gtid/common_types.hpp"
+#include "binsrv/gtids/common_types.hpp"
 
 #include "util/byte_span_fwd.hpp"
 
@@ -43,10 +43,10 @@ public:
   [[nodiscard]] gtid_log_flag_set get_flags() const noexcept;
   [[nodiscard]] std::string get_readable_flags() const;
 
-  [[nodiscard]] const gtid::uuid_storage &get_uuid_raw() const noexcept {
+  [[nodiscard]] const gtids::uuid_storage &get_uuid_raw() const noexcept {
     return uuid_;
   }
-  [[nodiscard]] gtid::uuid get_uuid() const noexcept;
+  [[nodiscard]] gtids::uuid get_uuid() const noexcept;
   [[nodiscard]] std::string get_readable_uuid() const;
 
   [[nodiscard]] std::int64_t get_gno_raw() const noexcept { return gno_; }
@@ -67,7 +67,7 @@ private:
   // the members are deliberately reordered for better packing
   std::uint8_t flags_{};            // 0
   std::uint8_t logical_ts_code_{};  // 3
-  gtid::uuid_storage uuid_{};       // 1
+  gtids::uuid_storage uuid_{};      // 1
   std::int64_t gno_{};              // 2
   std::int64_t last_committed_{};   // 4
   std::int64_t sequence_number_{};  // 5

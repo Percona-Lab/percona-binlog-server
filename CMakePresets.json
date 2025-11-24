@@ -15,7 +15,8 @@
       "cacheVariables": {
         "CMAKE_PREFIX_PATH": "${sourceParentDir}/aws-sdk-cpp-install-${presetName};${sourceParentDir}/boost-install-${presetName}",
         "CPP_STANDARD": "20",
-        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "BUILD_TESTING": "ON"
       }
     },
 

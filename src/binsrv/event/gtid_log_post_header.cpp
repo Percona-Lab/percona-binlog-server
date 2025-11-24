@@ -30,7 +30,7 @@
 
 #include "binsrv/event/gtid_log_flag_type.hpp"
 
-#include "binsrv/gtid/common_types.hpp"
+#include "binsrv/gtids/common_types.hpp"
 
 #include "util/byte_span.hpp"
 #include "util/byte_span_extractors.hpp"
@@ -127,8 +127,8 @@ gtid_log_post_header::get_flags() const noexcept {
   return to_string(get_flags());
 }
 
-[[nodiscard]] gtid::uuid gtid_log_post_header::get_uuid() const noexcept {
-  gtid::uuid result;
+[[nodiscard]] gtids::uuid gtid_log_post_header::get_uuid() const noexcept {
+  gtids::uuid result;
   const auto &uuid_raw{get_uuid_raw()};
   static_assert(std::tuple_size_v<decltype(uuid_)> ==
                 boost::uuids::uuid::static_size());

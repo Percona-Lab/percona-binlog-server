@@ -23,9 +23,8 @@
 
 #include "binsrv/event/gtid_log_flag_type_fwd.hpp"
 
-#include "binsrv/gtid/common_types.hpp"
+#include "binsrv/gtids/common_types.hpp"
 
-#include "util/bounded_string_storage_fwd.hpp"
 #include "util/byte_span_fwd.hpp"
 #include "util/semantic_version_fwd.hpp"
 
@@ -35,24 +34,23 @@ template <> class [[nodiscard]] generic_body_impl<code_type::gtid_tagged_log> {
 public:
   // https://github.com/mysql/mysql-server/blob/mysql-8.4.6/libs/mysql/binlog/event/control_events.h#L1111
 
-  static constexpr std::size_t tag_length{32U};
-  using tag_storage = util::bounded_string_storage<tag_length>;
-
   explicit generic_body_impl(util::const_byte_span portion);
 
   [[nodiscard]] std::uint8_t get_flags_raw() const noexcept { return flags_; }
   [[nodiscard]] gtid_log_flag_set get_flags() const noexcept;
   [[nodiscard]] std::string get_readable_flags() const;
 
-  [[nodiscard]] const gtid::uuid_storage &get_uuid_raw() const noexcept {
+  [[nodiscard]] const gtids::uuid_storage &get_uuid_raw() const noexcept {
     return uuid_;
   }
-  [[nodiscard]] gtid::uuid get_uuid() const noexcept;
+  [[nodiscard]] gtids::uuid get_uuid() const noexcept;
   [[nodiscard]] std::string get_readable_uuid() const;
 
   [[nodiscard]] std::int64_t get_gno_raw() const noexcept { return gno_; }
 
-  [[nodiscard]] const tag_storage &get_tag_raw() const noexcept { return tag_; }
+  [[nodiscard]] const gtids::tag_storage &get_tag_raw() const noexcept {
+    return tag_;
+  }
   [[nodiscard]] std::string_view get_tag() const noexcept;
 
   [[nodiscard]] std::int64_t get_last_committed_raw() const noexcept {
@@ -132,9 +130,9 @@ private:
 
   // the members are deliberately reordered for better packing
   std::uint8_t flags_{};                                             // 0
-  gtid::uuid_storage uuid_{};                                        // 1
+  gtids::uuid_storage uuid_{};                                       // 1
   std::int64_t gno_{};                                               // 2
-  tag_storage tag_{};                                                // 3
+  gtids::tag_storage tag_{};                                         // 3
   std::int64_t last_committed_{};                                    // 4
   std::int64_t sequence_number_{};                                   // 5
   std::uint64_t immediate_commit_timestamp_{unset_commit_timestamp}; // 6
