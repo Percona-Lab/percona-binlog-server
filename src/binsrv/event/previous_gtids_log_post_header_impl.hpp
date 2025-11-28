@@ -13,17 +13,21 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef BINSRV_GTIDS_GTID_SET_FWD_HPP
-#define BINSRV_GTIDS_GTID_SET_FWD_HPP
+#ifndef BINSRV_EVENT_PRESIOUS_GTIDS_LOG_POST_HEADER_IMPL_HPP
+#define BINSRV_EVENT_PRESIOUS_GTIDS_LOG_POST_HEADER_IMPL_HPP
 
-#include <iosfwd>
+#include "binsrv/event/previous_gtids_log_post_header_impl_fwd.hpp" // IWYU pragma: export
 
-namespace binsrv::gtids {
+#include "binsrv/event/empty_post_header.hpp"
 
-class gtid_set;
+namespace binsrv::event {
 
-std::ostream &operator<<(std::ostream &output, const gtid_set &obj);
+template <>
+class [[nodiscard]] generic_post_header_impl<code_type::previous_gtids_log> {
+public:
+  using redirect_type = empty_post_header;
+};
 
-} // namespace binsrv::gtids
+} // namespace binsrv::event
 
-#endif // BINSRV_GTIDS_GTID_SET_FWD_HPP
+#endif // BINSRV_EVENT_PRESIOUS_GTIDS_LOG_POST_HEADER_IMPL_HPP

@@ -29,20 +29,16 @@
 
 #include <boost/test/tools/old/interface.hpp>
 
-#include "binsrv/gtids/common_types.hpp"
 #include "binsrv/gtids/gtid.hpp"
 #include "binsrv/gtids/gtid_set.hpp"
 #include "binsrv/gtids/tag.hpp"
 
-static constexpr binsrv::gtids::uuid first_uuid{
-    {0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11,
-     0x11, 0x11, 0x11, 0x11}};
-static constexpr binsrv::gtids::uuid second_uuid{
-    {0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22,
-     0x22, 0x22, 0x22, 0x22}};
-static constexpr binsrv::gtids::uuid third_uuid{
-    {0x33, 0x33, 0x33, 0x33, 0x33, 0x33, 0x33, 0x33, 0x33, 0x33, 0x33, 0x33,
-     0x33, 0x33, 0x33, 0x33}};
+static constexpr std::string_view first_uuid_sv{
+    "11111111-1111-1111-1111-111111111111"};
+static constexpr std::string_view second_uuid_sv{
+    "22222222-2222-2222-2222-222222222222"};
+static constexpr std::string_view third_uuid_sv{
+    "33333333-3333-3333-3333-333333333333"};
 
 BOOST_AUTO_TEST_CASE(GtidSetDefaultConstruction) {
   const binsrv::gtids::gtid_set empty_gtid_set{};
@@ -52,7 +48,7 @@ BOOST_AUTO_TEST_CASE(GtidSetDefaultConstruction) {
 
 BOOST_AUTO_TEST_CASE(GtidSetCopyConstruction) {
   binsrv::gtids::gtid_set gtids{};
-  gtids += binsrv::gtids::gtid{first_uuid, 1ULL};
+  gtids += binsrv::gtids::gtid{binsrv::gtids::uuid{first_uuid_sv}, 1ULL};
 
   const binsrv::gtids::gtid_set copy{gtids};
 
@@ -61,13 +57,15 @@ BOOST_AUTO_TEST_CASE(GtidSetCopyConstruction) {
 
 BOOST_AUTO_TEST_CASE(GtidSetMoveConstruction) {
   binsrv::gtids::gtid_set gtids{};
-  gtids += binsrv::gtids::gtid{first_uuid, 1ULL};
+  gtids += binsrv::gtids::gtid{binsrv::gtids::uuid{first_uuid_sv}, 1ULL};
 
   const binsrv::gtids::gtid_set copy{std::move(gtids)};
   BOOST_CHECK(!copy.is_empty());
 }
 
 BOOST_AUTO_TEST_CASE(GtidSetCopyAssignmentOperator) {
+  const binsrv::gtids::uuid first_uuid{first_uuid_sv};
+
   binsrv::gtids::gtid_set gtids{};
   gtids += binsrv::gtids::gtid{first_uuid, 1ULL};
 
@@ -83,6 +81,8 @@ BOOST_AUTO_TEST_CASE(GtidSetCopyAssignmentOperator) {
 }
 
 BOOST_AUTO_TEST_CASE(GtidSetMoveAssignmentOperator) {
+  const binsrv::gtids::uuid first_uuid{first_uuid_sv};
+
   binsrv::gtids::gtid_set gtids{};
   gtids += binsrv::gtids::gtid{first_uuid, 1ULL};
 
@@ -98,6 +98,10 @@ BOOST_AUTO_TEST_CASE(GtidSetMoveAssignmentOperator) {
 }
 
 BOOST_AUTO_TEST_CASE(GtidSetContains) {
+  const binsrv::gtids::uuid first_uuid{first_uuid_sv};
+  const binsrv::gtids::uuid second_uuid{second_uuid_sv};
+  const binsrv::gtids::uuid third_uuid{third_uuid_sv};
+
   const binsrv::gtids::tag first_tag{"alpha"};
   const binsrv::gtids::tag second_tag{"beta"};
 
@@ -131,6 +135,10 @@ BOOST_AUTO_TEST_CASE(GtidSetContains) {
 }
 
 BOOST_AUTO_TEST_CASE(GtidSetOperatorPlus) {
+  const binsrv::gtids::uuid first_uuid{first_uuid_sv};
+  const binsrv::gtids::uuid second_uuid{second_uuid_sv};
+  const binsrv::gtids::uuid third_uuid{third_uuid_sv};
+
   binsrv::gtids::gtid_set first_gtids{};
 
   BOOST_CHECK_THROW(first_gtids += binsrv::gtids::gtid{},
@@ -173,11 +181,39 @@ BOOST_AUTO_TEST_CASE(GtidSetOperatorPlus) {
                     "33333333-3333-3333-3333-333333333333:1-3");
 }
 
+BOOST_AUTO_TEST_CASE(GtidSetAddIntervalUntagged) {
+  const binsrv::gtids::uuid first_uuid{first_uuid_sv};
+  const binsrv::gtids::tag empty_tag{};
+
+  binsrv::gtids::gtid_set gtids{};
+  // NOLINTBEGIN(cppcoreguidelines-avoid-magic-numbers,readability-magic-numbers)
+  gtids.add_interval(first_uuid, empty_tag, 1ULL, 3ULL);
+  gtids.add_interval(first_uuid, empty_tag, 5ULL, 7ULL);
+  // NOLINTEND(cppcoreguidelines-avoid-magic-numbers,readability-magic-numbers)
+
+  BOOST_CHECK_EQUAL(boost::lexical_cast<std::string>(gtids),
+                    "11111111-1111-1111-1111-111111111111:1-3:5-7");
+}
+
+BOOST_AUTO_TEST_CASE(GtidSetAddIntervalTagged) {
+  const binsrv::gtids::uuid first_uuid{first_uuid_sv};
+  const binsrv::gtids::tag first_tag{"alpha"};
+
+  binsrv::gtids::gtid_set gtids{};
+  // NOLINTBEGIN(cppcoreguidelines-avoid-magic-numbers,readability-magic-numbers)
+  gtids.add_interval(first_uuid, first_tag, 1ULL, 3ULL);
+  gtids.add_interval(first_uuid, first_tag, 5ULL, 7ULL);
+  // NOLINTEND(cppcoreguidelines-avoid-magic-numbers,readability-magic-numbers)
+
+  BOOST_CHECK_EQUAL(boost::lexical_cast<std::string>(gtids),
+                    "11111111-1111-1111-1111-111111111111:alpha:1-3:5-7");
+}
+
 BOOST_AUTO_TEST_CASE(GtidSetClear) {
   binsrv::gtids::gtid_set gtids{};
   BOOST_CHECK(gtids.is_empty());
 
-  gtids += binsrv::gtids::gtid{first_uuid, 1ULL};
+  gtids += binsrv::gtids::gtid{binsrv::gtids::uuid{first_uuid_sv}, 1ULL};
   BOOST_CHECK(!gtids.is_empty());
 
   gtids.clear();
@@ -185,6 +221,9 @@ BOOST_AUTO_TEST_CASE(GtidSetClear) {
 }
 
 BOOST_AUTO_TEST_CASE(GtidSetOstreamOperatorUntagged) {
+  const binsrv::gtids::uuid first_uuid{first_uuid_sv};
+  const binsrv::gtids::uuid second_uuid{second_uuid_sv};
+
   binsrv::gtids::gtid_set gtids{};
   // NOLINTBEGIN(cppcoreguidelines-avoid-magic-numbers,readability-magic-numbers)
   gtids += binsrv::gtids::gtid{first_uuid, 1ULL};
@@ -204,6 +243,9 @@ BOOST_AUTO_TEST_CASE(GtidSetOstreamOperatorUntagged) {
 }
 
 BOOST_AUTO_TEST_CASE(GtidSetOstreamOperatorTagged) {
+  const binsrv::gtids::uuid first_uuid{first_uuid_sv};
+  const binsrv::gtids::uuid second_uuid{second_uuid_sv};
+
   const binsrv::gtids::tag first_tag{"alpha"};
   const binsrv::gtids::tag second_tag{"beta"};
 
@@ -231,13 +273,16 @@ BOOST_AUTO_TEST_CASE(GtidSetOstreamOperatorTagged) {
   // NOLINTEND(cppcoreguidelines-avoid-magic-numbers,readability-magic-numbers)
 
   BOOST_CHECK_EQUAL(boost::lexical_cast<std::string>(gtids),
-                    "11111111-1111-1111-1111-111111111111:alpha:111-113:115, "
-                    "11111111-1111-1111-1111-111111111111:beta:121-123:125, "
-                    "22222222-2222-2222-2222-222222222222:alpha:211-213:215, "
-                    "22222222-2222-2222-2222-222222222222:beta:221-223:225");
+                    "11111111-1111-1111-1111-111111111111:alpha:111-113:115:"
+                    "beta:121-123:125, "
+                    "22222222-2222-2222-2222-222222222222:alpha:211-213:215:"
+                    "beta:221-223:225");
 }
 
 BOOST_AUTO_TEST_CASE(GtidSetOstreamOperatorMixed) {
+  const binsrv::gtids::uuid first_uuid{first_uuid_sv};
+  const binsrv::gtids::uuid second_uuid{second_uuid_sv};
+
   const binsrv::gtids::tag first_tag{"alpha"};
   const binsrv::gtids::tag second_tag{"beta"};
 
@@ -275,10 +320,8 @@ BOOST_AUTO_TEST_CASE(GtidSetOstreamOperatorMixed) {
   // NOLINTEND(cppcoreguidelines-avoid-magic-numbers,readability-magic-numbers)
 
   BOOST_CHECK_EQUAL(boost::lexical_cast<std::string>(gtids),
-                    "11111111-1111-1111-1111-111111111111:101-103:105, "
-                    "11111111-1111-1111-1111-111111111111:alpha:111-113:115, "
-                    "11111111-1111-1111-1111-111111111111:beta:121-123:125, "
-                    "22222222-2222-2222-2222-222222222222:201-203:205, "
-                    "22222222-2222-2222-2222-222222222222:alpha:211-213:215, "
-                    "22222222-2222-2222-2222-222222222222:beta:221-223:225");
+                    "11111111-1111-1111-1111-111111111111:101-103:105:alpha:"
+                    "111-113:115:beta:121-123:125, "
+                    "22222222-2222-2222-2222-222222222222:201-203:205:alpha:"
+                    "211-213:215:beta:221-223:225");
 }

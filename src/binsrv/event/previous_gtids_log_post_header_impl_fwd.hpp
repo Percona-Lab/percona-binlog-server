@@ -13,17 +13,16 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef BINSRV_GTIDS_GTID_SET_FWD_HPP
-#define BINSRV_GTIDS_GTID_SET_FWD_HPP
+#ifndef BINSRV_EVENT_PREVIOUS_GTIDS_LOG_POST_HEADER_IMPL_FWD_HPP
+#define BINSRV_EVENT_PREVIOUS_GTIDS_LOG_POST_HEADER_IMPL_FWD_HPP
 
-#include <iosfwd>
+#include "binsrv/event/code_type.hpp"
+#include "binsrv/event/generic_post_header_fwd.hpp"
 
-namespace binsrv::gtids {
+namespace binsrv::event {
 
-class gtid_set;
+template <> class generic_post_header_impl<code_type::previous_gtids_log>;
 
-std::ostream &operator<<(std::ostream &output, const gtid_set &obj);
+} // namespace binsrv::event
 
-} // namespace binsrv::gtids
-
-#endif // BINSRV_GTIDS_GTID_SET_FWD_HPP
+#endif // BINSRV_EVENT_PREVIOUS_GTIDS_LOG_POST_HEADER_IMPL_FWD_HPP

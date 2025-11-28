@@ -27,7 +27,7 @@
 
 #include "binsrv/event/protocol_traits.hpp"
 
-#include "util/bounded_string_storage_fwd.hpp"
+#include "util/bounded_string_storage.hpp"
 #include "util/byte_span_fwd.hpp"
 
 namespace binsrv::event {

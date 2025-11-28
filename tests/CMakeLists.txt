@@ -15,6 +15,12 @@
 
 find_package(Boost REQUIRED COMPONENTS unit_test_framework)
 
+set(uuid_source_files
+  ${PROJECT_SOURCE_DIR}/src/binsrv/gtids/uuid_fwd.hpp
+  ${PROJECT_SOURCE_DIR}/src/binsrv/gtids/uuid.hpp
+  ${PROJECT_SOURCE_DIR}/src/binsrv/gtids/uuid.cpp
+)
+
 set(tag_source_files
   ${PROJECT_SOURCE_DIR}/src/binsrv/gtids/tag_fwd.hpp
   ${PROJECT_SOURCE_DIR}/src/binsrv/gtids/tag.hpp
@@ -33,6 +39,18 @@ set(gtid_set_source_files
   ${PROJECT_SOURCE_DIR}/src/binsrv/gtids/gtid_set.cpp
 )
 
+add_executable(uuid_test uuid_test.cpp ${uuid_source_files})
+target_include_directories(uuid_test PRIVATE "${PROJECT_SOURCE_DIR}/src")
+target_link_libraries(uuid_test
+  PRIVATE
+    binlog_server_compiler_flags
+    Boost::unit_test_framework
+)
+set_target_properties(uuid_test PROPERTIES
+  CXX_STANDARD_REQUIRED YES
+  CXX_EXTENSIONS NO
+)
+
 add_executable(tag_test tag_test.cpp ${tag_source_files})
 target_include_directories(tag_test PRIVATE "${PROJECT_SOURCE_DIR}/src")
 target_link_libraries(tag_test
@@ -45,7 +63,7 @@ set_target_properties(tag_test PROPERTIES
   CXX_EXTENSIONS NO
 )
 
-add_executable(gtid_test gtid_test.cpp ${tag_source_files} ${gtid_source_files})
+add_executable(gtid_test gtid_test.cpp ${uuid_source_files} ${tag_source_files} ${gtid_source_files})
 target_include_directories(gtid_test PRIVATE "${PROJECT_SOURCE_DIR}/src")
 target_link_libraries(gtid_test
   PRIVATE
@@ -57,7 +75,7 @@ set_target_properties(gtid_test PROPERTIES
   CXX_EXTENSIONS NO
 )
 
-add_executable(gtid_set_test gtid_set_test.cpp ${tag_source_files} ${gtid_source_files} ${gtid_set_source_files})
+add_executable(gtid_set_test gtid_set_test.cpp ${uuid_source_files} ${tag_source_files} ${gtid_source_files} ${gtid_set_source_files})
 target_include_directories(gtid_set_test PRIVATE "${PROJECT_SOURCE_DIR}/src")
 target_link_libraries(gtid_set_test
   PRIVATE
@@ -69,6 +87,7 @@ set_target_properties(gtid_set_test PROPERTIES
   CXX_EXTENSIONS NO
 )
 
+add_test(NAME uuid_test COMMAND uuid_test)
 add_test(NAME tag_test COMMAND tag_test)
 add_test(NAME gtid_test COMMAND gtid_test)
 add_test(NAME gtid_set_test COMMAND gtid_set_test)

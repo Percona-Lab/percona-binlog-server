@@ -15,7 +15,6 @@
 
 #include "binsrv/event/gtid_tagged_log_body_impl.hpp"
 
-#include <algorithm>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
@@ -27,20 +26,19 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
-#include <tuple>
+
+#include <boost/lexical_cast.hpp>
 
 #include <boost/align/align_up.hpp>
+
 #include <boost/date_time/posix_time/conversion.hpp>
 #include <boost/date_time/posix_time/ptime.hpp>
 #include <boost/date_time/posix_time/time_formatters_limited.hpp>
 
-#include <boost/uuid/uuid.hpp>
-#include <boost/uuid/uuid_io.hpp>
-
 #include "binsrv/event/code_type.hpp"
 #include "binsrv/event/gtid_log_flag_type.hpp"
 
-#include "binsrv/gtids/common_types.hpp"
+#include "binsrv/gtids/uuid.hpp"
 
 #include "util/bounded_string_storage.hpp"
 #include "util/byte_span.hpp"
@@ -154,20 +152,12 @@ generic_body_impl<code_type::gtid_tagged_log>::get_readable_flags() const {
 
 [[nodiscard]] gtids::uuid
 generic_body_impl<code_type::gtid_tagged_log>::get_uuid() const noexcept {
-  gtids::uuid result;
-  const auto &uuid_raw{get_uuid_raw()};
-  static_assert(std::tuple_size_v<decltype(uuid_)> ==
-                boost::uuids::uuid::static_size());
-  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-  std::copy_n(reinterpret_cast<const boost::uuids::uuid::value_type *>(
-                  std::data(uuid_raw)),
-              boost::uuids::uuid::static_size(), std::begin(result));
-  return result;
+  return gtids::uuid{get_uuid_raw()};
 }
 
 [[nodiscard]] std::string
 generic_body_impl<code_type::gtid_tagged_log>::get_readable_uuid() const {
-  return boost::uuids::to_string(get_uuid());
+  return boost::lexical_cast<std::string>(get_uuid());
 }
 
 [[nodiscard]] std::string_view
@@ -298,8 +288,7 @@ void generic_body_impl<code_type::gtid_tagged_log>::process_field_data(
     std::size_t extracted_tag_length{};
     varlen_int_extractor(remainder, extracted_tag_length, "tag length");
     tag_.resize(extracted_tag_length);
-    const std::span<gtids::tag_storage::value_type> tag_subrange{
-        std::data(tag_), extracted_tag_length};
+    const std::span<gtids::tag_storage::value_type> tag_subrange{tag_};
     if (!util::extract_byte_span_from_byte_span_checked(remainder,
                                                         tag_subrange)) {
       util::exception_location().raise<std::invalid_argument>(

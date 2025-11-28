@@ -15,22 +15,19 @@
 
 #include "binsrv/event/gtid_log_post_header.hpp"
 
-#include <algorithm>
 #include <cstdint>
 #include <iterator>
 #include <ostream>
 #include <stdexcept>
 #include <string>
-#include <tuple>
+
+#include <boost/lexical_cast.hpp>
 
 #include <boost/align/align_up.hpp>
 
-#include <boost/uuid/uuid.hpp>
-#include <boost/uuid/uuid_io.hpp>
-
 #include "binsrv/event/gtid_log_flag_type.hpp"
 
-#include "binsrv/gtids/common_types.hpp"
+#include "binsrv/gtids/uuid.hpp"
 
 #include "util/byte_span.hpp"
 #include "util/byte_span_extractors.hpp"
@@ -128,19 +125,11 @@ gtid_log_post_header::get_flags() const noexcept {
 }
 
 [[nodiscard]] gtids::uuid gtid_log_post_header::get_uuid() const noexcept {
-  gtids::uuid result;
-  const auto &uuid_raw{get_uuid_raw()};
-  static_assert(std::tuple_size_v<decltype(uuid_)> ==
-                boost::uuids::uuid::static_size());
-  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-  std::copy_n(reinterpret_cast<const boost::uuids::uuid::value_type *>(
-                  std::data(uuid_raw)),
-              boost::uuids::uuid::static_size(), std::begin(result));
-  return result;
+  return gtids::uuid{get_uuid_raw()};
 }
 
 [[nodiscard]] std::string gtid_log_post_header::get_readable_uuid() const {
-  return boost::uuids::to_string(get_uuid());
+  return boost::lexical_cast<std::string>(get_uuid());
 }
 
 std::ostream &operator<<(std::ostream &output,

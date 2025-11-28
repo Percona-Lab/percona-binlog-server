@@ -13,17 +13,17 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef BINSRV_GTIDS_GTID_SET_FWD_HPP
-#define BINSRV_GTIDS_GTID_SET_FWD_HPP
+#ifndef BINSRV_GTIDS_UUID_FWD_HPP
+#define BINSRV_GTIDS_UUID_FWD_HPP
 
 #include <iosfwd>
 
 namespace binsrv::gtids {
 
-class gtid_set;
+class uuid;
 
-std::ostream &operator<<(std::ostream &output, const gtid_set &obj);
+std::ostream &operator<<(std::ostream &output, const uuid &obj);
 
 } // namespace binsrv::gtids
 
-#endif // BINSRV_GTIDS_GTID_SET_FWD_HPP
+#endif // BINSRV_GTIDS_UUID_FWD_HPP

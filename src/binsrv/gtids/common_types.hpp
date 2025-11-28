@@ -22,24 +22,28 @@
 #include <limits>
 #include <type_traits>
 
-#include <boost/uuid/uuid.hpp>
+#include <boost/container/container_fwd.hpp>
 
 #include "util/bounded_string_storage_fwd.hpp"
 
 namespace binsrv::gtids {
 
-inline constexpr std::size_t uuid_length{boost::uuids::uuid::static_size()};
+inline constexpr std::size_t uuid_length{16U};
 using uuid_storage = std::array<std::byte, uuid_length>;
-
-using uuid = boost::uuids::uuid;
 
 inline constexpr std::size_t tag_max_length{32U};
 using tag_storage = util::bounded_string_storage<tag_max_length>;
 
 using gno_t = std::uint64_t;
 inline constexpr gno_t min_gno{1ULL};
+// in MySQL Server code gno_t is a signed type and its max values is defined
+// as INT64_MAX
 inline constexpr gno_t max_gno{
     std::numeric_limits<std::make_signed_t<gno_t>>::max()};
+
+inline constexpr std::size_t expected_max_gtid_set_length{96U};
+using gtid_set_storage =
+    boost::container::small_vector<std::byte, expected_max_gtid_set_length>;
 
 } // namespace binsrv::gtids
 
