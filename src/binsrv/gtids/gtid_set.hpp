@@ -25,6 +25,9 @@
 #include "binsrv/gtids/common_types.hpp"
 #include "binsrv/gtids/gtid_fwd.hpp"
 #include "binsrv/gtids/tag_fwd.hpp"
+#include "binsrv/gtids/uuid_fwd.hpp"
+
+#include "util/byte_span_fwd.hpp"
 
 namespace binsrv::gtids {
 
@@ -35,9 +38,12 @@ public:
 
   gtid_set();
 
-  // deliberately implicit
+  // deliberately implicit, delegating to default constructor here
+  // in order to deal with incomplete tag type
   // NOLINTNEXTLINE(hicpp-explicit-conversions)
-  gtid_set(const gtid &value) { *this += value; }
+  gtid_set(const gtid &value) : gtid_set() { *this += value; }
+
+  explicit gtid_set(util::const_byte_span portion);
 
   gtid_set(const gtid_set &other);
   gtid_set(gtid_set &&other) noexcept;
@@ -50,10 +56,24 @@ public:
 
   [[nodiscard]] bool contains(const gtid &value) const noexcept;
 
-  gtid_set &operator+=(const gtid &value);
-  gtid_set &operator+=(const gtid_set &values);
+  void add(const uuid &uuid_component, const tag &tag_component,
+           gno_t gno_component);
+  void add(const gtid &value);
+  void add(const gtid_set &values);
 
-  void clear() noexcept { data_.clear(); }
+  void add_interval(const uuid &uuid_component, const tag &tag_component,
+                    gno_t gno_lower_component, gno_t gno_upper_component);
+
+  gtid_set &operator+=(const gtid &value) {
+    add(value);
+    return *this;
+  }
+  gtid_set &operator+=(const gtid_set &values) {
+    add(values);
+    return *this;
+  }
+
+  void clear() noexcept;
 
   friend bool operator==(const gtid_set &first,
                          const gtid_set &second) noexcept;
@@ -65,7 +85,10 @@ private:
   using gnos_by_tag_container = std::map<tag, gno_container>;
   using tagged_gnos_by_uid_container = std::map<uuid, gnos_by_tag_container>;
 
-  tagged_gnos_by_uid_container data_{};
+  tagged_gnos_by_uid_container data_;
+
+  void process_intervals(util::const_byte_span &remainder,
+                         const uuid &current_uuid, const tag &current_tag);
 };
 
 inline gtid_set operator+(const gtid_set &first, const gtid_set &second) {

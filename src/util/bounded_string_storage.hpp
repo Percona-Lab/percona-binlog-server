@@ -20,6 +20,8 @@
 
 #include <string_view>
 
+#include <boost/container/static_vector.hpp>
+
 #include "util/byte_span.hpp"
 
 namespace util {

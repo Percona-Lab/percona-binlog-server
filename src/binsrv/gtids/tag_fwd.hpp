@@ -16,7 +16,6 @@
 #ifndef BINSRV_GTIDS_TAG_FWD_HPP
 #define BINSRV_GTIDS_TAG_FWD_HPP
 
-#include <cstddef>
 #include <iosfwd>
 
 namespace binsrv::gtids {

@@ -159,6 +159,13 @@ set(source_files
   src/binsrv/event/gtid_tagged_log_post_header_impl_fwd.hpp
   src/binsrv/event/gtid_tagged_log_post_header_impl.hpp
 
+  src/binsrv/event/previous_gtids_log_body_impl_fwd.hpp
+  src/binsrv/event/previous_gtids_log_body_impl.hpp
+  src/binsrv/event/previous_gtids_log_body_impl.cpp
+
+  src/binsrv/event/previous_gtids_log_post_header_impl_fwd.hpp
+  src/binsrv/event/previous_gtids_log_post_header_impl.hpp
+
   src/binsrv/event/protocol_traits_fwd.hpp
   src/binsrv/event/protocol_traits.hpp
   src/binsrv/event/protocol_traits.cpp
@@ -191,15 +198,22 @@ set(source_files
 
   # gtid data structure files
   src/binsrv/gtids/common_types.hpp
+
   src/binsrv/gtids/gtid_fwd.hpp
   src/binsrv/gtids/gtid.hpp
   src/binsrv/gtids/gtid.cpp
+
   src/binsrv/gtids/gtid_set_fwd.hpp
   src/binsrv/gtids/gtid_set.hpp
   src/binsrv/gtids/gtid_set.cpp
+
   src/binsrv/gtids/tag_fwd.hpp
   src/binsrv/gtids/tag.hpp
   src/binsrv/gtids/tag.cpp
+
+  src/binsrv/gtids/uuid_fwd.hpp
+  src/binsrv/gtids/uuid.hpp
+  src/binsrv/gtids/uuid.cpp
 
   # binlog files
   src/binsrv/basic_logger_fwd.hpp

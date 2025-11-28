@@ -22,6 +22,7 @@
 
 #include "binsrv/gtids/common_types.hpp"
 
+#include "util/bounded_string_storage.hpp"
 #include "util/byte_span.hpp"
 
 namespace binsrv::gtids {

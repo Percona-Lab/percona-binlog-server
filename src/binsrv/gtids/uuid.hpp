@@ -13,17 +13,39 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef BINSRV_GTIDS_GTID_SET_FWD_HPP
-#define BINSRV_GTIDS_GTID_SET_FWD_HPP
+#ifndef BINSRV_GTIDS_UUID_HPP
+#define BINSRV_GTIDS_UUID_HPP
 
-#include <iosfwd>
+#include "binsrv/gtids/uuid_fwd.hpp" // IWYU pragma: export
+
+#include <string>
+#include <string_view>
+
+#include <boost/uuid/uuid.hpp>
+
+#include "binsrv/gtids/common_types.hpp"
 
 namespace binsrv::gtids {
 
-class gtid_set;
+class uuid {
+public:
+  uuid() noexcept = default;
 
-std::ostream &operator<<(std::ostream &output, const gtid_set &obj);
+  explicit uuid(std::string_view value);
+
+  explicit uuid(const uuid_storage &data);
+
+  [[nodiscard]] bool is_empty() const noexcept { return data_.is_nil(); }
+
+  [[nodiscard]] std::string str() const;
+
+  [[nodiscard]] friend auto operator<=>(const uuid &first,
+                                        const uuid &second) noexcept = default;
+
+private:
+  boost::uuids::uuid data_{};
+};
 
 } // namespace binsrv::gtids
 
-#endif // BINSRV_GTIDS_GTID_SET_FWD_HPP
+#endif // BINSRV_GTIDS_UUID_HPP

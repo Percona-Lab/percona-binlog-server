@@ -18,20 +18,22 @@
 #include <ostream>
 #include <stdexcept>
 
-#include <boost/uuid/uuid_io.hpp>
-
 #include "binsrv/gtids/common_types.hpp"
+#include "binsrv/gtids/tag_fwd.hpp"
+#include "binsrv/gtids/uuid.hpp"
 
 #include "util/exception_location_helpers.hpp"
 
 namespace binsrv::gtids {
 
-void gtid::validate_components() {
-  if (uuid_.is_nil()) {
+void gtid::validate_components(const uuid &uuid_component,
+                               const tag & /*tag_component*/,
+                               gno_t gno_component) {
+  if (uuid_component.is_empty()) {
     util::exception_location().raise<std::invalid_argument>(
-        "uuid must not be nil");
+        "uuid must not be empty");
   }
-  if (gno_ < min_gno || gno_ > max_gno) {
+  if (gno_component < min_gno || gno_component > max_gno) {
     util::exception_location().raise<std::invalid_argument>(
         "gno is out of range");
   }

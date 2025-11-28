@@ -20,6 +20,7 @@
 
 #include "binsrv/gtids/common_types.hpp"
 #include "binsrv/gtids/tag.hpp"
+#include "binsrv/gtids/uuid.hpp"
 
 namespace binsrv::gtids {
 
@@ -34,12 +35,12 @@ public:
   gtid(const uuid &uuid_component, const tag &tag_component,
        gno_t gno_component)
       : uuid_{uuid_component}, tag_{tag_component}, gno_{gno_component} {
-    validate_components();
+    validate_components(uuid_, tag_, gno_);
   }
 
   gtid(const uuid &uuid_component, gno_t gno_component)
       : uuid_{uuid_component}, tag_{}, gno_{gno_component} {
-    validate_components();
+    validate_components(uuid_, tag_, gno_);
   }
 
   [[nodiscard]] bool is_empty() const noexcept { return gno_ == 0ULL; }
@@ -54,12 +55,14 @@ public:
   [[nodiscard]] friend bool operator==(const gtid &first,
                                        const gtid &second) noexcept = default;
 
+  static void validate_components(const uuid &uuid_component,
+                                  const tag &tag_component,
+                                  gno_t gno_component);
+
 private:
   uuid uuid_{};
   tag tag_{};
   gno_t gno_{};
-
-  void validate_components();
 };
 
 } // namespace binsrv::gtids

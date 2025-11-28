@@ -18,7 +18,7 @@
 
 #include <cstddef>
 
-#include <boost/container/static_vector.hpp>
+#include <boost/container/container_fwd.hpp>
 
 namespace util {
 

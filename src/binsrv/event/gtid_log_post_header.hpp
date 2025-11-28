@@ -24,6 +24,7 @@
 #include "binsrv/event/gtid_log_flag_type_fwd.hpp"
 
 #include "binsrv/gtids/common_types.hpp"
+#include "binsrv/gtids/uuid.hpp"
 
 #include "util/byte_span_fwd.hpp"
 
