@@ -81,7 +81,8 @@ eval SET @binsrv_config_json = JSON_OBJECT(
   'replication', JSON_OBJECT(
      'server_id', @@server_id + 1,
      'idle_time', $binsrv_idle_time,
-     'verify_checksum', $binsrv_verify_checksum
+     'verify_checksum', $binsrv_verify_checksum,
+     'mode', 'position'
   ),
   'storage', JSON_OBJECT(
      'backend', '$storage_backend',

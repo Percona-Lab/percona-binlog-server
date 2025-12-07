@@ -13,8 +13,8 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef EASYMYSQL_SSL_MODE_TYPE_FWD_HPP
-#define EASYMYSQL_SSL_MODE_TYPE_FWD_HPP
+#ifndef BINSRV_REPLICATION_MODE_TYPE_FWD_HPP
+#define BINSRV_REPLICATION_MODE_TYPE_FWD_HPP
 
 #include <concepts>
 #include <cstdint>
@@ -22,25 +22,26 @@
 
 #include "util/nv_tuple_json_support.hpp"
 
-namespace easymysql {
+namespace binsrv {
 
-// NOLINTNEXTLINE(readability-enum-initial-value,cert-int09-c)
-enum class ssl_mode_type : std::uint8_t;
+enum class replication_mode_type : std::uint8_t;
 
 template <typename Char, typename Traits>
   requires std::same_as<Char, char>
 std::basic_ostream<Char, Traits> &
-operator<<(std::basic_ostream<Char, Traits> &output, ssl_mode_type level);
+operator<<(std::basic_ostream<Char, Traits> &output,
+           replication_mode_type replication_mode);
 
 template <typename Char, typename Traits>
   requires std::same_as<Char, char>
 std::basic_istream<Char, Traits> &
-operator>>(std::basic_istream<Char, Traits> &input, ssl_mode_type &level);
+operator>>(std::basic_istream<Char, Traits> &input,
+           replication_mode_type &replication_mode);
 
-} // namespace easymysql
+} // namespace binsrv
 
 template <>
-struct util::is_string_convertable<easymysql::ssl_mode_type> : std::true_type {
-};
+struct util::is_string_convertable<binsrv::replication_mode_type>
+    : std::true_type {};
 
-#endif // EASYMYSQL_SSL_MODE_TYPE_FWD_HPP
+#endif // BINSRV_REPLICATION_MODE_TYPE_FWD_HPP

@@ -13,35 +13,37 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef BINSRV_MAIN_CONFIG_HPP
-#define BINSRV_MAIN_CONFIG_HPP
+#ifndef BINSRV_STORAGE_METADATA_HPP
+#define BINSRV_STORAGE_METADATA_HPP
 
-#include "binsrv/main_config_fwd.hpp" // IWYU pragma: export
+#include "binsrv/storage_metadata_fwd.hpp" // IWYU pragma: export
 
-#include "binsrv/logger_config.hpp"  // IWYU pragma: export
-#include "binsrv/replication_config.hpp" // IWYU pragma: export
-#include "binsrv/storage_config.hpp" // IWYU pragma: export
+#include <string>
+#include <string_view>
 
-#include "easymysql/connection_config.hpp" // IWYU pragma: export
+#include "binsrv/replication_mode_type_fwd.hpp"
 
 #include "util/nv_tuple.hpp"
 
 namespace binsrv {
 
-class [[nodiscard]] main_config {
+class [[nodiscard]] storage_metadata {
 private:
   using impl_type = util::nv_tuple<
       // clang-format off
-      util::nv<"logger"     , logger_config>,
-      util::nv<"connection" , easymysql::connection_config>,
-      util::nv<"replication", binsrv::replication_config>,
-      util::nv<"storage"    , storage_config>
+      util::nv<"version", std::uint32_t>,
+      util::nv<"mode", replication_mode_type>
       // clang-format on
       >;
 
 public:
-  explicit main_config(std::string_view file_name);
+  storage_metadata();
 
+  explicit storage_metadata(std::string_view data);
+
+  [[nodiscard]] std::string str() const;
+
+  [[nodiscard]] auto &root() noexcept { return impl_; }
   [[nodiscard]] const auto &root() const noexcept { return impl_; }
 
 private:
@@ -52,4 +54,4 @@ private:
 
 } // namespace binsrv
 
-#endif // BINSRV_MAIN_CONFIG_HPP
+#endif // BINSRV_STORAGE_METADATA_HPP

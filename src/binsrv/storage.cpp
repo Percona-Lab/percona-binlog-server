@@ -26,8 +26,10 @@
 #include <utility>
 
 #include "binsrv/basic_storage_backend.hpp"
+#include "binsrv/replication_mode_type_fwd.hpp"
 #include "binsrv/storage_backend_factory.hpp"
 #include "binsrv/storage_config.hpp"
+#include "binsrv/storage_metadata.hpp"
 
 #include "binsrv/event/protocol_traits_fwd.hpp"
 
@@ -36,7 +38,9 @@
 
 namespace binsrv {
 
-storage::storage(const storage_config &config) : backend_{}, binlog_names_{} {
+storage::storage(const storage_config &config,
+                 replication_mode_type replication_mode)
+    : backend_{}, replication_mode_{replication_mode}, binlog_names_{} {
   const auto &checkpoint_size_opt{config.get<"checkpoint_size">()};
   if (checkpoint_size_opt.has_value()) {
     checkpoint_size_bytes_ = checkpoint_size_opt.value().get_value();
@@ -52,9 +56,17 @@ storage::storage(const storage_config &config) : backend_{}, binlog_names_{} {
 
   const auto storage_objects{backend_->list_objects()};
   if (storage_objects.empty()) {
-    // initialized on a new / empty storage - no other actions required
+    // initialized on a new / empty storage - just save metadata and return
+    save_metadata();
     return;
   }
+
+  if (!storage_objects.contains(metadata_name)) {
+    util::exception_location().raise<std::logic_error>(
+        "storage is not empty but does not contain metadata");
+  }
+  load_metadata();
+  validate_metadata(replication_mode);
 
   if (!storage_objects.contains(default_binlog_index_name)) {
     util::exception_location().raise<std::logic_error>(
@@ -194,7 +206,8 @@ void storage::validate_binlog_index(
     const storage_object_name_container &object_names) {
   std::size_t known_entries{0U};
   for (auto const &[object_name, object_size] : object_names) {
-    if (object_name == default_binlog_index_name) {
+    if (object_name == default_binlog_index_name ||
+        object_name == metadata_name) {
       continue;
     }
     if (std::ranges::find(binlog_names_, object_name) ==
@@ -225,6 +238,27 @@ void storage::save_binlog_index() {
   const auto content{oss.str()};
   backend_->put_object(default_binlog_index_name,
                        util::as_const_byte_span(content));
+}
+
+void storage::load_metadata() {
+  const auto metadata_content{backend_->get_object(metadata_name)};
+  const storage_metadata metadata{metadata_content};
+  replication_mode_ = metadata.root().get<"mode">();
+}
+
+void storage::validate_metadata(replication_mode_type replication_mode) {
+  if (replication_mode != replication_mode_) {
+    util::exception_location().raise<std::logic_error>(
+        "replication mode provided to initialize storage differs from the one "
+        "stored in metadata");
+  }
+}
+
+void storage::save_metadata() {
+  storage_metadata metadata{};
+  metadata.root().get<"mode">() = replication_mode_;
+  const auto content{metadata.str()};
+  backend_->put_object(metadata_name, util::as_const_byte_span(content));
 }
 
 } // namespace binsrv

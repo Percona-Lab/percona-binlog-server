@@ -21,6 +21,8 @@
 #include <optional>
 #include <ostream>
 
+#include "util/nv_tuple_json_support.hpp"
+
 namespace binsrv {
 
 class size_unit;
@@ -38,5 +40,8 @@ std::basic_istream<Char, Traits> &
 operator>>(std::basic_istream<Char, Traits> &input, size_unit &unit);
 
 } // namespace binsrv
+
+template <>
+struct util::is_string_convertable<binsrv::size_unit> : std::true_type {};
 
 #endif // BINSRV_SIZE_UNIT_FWD_HPP

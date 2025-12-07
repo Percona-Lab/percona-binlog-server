@@ -13,13 +13,21 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef EASYMYSQL_REPLICATION_CONFIG_FWD_HPP
-#define EASYMYSQL_REPLICATION_CONFIG_FWD_HPP
+#ifndef UTIL_NV_TUPLE_JSON_SUPPORT_HPP
+#define UTIL_NV_TUPLE_JSON_SUPPORT_HPP
 
-namespace easymysql {
+#include <type_traits>
 
-struct replication_config;
+namespace util {
 
-} // namespace easymysql
+template <typename T> struct is_string_convertable : std::false_type {};
 
-#endif // EASYMYSQL_REPLICATION_CONFIG_FWD_HPP
+template <typename T>
+inline constexpr bool is_string_convertable_v = is_string_convertable<T>::value;
+
+template <typename T>
+concept string_convertable = is_string_convertable_v<T>;
+
+} // namespace util
+
+#endif // UTIL_NV_TUPLE_JSON_SUPPORT_HPP

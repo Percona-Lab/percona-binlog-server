@@ -20,6 +20,8 @@
 #include <cstdint>
 #include <iosfwd>
 
+#include "util/nv_tuple_json_support.hpp"
+
 namespace binsrv {
 
 enum class storage_backend_type : std::uint8_t;
@@ -37,5 +39,9 @@ operator>>(std::basic_istream<Char, Traits> &input,
            storage_backend_type &storage_backend);
 
 } // namespace binsrv
+
+template <>
+struct util::is_string_convertable<binsrv::storage_backend_type>
+    : std::true_type {};
 
 #endif // BINSRV_STORAGE_BACKEND_TYPE_FWD_HPP

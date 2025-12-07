@@ -20,6 +20,8 @@
 
 #include <cstdint>
 
+#include "binsrv/replication_mode_type_fwd.hpp"
+
 #include "binsrv/event/common_header_fwd.hpp"
 #include "binsrv/event/event_fwd.hpp"
 #include "binsrv/event/protocol_traits.hpp"
@@ -30,7 +32,8 @@ class [[nodiscard]] reader_context {
   friend class event;
 
 public:
-  reader_context(std::uint32_t encoded_server_version, bool verify_checksum);
+  reader_context(std::uint32_t encoded_server_version, bool verify_checksum,
+                 replication_mode_type replication_mode);
 
   [[nodiscard]] std::uint32_t
   get_current_encoded_server_version() const noexcept {
@@ -57,6 +60,7 @@ private:
   state_type state_{state_type::initial};
   std::uint32_t encoded_server_version_;
   bool verify_checksum_;
+  replication_mode_type replication_mode_;
   post_header_length_container post_header_lengths_{};
   std::uint32_t position_{0U};
 
