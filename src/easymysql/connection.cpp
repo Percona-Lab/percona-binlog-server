@@ -404,8 +404,13 @@ bool connection::ping() {
 
 void connection::switch_to_replication(
     std::uint32_t server_id, std::string_view file_name, std::uint64_t position,
-    bool verify_checksum, connection_replication_mode_type blocking_mode) {
+    bool verify_checksum, bool gtid_mode,
+    connection_replication_mode_type blocking_mode) {
   assert(!is_empty());
+  if (gtid_mode) {
+    util::exception_location().raise<std::logic_error>(
+        "switching to GTID replication is not yet implemented");
+  }
   if (is_in_replication_mode()) {
     util::exception_location().raise<std::logic_error>(
         "connection has already been swithed to replication");

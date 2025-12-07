@@ -72,7 +72,7 @@ if(WITH_ASAN)
   target_link_options(binlog_server_compiler_flags INTERFACE "-fsanitize=address")
 endif()
 
-find_package(Boost 1.88.0 EXACT REQUIRED COMPONENTS url)
+find_package(Boost 1.88.0 EXACT REQUIRED COMPONENTS url json)
 
 find_package(MySQL REQUIRED)
 
@@ -252,6 +252,12 @@ set(source_files
   src/binsrv/operation_mode_type_fwd.hpp
   src/binsrv/operation_mode_type.hpp
 
+  src/binsrv/replication_config_fwd.hpp
+  src/binsrv/replication_config.hpp
+
+  src/binsrv/replication_mode_type_fwd.hpp
+  src/binsrv/replication_mode_type.hpp
+
   src/binsrv/size_unit_fwd.hpp
   src/binsrv/size_unit.hpp
   src/binsrv/size_unit.cpp
@@ -276,6 +282,10 @@ set(source_files
 
   src/binsrv/storage_config_fwd.hpp
   src/binsrv/storage_config.hpp
+
+  src/binsrv/storage_metadata_fwd.hpp
+  src/binsrv/storage_metadata.hpp
+  src/binsrv/storage_metadata.cpp
 
   src/binsrv/time_unit_fwd.hpp
   src/binsrv/time_unit.hpp
@@ -316,7 +326,9 @@ set(source_files
 
   src/util/nv_tuple_fwd.hpp
   src/util/nv_tuple.hpp
+  src/util/nv_tuple_json_support.hpp
   src/util/nv_tuple_from_json.hpp
+  src/util/nv_tuple_to_json.hpp
 
   src/util/redirectable.hpp
 
@@ -343,9 +355,6 @@ set(source_files
   src/easymysql/library.hpp
   src/easymysql/library.cpp
 
-  src/easymysql/replication_config_fwd.hpp
-  src/easymysql/replication_config.hpp
-
   src/easymysql/ssl_config_fwd.hpp
   src/easymysql/ssl_config.hpp
 
@@ -360,7 +369,7 @@ add_executable(binlog_server ${source_files})
 target_link_libraries(binlog_server
   PRIVATE
     binlog_server_compiler_flags
-    Boost::headers Boost::url
+    Boost::headers Boost::json Boost::url
     ZLIB::ZLIB
     MySQL::client
     aws-cpp-sdk-s3-crt

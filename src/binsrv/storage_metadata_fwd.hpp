@@ -13,32 +13,16 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef BINSRV_LOG_SEVERITY_FWD_HPP
-#define BINSRV_LOG_SEVERITY_FWD_HPP
+#ifndef BINSRV_STORAGE_METADATA_FWD_HPP
+#define BINSRV_STORAGE_METADATA_FWD_HPP
 
-#include <concepts>
 #include <cstdint>
-#include <iosfwd>
-
-#include "util/nv_tuple_json_support.hpp"
 
 namespace binsrv {
 
-enum class log_severity : std::uint8_t;
+class storage_metadata;
 
-template <typename Char, typename Traits>
-  requires std::same_as<Char, char>
-std::basic_ostream<Char, Traits> &
-operator<<(std::basic_ostream<Char, Traits> &output, log_severity level);
-
-template <typename Char, typename Traits>
-  requires std::same_as<Char, char>
-std::basic_istream<Char, Traits> &
-operator>>(std::basic_istream<Char, Traits> &input, log_severity &level);
-
+inline constexpr std::uint32_t expected_metadata_version{1U};
 } // namespace binsrv
 
-template <>
-struct util::is_string_convertable<binsrv::log_severity> : std::true_type {};
-
-#endif // BINSRV_LOG_SEVERITY_FWD_HPP
+#endif // BINSRV_STORAGE_METADATA_FWD_HPP

@@ -66,7 +66,7 @@ public:
 
   void switch_to_replication(std::uint32_t server_id,
                              std::string_view file_name, std::uint64_t position,
-                             bool verify_checksum,
+                             bool verify_checksum, bool gtid_mode,
                              connection_replication_mode_type blocking_mode);
 
   // returns false on 'connection closed' / 'timeout'

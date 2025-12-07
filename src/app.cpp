@@ -44,6 +44,7 @@
 #include "binsrv/logger_factory.hpp"
 #include "binsrv/main_config.hpp"
 #include "binsrv/operation_mode_type.hpp"
+#include "binsrv/replication_mode_type.hpp"
 #include "binsrv/size_unit.hpp"
 #include "binsrv/storage.hpp"
 // needed for storage_backend_type's operator <<
@@ -194,7 +195,7 @@ void log_connection_config_info(
 
 void log_replication_config_info(
     binsrv::basic_logger &logger,
-    const easymysql::replication_config &replication_config) {
+    const binsrv::replication_config &replication_config) {
 
   log_config_param<"server_id">(logger, replication_config,
                                 "mysql replication server id");
@@ -202,6 +203,8 @@ void log_replication_config_info(
                                 "mysql replication idle time (seconds)");
   log_config_param<"verify_checksum">(
       logger, replication_config, "mysql replication checksum verification");
+  log_config_param<"mode">(logger, replication_config,
+                           "mysql replication mode");
 }
 
 void log_storage_config_info(binsrv::basic_logger &logger,
@@ -223,6 +226,12 @@ void log_storage_info(binsrv::basic_logger &logger,
                       const binsrv::storage &storage) {
   std::string msg{"created binlog storage with the following backend: "};
   msg += storage.get_backend_description();
+  logger.log(binsrv::log_severity::info, msg);
+
+  msg.clear();
+  msg = "binlog storage initialized in ";
+  msg += boost::lexical_cast<std::string>(storage.get_replication_mode());
+  msg += " mode";
   logger.log(binsrv::log_severity::info, msg);
 
   msg.clear();
@@ -375,7 +384,8 @@ void receive_binlog_events(
     const volatile std::atomic_flag &termination_flag,
     binsrv::basic_logger &logger, const easymysql::library &mysql_lib,
     const easymysql::connection_config &connection_config,
-    std::uint32_t server_id, bool verify_checksum, binsrv::storage &storage) {
+    std::uint32_t server_id, bool verify_checksum,
+    binsrv::replication_mode_type replication_mode, binsrv::storage &storage) {
   easymysql::connection connection{};
   try {
     connection = mysql_lib.create_connection(connection_config);
@@ -406,9 +416,10 @@ void receive_binlog_events(
           : easymysql::connection_replication_mode_type::blocking};
 
   try {
-    connection.switch_to_replication(server_id, current_binlog_name,
-                                     current_binlog_position, verify_checksum,
-                                     blocking_mode);
+    connection.switch_to_replication(
+        server_id, current_binlog_name, current_binlog_position,
+        verify_checksum,
+        replication_mode == binsrv::replication_mode_type::gtid, blocking_mode);
   } catch (const easymysql::core_error &) {
     if (operation_mode == binsrv::operation_mode_type::fetch) {
       throw;
@@ -419,7 +430,8 @@ void receive_binlog_events(
 
   logger.log(binsrv::log_severity::info,
              std::string{"switched to replication (checksum "} +
-                 (verify_checksum ? "enabled" : "disabled") + ")");
+                 (verify_checksum ? "enabled" : "disabled") + ", " +
+                 boost::lexical_cast<std::string>(replication_mode) + "mode)");
 
   log_replication_info(logger, server_id, current_binlog_name,
                        current_binlog_position, blocking_mode);
@@ -431,7 +443,7 @@ void receive_binlog_events(
   util::const_byte_span portion;
 
   binsrv::event::reader_context context{connection.get_server_version(),
-                                        verify_checksum};
+                                        verify_checksum, replication_mode};
 
   // if binlog is still open, there is no sense to close it and re-open
   // instead, we will just instruct this loop to process the
@@ -605,9 +617,6 @@ int main(int argc, char *argv[]) {
     const auto &storage_config = config->root().get<"storage">();
     log_storage_config_info(*logger, storage_config);
 
-    binsrv::storage storage{storage_config};
-    log_storage_info(*logger, storage);
-
     const auto &connection_config = config->root().get<"connection">();
     log_connection_config_info(*logger, connection_config);
 
@@ -617,6 +626,10 @@ int main(int argc, char *argv[]) {
     const auto server_id{replication_config.get<"server_id">()};
     const auto idle_time_seconds{replication_config.get<"idle_time">()};
     const auto verify_checksum{replication_config.get<"verify_checksum">()};
+    const auto replication_mode{replication_config.get<"mode">()};
+
+    binsrv::storage storage{storage_config, replication_mode};
+    log_storage_info(*logger, storage);
 
     const easymysql::library mysql_lib;
     logger->log(binsrv::log_severity::info, "initialized mysql client library");
@@ -625,7 +638,7 @@ int main(int argc, char *argv[]) {
 
     receive_binlog_events(operation_mode, termination_flag, *logger, mysql_lib,
                           connection_config, server_id, verify_checksum,
-                          storage);
+                          replication_mode, storage);
 
     if (operation_mode == binsrv::operation_mode_type::pull) {
       std::size_t iteration_number{1U};
@@ -646,7 +659,7 @@ int main(int argc, char *argv[]) {
 
         receive_binlog_events(operation_mode, termination_flag, *logger,
                               mysql_lib, connection_config, server_id,
-                              verify_checksum, storage);
+                              verify_checksum, replication_mode, storage);
         ++iteration_number;
       }
     }

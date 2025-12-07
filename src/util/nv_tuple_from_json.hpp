@@ -16,13 +16,15 @@
 #ifndef UTIL_NV_TUPLE_FROM_JSON_HPP
 #define UTIL_NV_TUPLE_FROM_JSON_HPP
 
-#include <boost/json/value.hpp>
-#include <boost/json/value_to.hpp>
 #include <boost/lexical_cast.hpp>
 
+#include <boost/json/value.hpp>
+#include <boost/json/value_to.hpp>
+
 #include "util/composite_name.hpp"
-#include "util/mixin_exception_adapter.hpp"
+#include "util/exception_location_helpers.hpp"
 #include "util/nv_tuple.hpp"
+#include "util/nv_tuple_json_support.hpp"
 
 namespace util {
 
@@ -57,12 +59,6 @@ public:
 private:
   string_view_composite_name *label_stack_;
 };
-
-// An exception class that is capable of storing info about the JSON locations
-// where the error occurred (e.g. 'key1.subkey1.subsubkey1').
-// using annotated_json_extract_exception =
-//    mixin_exception_adapter<std::invalid_argument,
-//    string_view_composite_name>;
 
 // A helper function that extracts a single nv value from the specified JSON
 // object and is used by the tag_invoke() overload for nv_tuple<..>.

@@ -24,6 +24,7 @@
 #include <vector>
 
 #include "binsrv/basic_storage_backend_fwd.hpp"
+#include "binsrv/replication_mode_type_fwd.hpp"
 #include "binsrv/storage_config_fwd.hpp"
 
 #include "util/byte_span_fwd.hpp"
@@ -34,9 +35,10 @@ class [[nodiscard]] storage {
 public:
   static constexpr std::string_view default_binlog_index_name{"binlog.index"};
   static constexpr std::string_view default_binlog_index_entry_path{"."};
+  static constexpr std::string_view metadata_name{"metadata.json"};
 
   // passing by value as we are going to move from this unique_ptr
-  explicit storage(const storage_config &config);
+  storage(const storage_config &config, replication_mode_type replication_mode);
 
   storage(const storage &) = delete;
   storage &operator=(const storage &) = delete;
@@ -47,6 +49,10 @@ public:
   ~storage();
 
   [[nodiscard]] std::string get_backend_description() const;
+
+  [[nodiscard]] replication_mode_type get_replication_mode() const noexcept {
+    return replication_mode_;
+  }
 
   [[nodiscard]] bool has_current_binlog_name() const noexcept {
     return !binlog_names_.empty();
@@ -70,6 +76,7 @@ public:
 private:
   basic_storage_backend_ptr backend_;
 
+  replication_mode_type replication_mode_;
   using binlog_name_container = std::vector<std::string>;
   binlog_name_container binlog_names_;
   std::uint64_t position_{0ULL};
@@ -92,6 +99,9 @@ private:
   void load_binlog_index();
   void validate_binlog_index(const storage_object_name_container &object_names);
   void save_binlog_index();
+  void load_metadata();
+  void validate_metadata(replication_mode_type replication_mode);
+  void save_metadata();
 };
 
 } // namespace binsrv

@@ -13,32 +13,29 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef BINSRV_LOG_SEVERITY_FWD_HPP
-#define BINSRV_LOG_SEVERITY_FWD_HPP
+#ifndef BINSRV_REPLICATION_CONFIG_HPP
+#define BINSRV_REPLICATION_CONFIG_HPP
 
-#include <concepts>
+#include "binsrv/replication_config_fwd.hpp" // IWYU pragma: export
+
 #include <cstdint>
-#include <iosfwd>
 
-#include "util/nv_tuple_json_support.hpp"
+#include "binsrv/replication_mode_type_fwd.hpp"
+
+#include "util/nv_tuple.hpp"
 
 namespace binsrv {
 
-enum class log_severity : std::uint8_t;
-
-template <typename Char, typename Traits>
-  requires std::same_as<Char, char>
-std::basic_ostream<Char, Traits> &
-operator<<(std::basic_ostream<Char, Traits> &output, log_severity level);
-
-template <typename Char, typename Traits>
-  requires std::same_as<Char, char>
-std::basic_istream<Char, Traits> &
-operator>>(std::basic_istream<Char, Traits> &input, log_severity &level);
+struct [[nodiscard]] replication_config
+    : util::nv_tuple<
+          // clang-format off
+          util::nv<"server_id", std::uint32_t>,
+          util::nv<"idle_time", std::uint32_t>,
+          util::nv<"verify_checksum", bool>,
+          util::nv<"mode", replication_mode_type>
+          // clang-format on
+          > {};
 
 } // namespace binsrv
 
-template <>
-struct util::is_string_convertable<binsrv::log_severity> : std::true_type {};
-
-#endif // BINSRV_LOG_SEVERITY_FWD_HPP
+#endif // BINSRV_REPLICATION_CONFIG_HPP

@@ -22,6 +22,8 @@
 #include <stdexcept>
 #include <utility>
 
+#include "binsrv/replication_mode_type_fwd.hpp"
+
 #include "binsrv/event/code_type.hpp"
 #include "binsrv/event/common_header_flag_type.hpp"
 #include "binsrv/event/event.hpp"
@@ -33,9 +35,10 @@
 namespace binsrv::event {
 
 reader_context::reader_context(std::uint32_t encoded_server_version,
-                               bool verify_checksum)
+                               bool verify_checksum,
+                               replication_mode_type replication_mode)
     : encoded_server_version_{encoded_server_version},
-      verify_checksum_{verify_checksum},
+      verify_checksum_{verify_checksum}, replication_mode_{replication_mode},
       post_header_lengths_{
           get_hardcoded_post_header_lengths(encoded_server_version_)} {}
 
