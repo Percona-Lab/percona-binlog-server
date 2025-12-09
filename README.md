@@ -316,6 +316,8 @@ In case of `AWS S3`, the URIs must have the following format.
 - `<region>` - the name of the AWS region (e.g. `us-east-1`) where this bucket was created (optional, if omitted, it will be auto-detected),
 - `<path>` - a virtual path (key prefix) inside the bucket under which all the binary log files will be stored.
 
+Note: your `<secret_access_key>` along with alphanumeric characters (`[a-zA-Z0-9]`) may also include `+` and `/` and because it needs to be inserted into the `userinfo` part of the URI, it is necessary to perform URL-encoding of selected special characters: `/` needs to be transformed into `%2F`, `+` can be left as is.
+
 In case of `S3`-compatible service with custom endpoint, the URIs must have the following format.
 `http[s]://[<access_key_id>:<secret_access_key>@]<host>[:<port>]/<bucket_name>/<path>`, where:
 - `<host>` - either a host name or an IP address of an `S3`-compatible server,
