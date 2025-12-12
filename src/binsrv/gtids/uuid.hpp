@@ -25,6 +25,8 @@
 
 #include "binsrv/gtids/common_types.hpp"
 
+#include "util/byte_span_fwd.hpp"
+
 namespace binsrv::gtids {
 
 class uuid {
@@ -38,6 +40,11 @@ public:
   [[nodiscard]] bool is_empty() const noexcept { return data_.is_nil(); }
 
   [[nodiscard]] std::string str() const;
+
+  [[nodiscard]] static std::size_t calculate_encoded_size() noexcept {
+    return uuid_length;
+  }
+  void encode_to(util::byte_span &destination) const;
 
   [[nodiscard]] friend auto operator<=>(const uuid &first,
                                         const uuid &second) noexcept = default;

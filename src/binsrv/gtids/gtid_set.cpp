@@ -26,6 +26,7 @@
 #include <utility>
 
 #include <boost/icl/concept/interval.hpp>
+#include <boost/icl/concept/interval_associator.hpp>
 #include <boost/icl/concept/interval_set.hpp>
 
 #include "binsrv/gtids/common_types.hpp"
@@ -35,6 +36,7 @@
 
 #include "util/byte_span_extractors.hpp"
 #include "util/byte_span_fwd.hpp"
+#include "util/byte_span_inserters.hpp"
 #include "util/exception_location_helpers.hpp"
 
 namespace binsrv::gtids {
@@ -73,7 +75,7 @@ gtid_set::gtid_set(util::const_byte_span portion) {
   // as a <gtid_format>:
   // '0' for untagged GTIDs,
   // '1' for tagged GTIDs.
-  // MySQL developers also decided to duplicate this <gtid_format> also in
+  // MySQL developers also decided to duplicate this <gtid_format> in
   // the very first byte (byte 0).
   // To sum up, the extraction rules are the following:
   // - if the highest byte is equal to '1', extract bytes 1..6 and put them
@@ -90,11 +92,10 @@ gtid_set::gtid_set(util::const_byte_span portion) {
   // tagged and untagget encodings)
   const auto header_parser{[](std::uint64_t value) {
     static constexpr std::size_t format_bit_width{8U};
-    static constexpr std::size_t format_bit_position{
-        std::numeric_limits<decltype(value)>::digits - format_bit_width};
 
-    const auto gtid_format_field{
-        static_cast<std::uint8_t>(value >> format_bit_position)};
+    const auto gtid_format_field{static_cast<std::uint8_t>(
+        value >>
+        (std::numeric_limits<std::uint64_t>::digits - format_bit_width))};
     // if gtid_format_field is anything but 0 or 1
     if ((gtid_format_field >> 1U) != 0U) {
       util::exception_location().raise<std::invalid_argument>(
@@ -148,6 +149,118 @@ gtid_set::gtid_set(util::const_byte_span portion) {
 
     process_intervals(remainder, current_uuid, current_tag);
   }
+
+  if (!remainder.empty()) {
+    util::exception_location().raise<std::invalid_argument>(
+        "extra bytes in the encoded gtid_set");
+  }
+}
+
+[[nodiscard]] bool gtid_set::contains_tags() const noexcept {
+  for (const auto &[current_uuid, current_tagged_gnos] : data_) {
+    for (const auto &[current_tag, current_gnos] : current_tagged_gnos) {
+      if (!current_tag.is_empty()) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+[[nodiscard]] std::size_t gtid_set::calculate_encoded_size() const noexcept {
+  const auto tagged_flag{contains_tags()};
+  // 8 bytes for the header (for both tahgged and untagged versions)
+  std::size_t result{sizeof(std::uint64_t)};
+  for (const auto &[current_uuid, current_tagged_gnos] : data_) {
+    for (const auto &[current_tag, current_gnos] : current_tagged_gnos) {
+      // 16 bytes for UUID
+      result += uuid::calculate_encoded_size();
+      if (tagged_flag) {
+        result += current_tag.calculate_encoded_size();
+      }
+      // 8 bytes for the number of intervals
+      result += sizeof(std::uint64_t);
+      // 16 bytes for each interval
+      result +=
+          boost::icl::interval_count(current_gnos) * 2U * sizeof(std::uint64_t);
+    }
+  }
+  return result;
+}
+
+void gtid_set::encode_to(util::byte_span &destination) const {
+  const auto tagged_flag{contains_tags()};
+
+  util::byte_span remainder{destination};
+  // skipping 8 bytes for the encoded header (number of tsids + tagged flag)
+  remainder = remainder.subspan(sizeof(std::uint64_t));
+
+  // a helper lambda to form encoded GTID set header (supports both
+  // tagged and untagget encodings)
+  const auto header_encoder{[](bool tagged, std::size_t number_of_tsids) {
+    static constexpr std::size_t format_bit_width{8U};
+    if (!tagged) {
+      // ensuring that the value is less then 2^56
+      if (number_of_tsids >=
+          (1ULL << (std::numeric_limits<std::uint64_t>::digits -
+                    format_bit_width))) {
+        util::exception_location().raise<std::invalid_argument>(
+            "the number of TSIDs in the untagged GTID set being encoded is too "
+            "large");
+      }
+      return std::uint64_t{number_of_tsids};
+    }
+
+    // ensuring that the value is less then 2^48
+    if (number_of_tsids >=
+        (1ULL << (std::numeric_limits<std::uint64_t>::digits -
+                  2U * format_bit_width))) {
+      util::exception_location().raise<std::invalid_argument>(
+          "the number of TSIDs in the tagged GTID set being encoded is too "
+          "large");
+    }
+    // shifting 1 to 48 bits
+    std::uint64_t result{1ULL << (std::numeric_limits<std::uint64_t>::digits -
+                                  2U * format_bit_width)};
+    result |= std::uint64_t{number_of_tsids};
+    result <<= format_bit_width;
+    result |= 1ULL;
+    return result;
+  }};
+
+  std::size_t number_of_tsids{0ULL};
+  for (const auto &[current_uuid, current_tagged_gnos] : data_) {
+    for (const auto &[current_tag, current_gnos] : current_tagged_gnos) {
+      // 16 bytes for UUID
+      current_uuid.encode_to(remainder);
+      if (tagged_flag) {
+        // varlen bytes for tag size
+        // 1 byte for each character in the tag
+        current_tag.encode_to(remainder);
+      }
+      // 8 bytes for the number of intervals
+      util::insert_fixed_int_to_byte_span(
+          remainder, std::uint64_t{boost::icl::interval_count(current_gnos)});
+      for (const auto &interval : current_gnos) {
+        // 16 bytes for each interval
+        util::insert_fixed_int_to_byte_span(
+            remainder, std::uint64_t{boost::icl::lower(interval)});
+        // here we need to uncrement upper bound as we have a half-open interval
+        // in the encoded representation and use closed interval in
+        // boost::icl::interval_set
+        util::insert_fixed_int_to_byte_span(
+            remainder, std::uint64_t{boost::icl::upper(interval) + 1ULL});
+      }
+      ++number_of_tsids;
+    }
+  }
+
+  // writing header
+  util::byte_span header{destination};
+  util::insert_fixed_int_to_byte_span(
+      header, header_encoder(tagged_flag, number_of_tsids));
+
+  destination = remainder;
 }
 
 [[nodiscard]] bool gtid_set::contains(const gtid &value) const noexcept {
@@ -256,7 +369,7 @@ void gtid_set::process_intervals(util::const_byte_span &remainder,
     // TODO: validate that interval boundary values are increasing between
     // iterations
 
-    // here we need to decrement upper bound as we have a halp-open interval
+    // here we need to decrement upper bound as we have a half-open interval
     // in the encoded representation and use closed interval in the
     // gtid_set::add_interval() method
     --current_interval_upper;

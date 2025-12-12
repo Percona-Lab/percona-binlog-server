@@ -298,6 +298,8 @@ set(source_files
   src/util/byte_span_fwd.hpp
   src/util/byte_span.hpp
   src/util/byte_span_extractors.hpp
+  src/util/byte_span_inserters.hpp
+  src/util/byte_span_packed_int_constants.hpp
 
   src/util/command_line_helpers_fwd.hpp
   src/util/command_line_helpers.hpp

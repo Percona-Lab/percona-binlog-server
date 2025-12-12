@@ -20,6 +20,9 @@
 
 #include <boost/lexical_cast.hpp>
 
+// needed for binsrv::gtids::gtid_set_storage
+#include <boost/container/small_vector.hpp> // IWYU pragma: keep
+
 #define BOOST_TEST_MODULE GtidSetTests
 // this include is needed as it provides the 'main()' function
 // NOLINTNEXTLINE(misc-include-cleaner)
@@ -29,9 +32,12 @@
 
 #include <boost/test/tools/old/interface.hpp>
 
+#include "binsrv/gtids/common_types.hpp"
 #include "binsrv/gtids/gtid.hpp"
 #include "binsrv/gtids/gtid_set.hpp"
 #include "binsrv/gtids/tag.hpp"
+
+#include "util/byte_span_fwd.hpp"
 
 static constexpr std::string_view first_uuid_sv{
     "11111111-1111-1111-1111-111111111111"};
@@ -218,6 +224,122 @@ BOOST_AUTO_TEST_CASE(GtidSetClear) {
 
   gtids.clear();
   BOOST_CHECK(gtids.is_empty());
+}
+
+BOOST_AUTO_TEST_CASE(GtidSetContainsTags) {
+  const binsrv::gtids::uuid first_uuid{first_uuid_sv};
+
+  const binsrv::gtids::tag first_tag{"alpha"};
+
+  binsrv::gtids::gtid_set gtids{};
+  BOOST_CHECK(!gtids.contains_tags());
+
+  // NOLINTBEGIN(cppcoreguidelines-avoid-magic-numbers,readability-magic-numbers)
+  gtids += binsrv::gtids::gtid{first_uuid, 1ULL};
+  // NOLINTEND(cppcoreguidelines-avoid-magic-numbers,readability-magic-numbers)
+  BOOST_CHECK(!gtids.contains_tags());
+
+  // NOLINTBEGIN(cppcoreguidelines-avoid-magic-numbers,readability-magic-numbers)
+  gtids += binsrv::gtids::gtid{first_uuid, first_tag, 1ULL};
+  // NOLINTEND(cppcoreguidelines-avoid-magic-numbers,readability-magic-numbers)
+  BOOST_CHECK(gtids.contains_tags());
+}
+
+class gtid_set_encoding_fixture {
+protected:
+  static void check_encoding_roundtrip(const binsrv::gtids::gtid_set &gtids) {
+    const auto encoded_size{gtids.calculate_encoded_size()};
+    binsrv::gtids::gtid_set_storage buffer(encoded_size);
+    util::byte_span destination{buffer};
+    BOOST_CHECK_NO_THROW(gtids.encode_to(destination));
+    BOOST_CHECK(destination.empty());
+
+    binsrv::gtids::gtid_set restored;
+    const util::const_byte_span source{buffer};
+    BOOST_CHECK_NO_THROW(restored = binsrv::gtids::gtid_set{source});
+
+    BOOST_CHECK_EQUAL(gtids, restored);
+  }
+};
+
+BOOST_FIXTURE_TEST_CASE(GtidSetEncodingEmpty, gtid_set_encoding_fixture) {
+  const binsrv::gtids::gtid_set gtids{};
+  check_encoding_roundtrip(gtids);
+}
+
+BOOST_FIXTURE_TEST_CASE(GtidSetEncodingUntagged, gtid_set_encoding_fixture) {
+  const binsrv::gtids::uuid first_uuid{first_uuid_sv};
+  const binsrv::gtids::uuid second_uuid{second_uuid_sv};
+
+  binsrv::gtids::gtid_set gtids{};
+  // NOLINTBEGIN(cppcoreguidelines-avoid-magic-numbers,readability-magic-numbers)
+  gtids += binsrv::gtids::gtid{first_uuid, 1ULL};
+  gtids += binsrv::gtids::gtid{first_uuid, 2ULL};
+  gtids += binsrv::gtids::gtid{first_uuid, 3ULL};
+  gtids += binsrv::gtids::gtid{first_uuid, 5ULL};
+
+  gtids += binsrv::gtids::gtid{second_uuid, 12ULL};
+  gtids += binsrv::gtids::gtid{second_uuid, 13ULL};
+  gtids += binsrv::gtids::gtid{second_uuid, 15ULL};
+  // NOLINTEND(cppcoreguidelines-avoid-magic-numbers,readability-magic-numbers)
+
+  BOOST_CHECK(!gtids.contains_tags());
+  check_encoding_roundtrip(gtids);
+}
+
+BOOST_FIXTURE_TEST_CASE(GtidSetEncodingTagged, gtid_set_encoding_fixture) {
+  const binsrv::gtids::uuid first_uuid{first_uuid_sv};
+  const binsrv::gtids::uuid second_uuid{second_uuid_sv};
+
+  const binsrv::gtids::tag first_tag{"alpha"};
+  const binsrv::gtids::tag second_tag{"beta"};
+
+  binsrv::gtids::gtid_set gtids{};
+  // NOLINTBEGIN(cppcoreguidelines-avoid-magic-numbers,readability-magic-numbers)
+  gtids += binsrv::gtids::gtid{first_uuid, first_tag, 1ULL};
+  gtids += binsrv::gtids::gtid{first_uuid, first_tag, 2ULL};
+  gtids += binsrv::gtids::gtid{first_uuid, first_tag, 3ULL};
+  gtids += binsrv::gtids::gtid{first_uuid, first_tag, 5ULL};
+
+  gtids += binsrv::gtids::gtid{second_uuid, second_tag, 12ULL};
+  gtids += binsrv::gtids::gtid{second_uuid, second_tag, 13ULL};
+  gtids += binsrv::gtids::gtid{second_uuid, second_tag, 15ULL};
+  // NOLINTEND(cppcoreguidelines-avoid-magic-numbers,readability-magic-numbers)
+
+  BOOST_CHECK(gtids.contains_tags());
+  check_encoding_roundtrip(gtids);
+}
+
+BOOST_FIXTURE_TEST_CASE(GtidSetEncodingMixed, gtid_set_encoding_fixture) {
+  const binsrv::gtids::uuid first_uuid{first_uuid_sv};
+  const binsrv::gtids::uuid second_uuid{second_uuid_sv};
+
+  const binsrv::gtids::tag first_tag{"alpha"};
+  const binsrv::gtids::tag second_tag{"beta"};
+
+  binsrv::gtids::gtid_set gtids{};
+  // NOLINTBEGIN(cppcoreguidelines-avoid-magic-numbers,readability-magic-numbers)
+  gtids += binsrv::gtids::gtid{first_uuid, 101ULL};
+  gtids += binsrv::gtids::gtid{first_uuid, 102ULL};
+  gtids += binsrv::gtids::gtid{first_uuid, 103ULL};
+  gtids += binsrv::gtids::gtid{first_uuid, 105ULL};
+
+  gtids += binsrv::gtids::gtid{first_uuid, first_tag, 1ULL};
+  gtids += binsrv::gtids::gtid{first_uuid, first_tag, 2ULL};
+  gtids += binsrv::gtids::gtid{first_uuid, first_tag, 3ULL};
+  gtids += binsrv::gtids::gtid{first_uuid, first_tag, 5ULL};
+
+  gtids += binsrv::gtids::gtid{second_uuid, 112ULL};
+  gtids += binsrv::gtids::gtid{second_uuid, 113ULL};
+  gtids += binsrv::gtids::gtid{second_uuid, 115ULL};
+
+  gtids += binsrv::gtids::gtid{second_uuid, second_tag, 12ULL};
+  gtids += binsrv::gtids::gtid{second_uuid, second_tag, 13ULL};
+  gtids += binsrv::gtids::gtid{second_uuid, second_tag, 15ULL};
+  // NOLINTEND(cppcoreguidelines-avoid-magic-numbers,readability-magic-numbers)
+
+  BOOST_CHECK(gtids.contains_tags());
+  check_encoding_roundtrip(gtids);
 }
 
 BOOST_AUTO_TEST_CASE(GtidSetOstreamOperatorUntagged) {

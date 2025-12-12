@@ -134,7 +134,7 @@ generic_body_impl<code_type::gtid_tagged_log>::generic_body_impl(
     last_seen_field_id = field_id;
   }
 
-  if (std::size(remainder) != 0U) {
+  if (!remainder.empty()) {
     util::exception_location().raise<std::invalid_argument>(
         "extra bytes in the gtid_log event body");
   }

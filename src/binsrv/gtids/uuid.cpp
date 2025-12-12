@@ -16,6 +16,7 @@
 #include "binsrv/gtids/uuid.hpp"
 
 #include <algorithm>
+#include <cstddef>
 #include <exception>
 #include <iterator>
 #include <ostream>
@@ -29,6 +30,8 @@
 
 #include "binsrv/gtids/common_types.hpp"
 
+#include "util/byte_span_fwd.hpp"
+#include "util/byte_span_inserters.hpp"
 #include "util/exception_location_helpers.hpp"
 
 namespace binsrv::gtids {
@@ -54,6 +57,17 @@ uuid::uuid(const uuid_storage &data) {
 
 [[nodiscard]] std::string uuid::str() const {
   return boost::uuids::to_string(data_);
+}
+
+void uuid::encode_to(util::byte_span &destination) const {
+  const util::const_byte_span data_span{
+      // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+      reinterpret_cast<const std::byte *>(std::begin(data_)),
+      boost::uuids::uuid::static_size()};
+  if (!util::insert_byte_span_to_byte_span_checked(destination, data_span)) {
+    util::exception_location().raise<std::invalid_argument>(
+        "cannot encode uuid");
+  }
 }
 
 std::ostream &operator<<(std::ostream &output, const uuid &obj) {

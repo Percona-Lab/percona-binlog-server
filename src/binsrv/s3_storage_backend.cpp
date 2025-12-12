@@ -408,7 +408,7 @@ s3_storage_backend::aws_context::list_objects(
         util::exception_location().raise<std::logic_error>(
             "encountered an object with unexpected prefix");
       }
-      key.remove_prefix(prefix_str.size());
+      key.remove_prefix(std::size(prefix_str));
     }
     if (!key.empty()) {
       result.emplace(key, model_object.GetSize());
