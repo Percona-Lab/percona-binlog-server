@@ -31,7 +31,7 @@ semantic_version::semantic_version(std::string_view version_string)
     : major_{}, minor_{}, patch_{} {
   const auto dash_pos{version_string.find(extra_delimiter)};
   if (dash_pos != std::string::npos) {
-    version_string.remove_suffix(version_string.size() - dash_pos);
+    version_string.remove_suffix(std::size(version_string) - dash_pos);
   }
   auto split_result{
       std::ranges::views::split(version_string, component_delimiter)};
@@ -41,7 +41,7 @@ semantic_version::semantic_version(std::string_view version_string)
   const auto component_extractor{
       [version_en](auto &cuttent_it, const std::string &name) -> std::uint8_t {
         if (cuttent_it == version_en) {
-          util::exception_location().raise<std::invalid_argument>(
+          exception_location().raise<std::invalid_argument>(
               "server_version does not have the \"" + name + "\" component");
         }
         std::uint8_t result{};
@@ -50,7 +50,7 @@ semantic_version::semantic_version(std::string_view version_string)
         const auto [conversion_ptr, conversion_ec]{
             std::from_chars(component_it, component_en, result)};
         if (conversion_ec != std::errc{} || conversion_ptr != component_en) {
-          util::exception_location().raise<std::invalid_argument>(
+          exception_location().raise<std::invalid_argument>(
               "server_version \"" + name +
               "\" component is not a numeric value");
         }
@@ -61,7 +61,7 @@ semantic_version::semantic_version(std::string_view version_string)
   minor_ = component_extractor(version_it, "minor");
   patch_ = component_extractor(version_it, "patch");
   if (version_it != version_en) {
-    util::exception_location().raise<std::invalid_argument>(
+    exception_location().raise<std::invalid_argument>(
         "server_version has more than 3 components");
   }
 }

@@ -68,7 +68,7 @@ void nv_tuple_to_json(boost::json::value &json_value,
     const detail::insertion_context insertion_ctx{};
     json_value = boost::json::value_from(obj, insertion_ctx);
   } catch (const std::exception &ex) {
-    util::exception_location().raise<std::invalid_argument>(
+    exception_location().raise<std::invalid_argument>(
         "unable to insert into JSON object");
   }
 }

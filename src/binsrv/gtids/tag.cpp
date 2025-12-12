@@ -24,6 +24,8 @@
 
 #include "binsrv/gtids/common_types.hpp"
 
+#include "util/byte_span_fwd.hpp"
+#include "util/byte_span_inserters.hpp"
 #include "util/exception_location_helpers.hpp"
 
 namespace binsrv::gtids {
@@ -61,6 +63,27 @@ tag::tag(std::string_view name) {
     }
     *data_it = static_cast<std::byte>(current_ch);
   }
+}
+
+[[nodiscard]] std::size_t tag::calculate_encoded_size() const noexcept {
+  // varlen bytes for tag size
+  // 1 byte for each character in the tag
+  const auto tag_size{get_size()};
+  return util::calculate_varlen_int_size(tag_size) + tag_size;
+}
+
+void tag::encode_to(util::byte_span &destination) const {
+  util::byte_span remainder{destination};
+  if (!util::insert_varlen_int_to_byte_span_checked(remainder, get_size())) {
+    util::exception_location().raise<std::invalid_argument>(
+        "cannot encode tag length");
+  }
+  if (!util::insert_byte_span_to_byte_span_checked(
+          remainder, util::const_byte_span{data_})) {
+    util::exception_location().raise<std::invalid_argument>(
+        "cannot encode tag data");
+  }
+  destination = remainder;
 }
 
 std::ostream &operator<<(std::ostream &output, const tag &obj) {

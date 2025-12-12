@@ -53,6 +53,10 @@ public:
   ~gtid_set();
 
   [[nodiscard]] bool is_empty() const noexcept { return data_.empty(); }
+  [[nodiscard]] bool contains_tags() const noexcept;
+
+  [[nodiscard]] std::size_t calculate_encoded_size() const noexcept;
+  void encode_to(util::byte_span &destination) const;
 
   [[nodiscard]] bool contains(const gtid &value) const noexcept;
 

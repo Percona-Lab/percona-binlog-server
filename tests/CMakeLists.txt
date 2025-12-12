@@ -15,6 +15,14 @@
 
 find_package(Boost REQUIRED COMPONENTS unit_test_framework)
 
+set(byte_span_encoding_source_files
+  ${PROJECT_SOURCE_DIR}/src/util/byte_span_fwd.hpp
+  ${PROJECT_SOURCE_DIR}/src/util/byte_span.hpp
+  ${PROJECT_SOURCE_DIR}/src/util/byte_span_extractors.hpp
+  ${PROJECT_SOURCE_DIR}/src/util/byte_span_inserters.hpp
+  ${PROJECT_SOURCE_DIR}/src/util/byte_span_packed_int_constants.hpp
+)
+
 set(uuid_source_files
   ${PROJECT_SOURCE_DIR}/src/binsrv/gtids/uuid_fwd.hpp
   ${PROJECT_SOURCE_DIR}/src/binsrv/gtids/uuid.hpp
@@ -38,6 +46,19 @@ set(gtid_set_source_files
   ${PROJECT_SOURCE_DIR}/src/binsrv/gtids/gtid_set.hpp
   ${PROJECT_SOURCE_DIR}/src/binsrv/gtids/gtid_set.cpp
 )
+
+add_executable(byte_span_encoding_test byte_span_encoding_test.cpp ${byte_span_encoding_source_files})
+target_include_directories(byte_span_encoding_test PRIVATE "${PROJECT_SOURCE_DIR}/src")
+target_link_libraries(byte_span_encoding_test
+  PRIVATE
+    binlog_server_compiler_flags
+    Boost::unit_test_framework
+)
+set_target_properties(byte_span_encoding_test PROPERTIES
+  CXX_STANDARD_REQUIRED YES
+  CXX_EXTENSIONS NO
+)
+
 
 add_executable(uuid_test uuid_test.cpp ${uuid_source_files})
 target_include_directories(uuid_test PRIVATE "${PROJECT_SOURCE_DIR}/src")
@@ -87,6 +108,7 @@ set_target_properties(gtid_set_test PROPERTIES
   CXX_EXTENSIONS NO
 )
 
+add_test(NAME byte_span_encoding_test COMMAND byte_span_encoding_test)
 add_test(NAME uuid_test COMMAND uuid_test)
 add_test(NAME tag_test COMMAND tag_test)
 add_test(NAME gtid_test COMMAND gtid_test)

@@ -127,7 +127,7 @@ void nv_tuple_from_json(const boost::json::value &json_value,
     obj =
         boost::json::value_to<nv_tuple<NVPack...>>(json_value, extraction_ctx);
   } catch (const std::exception &ex) {
-    util::exception_location().raise<std::invalid_argument>(
+    exception_location().raise<std::invalid_argument>(
         "unable to extract \"" + extraction_ctx.to_string() + "\"");
   }
 }

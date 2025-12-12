@@ -97,7 +97,7 @@ gtid_log_body::gtid_log_body(util::const_byte_span portion) {
       util::extract_fixed_int_from_byte_span(remainder, commit_group_ticket_);
     }
   }
-  if (std::size(remainder) != 0U) {
+  if (!remainder.empty()) {
     util::exception_location().raise<std::invalid_argument>(
         "extra bytes in the gtid_log event body");
   }

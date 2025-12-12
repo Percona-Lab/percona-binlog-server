@@ -29,7 +29,7 @@ namespace util {
 template <std::size_t N>
 [[nodiscard]] std::string_view
 to_string_view(const bounded_string_storage<N> &storage) noexcept {
-  return util::as_string_view(storage);
+  return as_string_view(storage);
 }
 
 template <std::size_t N>

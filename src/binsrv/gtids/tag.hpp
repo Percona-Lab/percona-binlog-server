@@ -41,6 +41,13 @@ public:
 
   [[nodiscard]] bool is_empty() const noexcept { return data_.empty(); }
 
+  [[nodiscard]] std::size_t get_size() const noexcept {
+    return std::size(data_);
+  }
+
+  [[nodiscard]] std::size_t calculate_encoded_size() const noexcept;
+  void encode_to(util::byte_span &destination) const;
+
 private:
   tag_storage data_{};
 };

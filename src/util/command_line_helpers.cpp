@@ -20,7 +20,7 @@
 
 namespace util {
 
-std::string extract_executable_name(util::command_line_arg_view cmd_args) {
+std::string extract_executable_name(command_line_arg_view cmd_args) {
   std::string res;
   if (!cmd_args.empty()) {
     const std::filesystem::path executable_path{cmd_args[0U]};
@@ -34,7 +34,7 @@ std::string extract_executable_name(util::command_line_arg_view cmd_args) {
 }
 
 std::string
-get_readable_command_line_arguments(util::command_line_arg_view cmd_args) {
+get_readable_command_line_arguments(command_line_arg_view cmd_args) {
   std::string res;
   if (cmd_args.empty()) {
     return res;
