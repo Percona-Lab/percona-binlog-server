@@ -51,10 +51,12 @@
 #include "binsrv/storage_backend_type.hpp" // IWYU pragma: keep
 #include "binsrv/time_unit.hpp"
 
+#include "binsrv/gtids/common_types.hpp"
+#include "binsrv/gtids/gtid_set.hpp"
+
 #include "binsrv/event/code_type.hpp"
 #include "binsrv/event/common_header_flag_type.hpp"
 #include "binsrv/event/event.hpp"
-#include "binsrv/event/protocol_traits_fwd.hpp"
 #include "binsrv/event/reader_context.hpp"
 
 #include "easymysql/connection.hpp"
@@ -276,19 +278,42 @@ void log_connection_info(binsrv::basic_logger &logger,
 
 void log_replication_info(
     binsrv::basic_logger &logger, std::uint32_t server_id,
-    std::string_view current_binlog_name, std::uint64_t current_binlog_position,
+    const binsrv::storage &storage, bool verify_checksum,
     easymysql::connection_replication_mode_type blocking_mode) {
-  std::string msg{};
+  const auto replication_mode{storage.get_replication_mode()};
+
+  std::string msg{"switched to replication (checksum "};
+  msg += (verify_checksum ? "enabled" : "disabled");
+  msg += ", ";
+  msg += boost::lexical_cast<std::string>(replication_mode);
+  msg += +" mode)";
+  logger.log(binsrv::log_severity::info, msg);
+
   msg = "replication info (server id ";
   msg += std::to_string(server_id);
-  msg += ", ";
-  msg += (current_binlog_name.empty() ? "<empty>" : current_binlog_name);
-  msg += ":";
-  msg += std::to_string(current_binlog_position);
   msg += ", ";
   msg += (blocking_mode == easymysql::connection_replication_mode_type::blocking
               ? "blocking"
               : "non-blocking");
+  msg += ", starting from ";
+  if (replication_mode == binsrv::replication_mode_type::position) {
+    if (storage.has_current_binlog_name()) {
+      msg += "the very beginning";
+    } else {
+      msg += storage.get_current_binlog_name();
+      msg += ":";
+      msg += std::to_string(storage.get_current_position());
+    }
+  } else {
+    const auto &gtids{storage.get_gtids()};
+    if (gtids.is_empty()) {
+      msg += "an empty";
+    } else {
+      msg += "the ";
+      msg += boost::lexical_cast<std::string>(gtids);
+    }
+    msg += " GTID set";
+  }
   msg += ")";
   logger.log(binsrv::log_severity::info, msg);
 }
@@ -384,8 +409,7 @@ void receive_binlog_events(
     const volatile std::atomic_flag &termination_flag,
     binsrv::basic_logger &logger, const easymysql::library &mysql_lib,
     const easymysql::connection_config &connection_config,
-    std::uint32_t server_id, bool verify_checksum,
-    binsrv::replication_mode_type replication_mode, binsrv::storage &storage) {
+    std::uint32_t server_id, bool verify_checksum, binsrv::storage &storage) {
   easymysql::connection connection{};
   try {
     connection = mysql_lib.create_connection(connection_config);
@@ -403,23 +427,34 @@ void receive_binlog_events(
 
   log_connection_info(logger, connection);
 
-  const auto current_binlog_name{storage.get_current_binlog_name()};
-  // if storage binlog name is detected to be empty (empty data directory), we
-  // start streaming from the position 'magic_binlog_offset' (4)
-  const auto current_binlog_position{current_binlog_name.empty()
-                                         ? binsrv::event::magic_binlog_offset
-                                         : storage.get_current_position()};
-
+  const auto replication_mode{storage.get_replication_mode()};
   const auto blocking_mode{
       operation_mode == binsrv::operation_mode_type::fetch
           ? easymysql::connection_replication_mode_type::non_blocking
           : easymysql::connection_replication_mode_type::blocking};
 
   try {
-    connection.switch_to_replication(
-        server_id, current_binlog_name, current_binlog_position,
-        verify_checksum,
-        replication_mode == binsrv::replication_mode_type::gtid, blocking_mode);
+    if (replication_mode == binsrv::replication_mode_type::position) {
+      if (storage.has_current_binlog_name()) {
+        connection.switch_to_position_replication(
+            server_id, storage.get_current_binlog_name(),
+            storage.get_current_position(), verify_checksum, blocking_mode);
+      } else {
+        connection.switch_to_position_replication(server_id, verify_checksum,
+                                                  blocking_mode);
+      }
+    } else {
+      const binsrv::gtids::gtid_set empty_gtids{};
+      const auto encoded_size{empty_gtids.calculate_encoded_size()};
+
+      binsrv::gtids::gtid_set_storage buffer(encoded_size);
+      util::byte_span destination{buffer};
+      empty_gtids.encode_to(destination);
+
+      connection.switch_to_gtid_replication(server_id,
+                                            util::const_byte_span{buffer},
+                                            verify_checksum, blocking_mode);
+    }
   } catch (const easymysql::core_error &) {
     if (operation_mode == binsrv::operation_mode_type::fetch) {
       throw;
@@ -428,13 +463,8 @@ void receive_binlog_events(
     return;
   }
 
-  logger.log(binsrv::log_severity::info,
-             std::string{"switched to replication (checksum "} +
-                 (verify_checksum ? "enabled" : "disabled") + ", " +
-                 boost::lexical_cast<std::string>(replication_mode) + "mode)");
-
-  log_replication_info(logger, server_id, current_binlog_name,
-                       current_binlog_position, blocking_mode);
+  log_replication_info(logger, server_id, storage, verify_checksum,
+                       blocking_mode);
 
   // Network streams are requested with COM_BINLOG_DUMP and
   // each Binlog Event response is prepended with 00 OK-byte.
@@ -638,7 +668,7 @@ int main(int argc, char *argv[]) {
 
     receive_binlog_events(operation_mode, termination_flag, *logger, mysql_lib,
                           connection_config, server_id, verify_checksum,
-                          replication_mode, storage);
+                          storage);
 
     if (operation_mode == binsrv::operation_mode_type::pull) {
       std::size_t iteration_number{1U};
@@ -659,7 +689,7 @@ int main(int argc, char *argv[]) {
 
         receive_binlog_events(operation_mode, termination_flag, *logger,
                               mysql_lib, connection_config, server_id,
-                              verify_checksum, replication_mode, storage);
+                              verify_checksum, storage);
         ++iteration_number;
       }
     }

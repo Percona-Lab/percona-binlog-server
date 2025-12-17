@@ -17,6 +17,7 @@
 
 #include <cassert>
 #include <concepts>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -113,6 +114,10 @@ void connection::mysql_deleter::operator()(void *ptr) const noexcept {
 
 class connection::rpl_impl {
 public:
+  // https://github.com/mysql/mysql-server/blob/mysql-8.0.43/sql/log_event.h#L216
+  // https://github.com/mysql/mysql-server/blob/mysql-8.4.6/sql/log_event.h#L214
+  static constexpr std::uint64_t default_binlog_position{4U};
+
   rpl_impl(connection &conn, std::uint32_t server_id,
            std::string_view file_name, std::uint64_t position,
            connection_replication_mode_type blocking_mode)
@@ -121,14 +126,39 @@ public:
              .file_name = std::data(file_name),
              .start_position = position,
              .server_id = server_id,
-             .flags = get_rpl_flags(blocking_mode),
+             .flags = get_rpl_flags(false, blocking_mode),
              .gtid_set_encoded_size = 0U,
              .fix_gtid_set = nullptr,
              .gtid_set_arg = nullptr,
              .size = 0U,
              .buffer = nullptr} {
     if (mysql_binlog_open(conn_, &rpl_) != 0) {
-      raise_core_error_from_connection("cannot open binary log", conn);
+      raise_core_error_from_connection(
+          "cannot open binary log in position mode", conn);
+    }
+  }
+  rpl_impl(connection &conn, std::uint32_t server_id,
+           util::const_byte_span encoded_gtid_set,
+           connection_replication_mode_type blocking_mode)
+      : conn_{mysql_deimpl::get(conn.mysql_impl_)},
+        rpl_{.file_name_length = 0U,
+             .file_name = nullptr,
+             .start_position = default_binlog_position,
+             .server_id = server_id,
+             .flags = get_rpl_flags(true, blocking_mode),
+             .gtid_set_encoded_size = std::size(encoded_gtid_set),
+             .fix_gtid_set = nullptr,
+             // it is OK to use const_cast here as MySQL client uses this
+             // pointer only for reading (checked on MySQL 8.4.6)
+             // NOLINTBEGIN(cppcoreguidelines-pro-type-const-cast)
+             .gtid_set_arg =
+                 const_cast<std::byte *>(std::data(encoded_gtid_set)),
+             // NOLINTEND(cppcoreguidelines-pro-type-const-cast)
+             .size = 0U,
+             .buffer = nullptr} {
+    if (mysql_binlog_open(conn_, &rpl_) != 0) {
+      raise_core_error_from_connection("cannot open binary log in GTID mode",
+                                       conn);
     }
   }
 
@@ -170,8 +200,9 @@ private:
   // locally
   static constexpr unsigned int private_binlog_dump_non_block{1U};
   [[nodiscard]] static constexpr unsigned int
-  get_rpl_flags(connection_replication_mode_type blocking_mode) noexcept {
-    return MYSQL_RPL_SKIP_HEARTBEAT |
+  get_rpl_flags(bool gtid_mode,
+                connection_replication_mode_type blocking_mode) noexcept {
+    return MYSQL_RPL_SKIP_HEARTBEAT | (gtid_mode ? MYSQL_RPL_GTID : 0U) |
            (blocking_mode == connection_replication_mode_type::non_blocking
                 ? private_binlog_dump_non_block
                 : 0U);
@@ -179,6 +210,17 @@ private:
 };
 
 connection::connection() noexcept = default;
+
+void connection::set_binlog_checksum(bool verify_checksum) {
+  // WL#2540: Replication event checksums
+  // https://dev.mysql.com/worklog/task/?id=2540
+  const std::string checksum_algorithm_label{verify_checksum ? "CRC32"
+                                                             : "NONE"};
+  const auto set_binlog_checksum_query{
+      "SET @source_binlog_checksum = '" + checksum_algorithm_label +
+      "', @master_binlog_checksum = '" + checksum_algorithm_label + "'"};
+  execute_generic_query_noresult(set_binlog_checksum_query);
+}
 
 void connection::process_ssl_config(const ssl_config &config) {
   auto *casted_impl = mysql_deimpl::get(mysql_impl_);
@@ -402,30 +444,39 @@ bool connection::ping() {
   return mysql_ping(casted_impl) == 0;
 }
 
-void connection::switch_to_replication(
+void connection::switch_to_position_replication(
     std::uint32_t server_id, std::string_view file_name, std::uint64_t position,
-    bool verify_checksum, bool gtid_mode,
-    connection_replication_mode_type blocking_mode) {
+    bool verify_checksum, connection_replication_mode_type blocking_mode) {
   assert(!is_empty());
-  if (gtid_mode) {
-    util::exception_location().raise<std::logic_error>(
-        "switching to GTID replication is not yet implemented");
-  }
   if (is_in_replication_mode()) {
     util::exception_location().raise<std::logic_error>(
         "connection has already been swithed to replication");
   }
 
-  // WL#2540: Replication event checksums
-  // https://dev.mysql.com/worklog/task/?id=2540
-  const std::string checksum_algorithm_label{verify_checksum ? "CRC32"
-                                                             : "NONE"};
-  const auto set_binlog_checksum_query{
-      "SET @source_binlog_checksum = '" + checksum_algorithm_label +
-      "', @master_binlog_checksum = '" + checksum_algorithm_label + "'"};
-  execute_generic_query_noresult(set_binlog_checksum_query);
-
+  set_binlog_checksum(verify_checksum);
   rpl_impl_ = std::make_unique<rpl_impl>(*this, server_id, file_name, position,
+                                         blocking_mode);
+}
+
+void connection::switch_to_position_replication(
+    std::uint32_t server_id, bool verify_checksum,
+    connection_replication_mode_type blocking_mode) {
+  switch_to_position_replication(server_id, {},
+                                 rpl_impl::default_binlog_position,
+                                 verify_checksum, blocking_mode);
+}
+
+void connection::switch_to_gtid_replication(
+    std::uint32_t server_id, util::const_byte_span encoded_gtid_set,
+    bool verify_checksum, connection_replication_mode_type blocking_mode) {
+  assert(!is_empty());
+  if (is_in_replication_mode()) {
+    util::exception_location().raise<std::logic_error>(
+        "connection has already been swithed to replication");
+  }
+
+  set_binlog_checksum(verify_checksum);
+  rpl_impl_ = std::make_unique<rpl_impl>(*this, server_id, encoded_gtid_set,
                                          blocking_mode);
 }
 
