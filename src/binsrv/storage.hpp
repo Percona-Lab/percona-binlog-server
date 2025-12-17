@@ -27,6 +27,8 @@
 #include "binsrv/replication_mode_type_fwd.hpp"
 #include "binsrv/storage_config_fwd.hpp"
 
+#include "binsrv/gtids/gtid_set.hpp"
+
 #include "util/byte_span_fwd.hpp"
 
 namespace binsrv {
@@ -65,6 +67,10 @@ public:
     return position_;
   }
 
+  [[nodiscard]] const gtids::gtid_set &get_gtids() const noexcept {
+    return gtids_;
+  }
+
   [[nodiscard]] static bool
   check_binlog_name(std::string_view binlog_name) noexcept;
 
@@ -80,6 +86,8 @@ private:
   using binlog_name_container = std::vector<std::string>;
   binlog_name_container binlog_names_;
   std::uint64_t position_{0ULL};
+
+  gtids::gtid_set gtids_{};
 
   std::uint64_t checkpoint_size_bytes_{0ULL};
   std::uint64_t last_checkpoint_position_{0ULL};

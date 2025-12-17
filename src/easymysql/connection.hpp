@@ -64,10 +64,18 @@ public:
     return static_cast<bool>(rpl_impl_);
   }
 
-  void switch_to_replication(std::uint32_t server_id,
-                             std::string_view file_name, std::uint64_t position,
-                             bool verify_checksum, bool gtid_mode,
-                             connection_replication_mode_type blocking_mode);
+  void switch_to_position_replication(
+      std::uint32_t server_id, std::string_view file_name,
+      std::uint64_t position, bool verify_checksum,
+      connection_replication_mode_type blocking_mode);
+  // a simplified version for starting from the very beginning
+  void switch_to_position_replication(
+      std::uint32_t server_id, bool verify_checksum,
+      connection_replication_mode_type blocking_mode);
+
+  void switch_to_gtid_replication(
+      std::uint32_t server_id, util::const_byte_span encoded_gtid_set,
+      bool verify_checksum, connection_replication_mode_type blocking_mode);
 
   // returns false on 'connection closed' / 'timeout'
   // returns true and sets 'portion' to en empty span on EOF (last event read)
@@ -76,6 +84,8 @@ public:
   [[nodiscard]] bool fetch_binlog_event(util::const_byte_span &portion);
 
 private:
+  void set_binlog_checksum(bool verify_checksum);
+
   void process_ssl_config(const ssl_config &config);
   void process_tls_config(const tls_config &config);
   void process_connection_config(const connection_config &config);
