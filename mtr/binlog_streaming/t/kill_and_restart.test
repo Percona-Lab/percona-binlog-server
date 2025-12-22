@@ -1,0 +1,145 @@
+--source ../include/have_binsrv.inc
+
+--source ../include/v80_v84_compatibility_defines.inc
+
+# in case of --repeat=N, we need to start from a fresh binary log to make
+# this test deterministic
+--echo *** Resetting replication at the very beginning of the test.
+--disable_query_log
+eval $stmt_reset_binary_logs_and_gtids;
+--enable_query_log
+
+--echo
+--echo *** Determining the first fresh binary log name.
+--let $first_binlog = query_get_value($stmt_show_binary_log_status, File, 1)
+
+--echo
+--echo *** Creating a simple table and filling it with some data.
+CREATE TABLE t1(id INT UNSIGNED NOT NULL AUTO_INCREMENT, PRIMARY KEY(id)) ENGINE=InnoDB;
+INSERT INTO t1 VALUES(DEFAULT);
+
+--echo
+--echo *** Restarting the server gracefully
+--source include/restart_mysqld.inc
+
+--echo
+--echo *** Determining the second binary log name after restart
+--let $second_binlog = query_get_value($stmt_show_binary_log_status, File, 1)
+
+--echo
+--echo *** Filling the table with some more data.
+INSERT INTO t1 VALUES(DEFAULT);
+
+--echo
+--echo *** Killing and restarting the server
+--source include/kill_and_restart_mysqld.inc
+
+--echo
+--echo *** Determining the third binary log name after killing and restarting
+--let $third_binlog = query_get_value($stmt_show_binary_log_status, File, 1)
+
+--echo
+--echo *** Filling the table with some more data.
+INSERT INTO t1 VALUES(DEFAULT);
+
+--echo
+--echo *** Flushing the third binary log and switching to the fourth one.
+FLUSH BINARY LOGS;
+
+--echo
+--echo *** Determining the fourth binary log name after binlog rotation
+--let $fourth_binlog = query_get_value($stmt_show_binary_log_status, File, 1)
+
+--echo
+--echo *** Filling the table with some more data.
+INSERT INTO t1 VALUES(DEFAULT);
+
+--echo
+--echo *** Checking if the first binlog file ends with the STOP event.
+# SHOW BINLOG EVENTS IN 'binlog.000001';
+# Log_name        Pos     Event_type      Server_id       End_log_pos     Info
+# binlog.000001   4       Format_desc     1       126     Server ver: 8.0.43-34, Binlog ver: 4
+# binlog.000001   126     Previous_gtids  1       157
+# binlog.000001   157     Anonymous_Gtid  1       236     SET @@SESSION.GTID_NEXT= 'ANONYMOUS'
+# binlog.000001   236     Query   1       411     use `test`; CREATE TABLE t1(id INT UNSIGNED NOT NULL AUTO_INCREMENT, PRIMARY KEY(id)) ENGINE=InnoDB /* xid=6 */
+# binlog.000001   411     Anonymous_Gtid  1       490     SET @@SESSION.GTID_NEXT= 'ANONYMOUS'
+# binlog.000001   490     Query   1       565     BEGIN
+# binlog.000001   565     Table_map       1       613     table_id: 125 (test.t1)
+# binlog.000001   613     Write_rows      1       653     table_id: 125 flags: STMT_END_F
+# binlog.000001   653     Xid     1       684     COMMIT /* xid=7 */
+# binlog.000001   684     Stop    1       707
+--let $extracted_event_type = query_get_value(SHOW BINLOG EVENTS IN '$first_binlog', Event_type, 10)
+--assert($extracted_event_type == "Stop")
+--let $extracted_event_type = query_get_value(SHOW BINLOG EVENTS IN '$first_binlog', Event_type, 11)
+--assert($extracted_event_type == "No such row")
+
+--echo
+--echo *** Checking if the second binlog file ends with neither stop, nor ROTATE event (XID in this case).
+# SHOW BINLOG EVENTS IN 'binlog.000002';
+# Log_name        Pos     Event_type      Server_id       End_log_pos     Info
+# binlog.000002   4       Format_desc     1       126     Server ver: 8.0.43-34, Binlog ver: 4
+# binlog.000002   126     Previous_gtids  1       157
+# binlog.000002   157     Anonymous_Gtid  1       236     SET @@SESSION.GTID_NEXT= 'ANONYMOUS'
+# binlog.000002   236     Query   1       311     BEGIN
+# binlog.000002   311     Table_map       1       359     table_id: 89 (test.t1)
+# binlog.000002   359     Write_rows      1       399     table_id: 89 flags: STMT_END_F
+# binlog.000002   399     Xid     1       430     COMMIT /* xid=9 */
+--let $extracted_event_type = query_get_value(SHOW BINLOG EVENTS IN '$second_binlog', Event_type, 7)
+--assert($extracted_event_type == "Xid")
+--let $extracted_event_type = query_get_value(SHOW BINLOG EVENTS IN '$second_binlog', Event_type, 8)
+--assert($extracted_event_type == "No such row")
+
+--echo
+--echo *** Checking if the third binlog file ends with the ROTATE event.
+# SHOW BINLOG EVENTS IN 'binlog.000003';
+# Log_name        Pos     Event_type      Server_id       End_log_pos     Info
+# binlog.000003   4       Format_desc     1       126     Server ver: 8.0.43-34, Binlog ver: 4
+# binlog.000003   126     Previous_gtids  1       157
+# binlog.000003   157     Anonymous_Gtid  1       236     SET @@SESSION.GTID_NEXT= 'ANONYMOUS'
+# binlog.000003   236     Query   1       311     BEGIN
+# binlog.000003   311     Table_map       1       359     table_id: 89 (test.t1)
+# binlog.000003   359     Write_rows      1       399     table_id: 89 flags: STMT_END_F
+# binlog.000003   399     Xid     1       430     COMMIT /* xid=9 */
+# binlog.000003   430     Rotate  1       474     binlog.000004;pos=4
+--let $extracted_event_type = query_get_value(SHOW BINLOG EVENTS IN '$third_binlog', Event_type, 8)
+--assert($extracted_event_type == "Rotate")
+--let $extracted_event_type = query_get_value(SHOW BINLOG EVENTS IN '$third_binlog', Event_type, 9)
+--assert($extracted_event_type == "No such row")
+
+--echo
+--echo *** Checking if the fourth (still open) binlog file ends with the commit of a transaction (XID).
+# SHOW BINLOG EVENTS IN 'binlog.000004';
+# Log_name        Pos     Event_type      Server_id       End_log_pos     Info
+# binlog.000004   4       Format_desc     1       126     Server ver: 8.0.43-34, Binlog ver: 4
+# binlog.000004   126     Previous_gtids  1       157
+# binlog.000004   157     Anonymous_Gtid  1       236     SET @@SESSION.GTID_NEXT= 'ANONYMOUS'
+# binlog.000004   236     Query   1       311     BEGIN
+# binlog.000004   311     Table_map       1       359     table_id: 89 (test.t1)
+# binlog.000004   359     Write_rows      1       399     table_id: 89 flags: STMT_END_F
+# binlog.000004   399     Xid     1       430     COMMIT /* xid=12 */
+--let $extracted_event_type = query_get_value(SHOW BINLOG EVENTS IN '$fourth_binlog', Event_type, 7)
+--assert($extracted_event_type == "Xid")
+--let $extracted_event_type = query_get_value(SHOW BINLOG EVENTS IN '$fourth_binlog', Event_type, 8)
+--assert($extracted_event_type == "No such row")
+
+# identifying backend storage type ('file' or 's3')
+--source ../include/identify_storage_backend.inc
+
+# creating data directory, configuration file, etc.
+--let $binsrv_connect_timeout = 20
+--let $binsrv_read_timeout = 60
+--let $binsrv_idle_time = 10
+--let $binsrv_verify_checksum = TRUE
+--source ../include/set_up_binsrv_environment.inc
+
+--echo
+--echo *** Executing the Binlog Server utility to download all binlog data
+--echo *** from the server to the <BINSRV_STORAGE_PATH> directory
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+--echo
+--echo *** Dropping the table.
+DROP TABLE t1;
+
+# cleaning up
+--source ../include/tear_down_binsrv_environment.inc

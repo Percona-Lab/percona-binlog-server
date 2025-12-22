@@ -38,6 +38,8 @@
 #include "binsrv/event/code_type.hpp"
 #include "binsrv/event/gtid_log_flag_type.hpp"
 
+#include "binsrv/gtids/gtid.hpp"
+#include "binsrv/gtids/tag.hpp"
 #include "binsrv/gtids/uuid.hpp"
 
 #include "util/bounded_string_storage.hpp"
@@ -160,9 +162,20 @@ generic_body_impl<code_type::gtid_tagged_log>::get_readable_uuid() const {
   return boost::lexical_cast<std::string>(get_uuid());
 }
 
+[[nodiscard]] gtids::tag
+generic_body_impl<code_type::gtid_tagged_log>::get_tag() const {
+  return gtids::tag{get_tag_raw()};
+}
+
 [[nodiscard]] std::string_view
-generic_body_impl<code_type::gtid_tagged_log>::get_tag() const noexcept {
+generic_body_impl<code_type::gtid_tagged_log>::get_readable_tag()
+    const noexcept {
   return util::to_string_view(get_tag_raw());
+}
+
+[[nodiscard]] gtids::gtid
+generic_body_impl<code_type::gtid_tagged_log>::get_gtid() const {
+  return {get_uuid(), get_tag(), get_gno()};
 }
 
 [[nodiscard]] std::string generic_body_impl<code_type::gtid_tagged_log>::
@@ -204,7 +217,8 @@ operator<<(std::ostream &output,
            const generic_body_impl<code_type::gtid_tagged_log> &obj) {
   output << "flags: " << obj.get_readable_flags()
          << ", uuid: " << obj.get_readable_uuid()
-         << ", gno: " << obj.get_gno_raw() << ", tag: " << obj.get_tag()
+         << ", gno: " << obj.get_gno_raw()
+         << ", tag: " << obj.get_readable_tag()
          << ", last_committed: " << obj.get_last_committed_raw()
          << ", sequence_number: " << obj.get_sequence_number_raw();
 

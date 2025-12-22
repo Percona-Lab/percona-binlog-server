@@ -298,11 +298,11 @@ void log_replication_info(
   msg += ", starting from ";
   if (replication_mode == binsrv::replication_mode_type::position) {
     if (storage.has_current_binlog_name()) {
-      msg += "the very beginning";
-    } else {
       msg += storage.get_current_binlog_name();
       msg += ":";
       msg += std::to_string(storage.get_current_position());
+    } else {
+      msg += "the very beginning";
     }
   } else {
     const auto &gtids{storage.get_gtids()};
@@ -320,6 +320,9 @@ void log_replication_info(
 
 void log_span_dump(binsrv::basic_logger &logger,
                    util::const_byte_span portion) {
+  logger.log(binsrv::log_severity::debug,
+             "fetched " + std::to_string(std::size(portion)) +
+                 "-byte(s) event from binlog");
   static constexpr std::size_t bytes_per_dump_line{16U};
   std::size_t offset{0U};
   while (offset < std::size(portion)) {
@@ -489,9 +492,6 @@ void receive_binlog_events(
           "unexpected event prefix");
     }
     portion = portion.subspan(1U);
-    logger.log(binsrv::log_severity::info,
-               "fetched " + std::to_string(std::size(portion)) +
-                   "-byte(s) event from binlog");
     log_span_dump(logger, portion);
 
     // TODO: just for redirection to another byte stream we need to parse
@@ -499,9 +499,21 @@ void receive_binlog_events(
     //       can be just considered as a data portion (unless we want to do
     //       basic integrity checks like event sizes / position and CRC)
     const binsrv::event::event current_event{context, portion};
+    const auto &current_header{current_event.get_common_header()};
+    auto readable_flags{current_header.get_readable_flags()};
+    logger.log(
+        binsrv::log_severity::info,
+        "event: " + std::string{current_header.get_readable_type_code()} +
+            (readable_flags.empty() ? "" : "(" + readable_flags + ")"));
     logger.log(binsrv::log_severity::debug,
                "Parsed event:\n" +
                    boost::lexical_cast<std::string>(current_event));
+    if (context.is_at_transaction_boundary()) {
+      logger.log(
+          binsrv::log_severity::info,
+          "encountered the end of transaction " +
+              boost::lexical_cast<std::string>(context.get_transaction_gtid()));
+    }
 
     process_binlog_event(current_event, portion, storage, skip_open_binlog);
   }

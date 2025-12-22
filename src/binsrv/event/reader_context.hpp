@@ -22,6 +22,8 @@
 
 #include "binsrv/replication_mode_type_fwd.hpp"
 
+#include "binsrv/gtids/gtid.hpp"
+
 #include "binsrv/event/common_header_fwd.hpp"
 #include "binsrv/event/event_fwd.hpp"
 #include "binsrv/event/protocol_traits.hpp"
@@ -49,28 +51,66 @@ public:
     return position_;
   }
 
+  [[nodiscard]] bool has_transaction_gtid() const noexcept {
+    return !transaction_gtid_.is_empty();
+  }
+  [[nodiscard]] const gtids::gtid &get_transaction_gtid() const noexcept {
+    return transaction_gtid_;
+  }
+  [[nodiscard]] bool is_at_transaction_boundary() const noexcept {
+    return state_ == state_type::any_other_expected &&
+           current_transaction_length_ == expected_transaction_length_;
+  }
+
 private:
   // this class implements the logic of the following state machine
-  // (ROTATE(artificial) FORMAT_DESCRIPTION <ANY>* (ROTATE|STOP)?)+
+  // (
+  //   ROTATE(artificial)
+  //   FORMAT_DESCRIPTION
+  //   PREVIOUS_GTIDS_LOG?
+  //   ((ANONYMOUS_GTID_LOG | GTID_LOG | GTID_TAGGED_LOG) <ANY>*)*
+  //   (ROTATE | STOP)?
+  // )+
   enum class state_type : std::uint8_t {
-    initial,
-    rotate_artificial_processed,
-    format_description_processed
+    rotate_artificial_expected,
+    format_description_expected,
+    previous_gtids_expected,
+    gtid_log_expected,
+    any_other_expected,
+    rotate_or_stop_expected
   };
-  state_type state_{state_type::initial};
+  state_type state_{state_type::rotate_artificial_expected};
   std::uint32_t encoded_server_version_;
   bool verify_checksum_;
   replication_mode_type replication_mode_;
   post_header_length_container post_header_lengths_{};
   std::uint32_t position_{0U};
 
+  gtids::gtid transaction_gtid_{};
+  std::uint32_t expected_transaction_length_{0U};
+  std::uint32_t current_transaction_length_{0U};
+
   void process_event(const event &current_event);
-  [[nodiscard]] bool process_event_in_initial_state(const event &current_event);
-  [[nodiscard]] bool process_event_in_rotate_artificial_processed_state(
+  [[nodiscard]] bool
+  process_event_in_rotate_artificial_expected_state(const event &current_event);
+  [[nodiscard]] bool process_event_in_format_description_expected_state(
       const event &current_event);
-  [[nodiscard]] bool process_event_in_format_description_processed_state(
-      const event &current_event);
+  [[nodiscard]] bool
+  process_event_in_previous_gtids_expected_state(const event &current_event);
+  [[nodiscard]] bool
+  process_event_in_gtid_log_expected_state(const event &current_event);
+  [[nodiscard]] bool
+  process_event_in_any_other_expected_state(const event &current_event);
+  [[nodiscard]] bool
+  process_event_in_rotate_or_stop_expected_state(const event &current_event);
+
+  void validate_position(const common_header &common_header) const;
   void validate_position_and_advance(const common_header &common_header);
+  void reset_position();
+
+  void start_transaction(const event &current_event);
+  void update_transaction(const common_header &common_header);
+  void finish_transaction();
 
   [[nodiscard]] static const post_header_length_container &
   get_hardcoded_post_header_lengths(

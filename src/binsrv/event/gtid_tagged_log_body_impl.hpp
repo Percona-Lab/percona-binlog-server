@@ -18,13 +18,16 @@
 
 #include "binsrv/event/gtid_tagged_log_body_impl_fwd.hpp" // IWYU pragma: export
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 
 #include "binsrv/event/gtid_log_flag_type_fwd.hpp"
 
 #include "binsrv/gtids/common_types.hpp"
-#include "binsrv/gtids/uuid.hpp"
+#include "binsrv/gtids/gtid_fwd.hpp"
+#include "binsrv/gtids/tag_fwd.hpp"
+#include "binsrv/gtids/uuid_fwd.hpp"
 
 #include "util/bounded_string_storage.hpp"
 #include "util/byte_span_fwd.hpp"
@@ -49,11 +52,17 @@ public:
   [[nodiscard]] std::string get_readable_uuid() const;
 
   [[nodiscard]] std::int64_t get_gno_raw() const noexcept { return gno_; }
+  [[nodiscard]] gtids::gno_t get_gno() const noexcept {
+    return static_cast<gtids::gno_t>(get_gno_raw());
+  }
 
   [[nodiscard]] const gtids::tag_storage &get_tag_raw() const noexcept {
     return tag_;
   }
-  [[nodiscard]] std::string_view get_tag() const noexcept;
+  [[nodiscard]] gtids::tag get_tag() const;
+  [[nodiscard]] std::string_view get_readable_tag() const noexcept;
+
+  [[nodiscard]] gtids::gtid get_gtid() const;
 
   [[nodiscard]] std::int64_t get_last_committed_raw() const noexcept {
     return last_committed_;

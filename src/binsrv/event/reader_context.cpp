@@ -22,7 +22,7 @@
 #include <stdexcept>
 #include <utility>
 
-#include "binsrv/replication_mode_type_fwd.hpp"
+#include "binsrv/replication_mode_type.hpp"
 
 #include "binsrv/event/code_type.hpp"
 #include "binsrv/event/common_header_flag_type.hpp"
@@ -42,20 +42,35 @@ reader_context::reader_context(std::uint32_t encoded_server_version,
       post_header_lengths_{
           get_hardcoded_post_header_lengths(encoded_server_version_)} {}
 
+[[nodiscard]] std::size_t
+reader_context::get_current_post_header_length(code_type code) const noexcept {
+  return get_post_header_length_for_code(encoded_server_version_,
+                                         post_header_lengths_, code);
+}
+
 void reader_context::process_event(const event &current_event) {
   bool processed{false};
   while (!processed) {
     switch (state_) {
-    case state_type::initial:
-      processed = process_event_in_initial_state(current_event);
-      break;
-    case state_type::rotate_artificial_processed:
+    case state_type::rotate_artificial_expected:
       processed =
-          process_event_in_rotate_artificial_processed_state(current_event);
+          process_event_in_rotate_artificial_expected_state(current_event);
       break;
-    case state_type::format_description_processed:
+    case state_type::format_description_expected:
       processed =
-          process_event_in_format_description_processed_state(current_event);
+          process_event_in_format_description_expected_state(current_event);
+      break;
+    case state_type::previous_gtids_expected:
+      processed = process_event_in_previous_gtids_expected_state(current_event);
+      break;
+    case state_type::gtid_log_expected:
+      processed = process_event_in_gtid_log_expected_state(current_event);
+      break;
+    case state_type::any_other_expected:
+      processed = process_event_in_any_other_expected_state(current_event);
+      break;
+    case state_type::rotate_or_stop_expected:
+      processed = process_event_in_rotate_or_stop_expected_state(current_event);
       break;
     default:
       assert(false);
@@ -64,11 +79,13 @@ void reader_context::process_event(const event &current_event) {
 }
 
 [[nodiscard]] bool
-reader_context::process_event_in_initial_state(const event &current_event) {
-  assert(state_ == state_type::initial);
+reader_context::process_event_in_rotate_artificial_expected_state(
+    const event &current_event) {
+  assert(state_ == state_type::rotate_artificial_expected);
   const auto &common_header{current_event.get_common_header()};
 
-  // in the "initial" state we expect only artificial rotate events
+  // in the "rotate_artificial_expected" state we expect only artificial rotate
+  // events
   const auto is_artificial{common_header.get_flags().has_element(
       common_header_flag_type::artificial)};
   const auto is_artificial_rotate{
@@ -76,7 +93,7 @@ reader_context::process_event_in_initial_state(const event &current_event) {
   if (!is_artificial_rotate) {
     util::exception_location().raise<std::logic_error>(
         "an artificial rotate event must be the very first event in the "
-        "initial state");
+        "rotate_artificial_expected state");
   }
 
   // artificial rotate events must always have next event position and
@@ -85,8 +102,7 @@ reader_context::process_event_in_initial_state(const event &current_event) {
     util::exception_location().raise<std::logic_error>(
         "non-zero timestamp found in an artificial rotate event");
   }
-  const auto is_pseudo{common_header.get_next_event_position_raw() == 0U};
-  if (!is_pseudo) {
+  if (common_header.get_next_event_position_raw() != 0U) {
     util::exception_location().raise<std::logic_error>(
         "non-zero next event position found in an artificial rotate event");
   }
@@ -103,23 +119,30 @@ reader_context::process_event_in_initial_state(const event &current_event) {
       current_event.get_post_header<code_type::rotate>().get_position_raw());
 
   // transition to the next state
-  state_ = state_type::rotate_artificial_processed;
+  state_ = state_type::format_description_expected;
   return true;
 }
 
 [[nodiscard]] bool
-reader_context::process_event_in_rotate_artificial_processed_state(
+reader_context::process_event_in_format_description_expected_state(
     const event &current_event) {
-  assert(state_ == state_type::rotate_artificial_processed);
+  assert(state_ == state_type::format_description_expected);
   const auto &common_header{current_event.get_common_header()};
 
-  // in the "rotate_artificial_processed" state we expect only format
+  // in the "format_description_expected" state we expect only format
   // description events
   if (common_header.get_type_code() != code_type::format_description) {
     // TODO: this check should be performed just after the common header is
     //       parsed to make sure we rely on proper post_header lengths
     util::exception_location().raise<std::logic_error>(
         "format description event must follow an artificial rotate event");
+  }
+
+  const auto is_artificial{common_header.get_flags().has_element(
+      common_header_flag_type::artificial)};
+  if (is_artificial) {
+    util::exception_location().raise<std::logic_error>(
+        "format description event is not expected to be artificual");
   }
 
   const auto &post_header{
@@ -154,21 +177,55 @@ reader_context::process_event_in_rotate_artificial_processed_state(
   const auto &body{current_event.get_body<code_type::format_description>()};
   verify_checksum_ = body.has_checksum_algorithm();
 
-  // some format description events (non-pseudo ones) must be written to
-  // the binary log file and advance position when being processed
+  // here we differentiate format description events that were actually
+  // written to the binlog files (as the very first events) and those
+  // created by the server on the fly when client requested continuation
+  // from a particular position (created only for the purpose of making
+  // clients aware of the protocol specifics)
+
+  // the latter can be distinguished by having next_event_position set to
+  // zero
   const auto is_pseudo{common_header.get_next_event_position_raw() == 0U};
   if (!is_pseudo) {
     validate_position_and_advance(common_header);
   }
-  // transition to the next state
-  state_ = state_type::format_description_processed;
+  // transition to the next state: if the current format description event
+  // is a pseudo one, then the next event is expected to be one of the
+  // gtid log events, otherwise previous gtids log event
+  state_ = (is_pseudo ? state_type::gtid_log_expected
+                      : state_type::previous_gtids_expected);
   return true;
 }
 
 [[nodiscard]] bool
-reader_context::process_event_in_format_description_processed_state(
+reader_context::process_event_in_previous_gtids_expected_state(
     const event &current_event) {
-  assert(state_ == state_type::format_description_processed);
+  assert(state_ == state_type::previous_gtids_expected);
+  const auto &common_header{current_event.get_common_header()};
+
+  // in the "previous_gtids_log_expected" state we expect only previous gtids
+  // log events
+  if (common_header.get_type_code() != code_type::previous_gtids_log) {
+    util::exception_location().raise<std::logic_error>(
+        "previous gtids log event must follow a format description event");
+  }
+
+  const auto is_artificial{common_header.get_flags().has_element(
+      common_header_flag_type::artificial)};
+  if (is_artificial) {
+    util::exception_location().raise<std::logic_error>(
+        "previous gtids log event is not expected to be artificial");
+  }
+
+  validate_position_and_advance(common_header);
+
+  state_ = state_type::gtid_log_expected;
+  return true;
+}
+
+[[nodiscard]] bool reader_context::process_event_in_gtid_log_expected_state(
+    const event &current_event) {
+  assert(state_ == state_type::gtid_log_expected);
   const auto &common_header{current_event.get_common_header()};
   const auto code{common_header.get_type_code()};
   const auto is_artificial{common_header.get_flags().has_element(
@@ -176,10 +233,77 @@ reader_context::process_event_in_format_description_processed_state(
 
   // early return here with "false" return code so that the while loop
   // in the main 'process_event()' method would repeat processing this
-  // event but from the initial state (which is set here)
+  // event but from the rotate_artificial_expected state (which is set here)
   if (code == code_type::rotate && is_artificial) {
-    position_ = 0U;
-    state_ = state_type::initial;
+    finish_transaction();
+    reset_position();
+    state_ = state_type::rotate_artificial_expected;
+    return false;
+  }
+
+  // early return here, the exit from the
+  // ((ANONYMOUS_GTID_LOG | GTID_LOG | GTID_TAGGED_LOG) <ANY>*)*
+  // "star" loop
+  if (code == code_type::rotate || code == code_type::stop) {
+    finish_transaction();
+    state_ = state_type::rotate_or_stop_expected;
+    return false;
+  }
+
+  if (code != code_type::anonymous_gtid_log && code != code_type::gtid_log &&
+      code != code_type::gtid_tagged_log) {
+    // format description event must appear only once within a binlog
+    util::exception_location().raise<std::logic_error>(
+        "transaction group must start from one of the gtid log events");
+  }
+
+  if (replication_mode_ == replication_mode_type::gtid &&
+      code == code_type::anonymous_gtid_log) {
+    util::exception_location().raise<std::logic_error>(
+        "unexpected anonymous gtid log event in gtid mode replication");
+  }
+
+  start_transaction(current_event);
+  validate_position_and_advance(common_header);
+
+  state_ = state_type::any_other_expected;
+  return true;
+}
+
+[[nodiscard]] bool reader_context::process_event_in_any_other_expected_state(
+    const event &current_event) {
+  assert(state_ == state_type::any_other_expected);
+  const auto &common_header{current_event.get_common_header()};
+  const auto code{common_header.get_type_code()};
+  const auto is_artificial{common_header.get_flags().has_element(
+      common_header_flag_type::artificial)};
+
+  // early return here, the exit from the
+  // <ANY>*
+  // "star" loop
+  if (code == code_type::anonymous_gtid_log || code == code_type::gtid_log ||
+      code == code_type::gtid_tagged_log) {
+    finish_transaction();
+    state_ = state_type::gtid_log_expected;
+    return false;
+  }
+
+  // early return here with "false" return code so that the while loop
+  // in the main 'process_event()' method would repeat processing this
+  // event but from the rotate_artificial_expected state (which is set here)
+  if (code == code_type::rotate && is_artificial) {
+    finish_transaction();
+    reset_position();
+    state_ = state_type::rotate_artificial_expected;
+    return false;
+  }
+
+  // early return here, the exit from the
+  // ((ANONYMOUS_GTID_LOG | GTID_LOG | GTID_TAGGED_LOG) <ANY>*)*
+  // "star" loop
+  if (code == code_type::rotate || code == code_type::stop) {
+    finish_transaction();
+    state_ = state_type::rotate_or_stop_expected;
     return false;
   }
 
@@ -189,23 +313,45 @@ reader_context::process_event_in_format_description_processed_state(
         "encountered second format description event within the same binlog");
   }
 
+  if (code == code_type::previous_gtids_log) {
+    // previous_gtids_log event must appear only once within a binlog
+    util::exception_location().raise<std::logic_error>(
+        "encountered second previous gtids log event within the same binlog");
+  }
+
   if (is_artificial) {
     util::exception_location().raise<std::logic_error>(
-        "unexpected artificial event in the 'format description processed' "
+        "unexpected artificial event in the 'previous gtids log processed' "
         "state");
   }
+  update_transaction(common_header);
+  validate_position_and_advance(common_header);
+  // not changing the state here - remain in 'any_other_expected'
+  return true;
+}
 
-  const auto is_pseudo{common_header.get_next_event_position_raw() == 0U};
-  if (is_pseudo) {
+[[nodiscard]] bool
+reader_context::process_event_in_rotate_or_stop_expected_state(
+    const event &current_event) {
+  assert(state_ == state_type::rotate_or_stop_expected);
+  const auto &common_header{current_event.get_common_header()};
+  const auto code{common_header.get_type_code()};
+
+  // in the "rotate_or_stop_expected" state we expect only rotate
+  // (non-artificial) or stop events
+  if (code != code_type::rotate && code != code_type::stop) {
     util::exception_location().raise<std::logic_error>(
-        "unexpected pseudo event in the 'format description processed' state");
+        "the very last event in the binlog must be either rotate or stop");
   }
 
-  switch (code) {
-  case code_type::rotate:
-    // here we process only real (non-artificial) rotate events because of
-    // the early return at the beginning of the method
-    assert(!is_artificial);
+  const auto is_artificial{common_header.get_flags().has_element(
+      common_header_flag_type::artificial)};
+  if (is_artificial) {
+    util::exception_location().raise<std::logic_error>(
+        "the very last event in the binlog is not expected to be artificial");
+  }
+
+  if (code == code_type::rotate) {
     // position in non-artificial rotate event post header must be equal to
     // magic_binlog_offset (4)
     if (current_event.get_post_header<code_type::rotate>().get_position_raw() !=
@@ -214,27 +360,28 @@ reader_context::process_event_in_format_description_processed_state(
           "unexpected position in an non-artificial rotate event post "
           "header");
     }
-    [[fallthrough]];
-  case code_type::stop:
-    // the last event in binlog could be not only a non-artificial
-    // ROTATE (in case when admin executed FLUSH BINARY LOGS) but STOP (when
-    // the server was shut down)
-    // in this latter case, we also reset the position in order to indicate
-    // the end of the current cycle and expect new ROTATE(artificial) and
-    // FORMAT_DESCRIPTION
-    position_ = 0U;
-    state_ = state_type::initial;
-    break;
-  default:
-    validate_position_and_advance(common_header);
-    // not changing the state as we remain in 'format_description_processed'
   }
+
+  // the last event in binlog could be not only a non-artificial
+  // ROTATE (in case when admin executed FLUSH BINARY LOGS) but STOP (when
+  // the server was shut down)
+  // in this latter case, we also reset the position in order to indicate
+  // the end of the current cycle and expect new ROTATE(artificial) and
+  // FORMAT_DESCRIPTION
+  validate_position(common_header);
+  reset_position();
+  state_ = state_type::rotate_artificial_expected;
+
   return true;
 }
 
-void reader_context::validate_position_and_advance(
-    const common_header &common_header) {
-  assert(common_header.get_next_event_position_raw() != 0U);
+void reader_context::validate_position(
+    const common_header &common_header) const {
+  if (common_header.get_next_event_position_raw() == 0U) {
+    util::exception_location().raise<std::logic_error>(
+        "next event position in the event common header cannot be zero");
+  }
+
   // check if common_header.next_event_position matches current position
   // plus common_header.event_size
   if (position_ + common_header.get_event_size_raw() !=
@@ -242,14 +389,96 @@ void reader_context::validate_position_and_advance(
     util::exception_location().raise<std::logic_error>(
         "unexpected next event position in the event common header");
   }
+}
+
+void reader_context::validate_position_and_advance(
+    const common_header &common_header) {
+  validate_position(common_header);
   // simply advance current position
   position_ = common_header.get_next_event_position_raw();
 }
 
-[[nodiscard]] std::size_t
-reader_context::get_current_post_header_length(code_type code) const noexcept {
-  return get_post_header_length_for_code(encoded_server_version_,
-                                         post_header_lengths_, code);
+void reader_context::reset_position() { position_ = 0U; }
+
+void reader_context::start_transaction(const event &current_event) {
+  switch (current_event.get_common_header().get_type_code()) {
+  case code_type::anonymous_gtid_log: {
+    // no need to update transaction_gtid_ as in anonymous gtid log event
+    // the gtid part is expected to be empty
+    if (!current_event.get_post_header<binsrv::event::code_type::gtid_log>()
+             .get_gtid()
+             .is_empty()) {
+      util::exception_location().raise<std::logic_error>(
+          "encountered non-empty gtid in the anonymous gtid log event");
+    }
+    const auto expected_transaction_length_raw{
+        current_event.get_body<binsrv::event::code_type::anonymous_gtid_log>()
+            .get_transaction_length_raw()};
+    if (!std::in_range<std::uint32_t>(expected_transaction_length_raw)) {
+      util::exception_location().raise<std::logic_error>(
+          "transaction length in the anonymous gtid log event is too large");
+    }
+    expected_transaction_length_ =
+        static_cast<std::uint32_t>(expected_transaction_length_raw);
+  } break;
+  case code_type::gtid_log: {
+    transaction_gtid_ =
+        current_event.get_post_header<binsrv::event::code_type::gtid_log>()
+            .get_gtid();
+    if (transaction_gtid_.is_empty()) {
+      util::exception_location().raise<std::logic_error>(
+          "encountered an empty gtid in the gtid log event");
+    }
+    const auto expected_transaction_length_raw{
+        current_event.get_body<binsrv::event::code_type::gtid_log>()
+            .get_transaction_length_raw()};
+    if (!std::in_range<std::uint32_t>(expected_transaction_length_raw)) {
+      util::exception_location().raise<std::logic_error>(
+          "transaction length in the gtid log event is too large");
+    }
+    expected_transaction_length_ =
+        static_cast<std::uint32_t>(expected_transaction_length_raw);
+  } break;
+  case code_type::gtid_tagged_log: {
+    const auto &gtid_tagged_log_body{
+        current_event.get_body<binsrv::event::code_type::gtid_tagged_log>()};
+    transaction_gtid_ = gtid_tagged_log_body.get_gtid();
+    if (transaction_gtid_.is_empty()) {
+      util::exception_location().raise<std::logic_error>(
+          "encountered an empty gtid in the gtid tagged log event");
+    }
+    const auto expected_transaction_length_raw{
+        gtid_tagged_log_body.get_transaction_length_raw()};
+    if (!std::in_range<std::uint32_t>(expected_transaction_length_raw)) {
+      util::exception_location().raise<std::logic_error>(
+          "transaction length in the gtid tagged log event is too large");
+    }
+    expected_transaction_length_ =
+        static_cast<std::uint32_t>(expected_transaction_length_raw);
+  } break;
+  default:
+    assert(false);
+  }
+  current_transaction_length_ =
+      current_event.get_common_header().get_event_size_raw();
+}
+
+void reader_context::update_transaction(const common_header &common_header) {
+  current_transaction_length_ += common_header.get_event_size_raw();
+  if (current_transaction_length_ > expected_transaction_length_) {
+    util::exception_location().raise<std::logic_error>(
+        "current event exceeds declared transaction length");
+  }
+}
+
+void reader_context::finish_transaction() {
+  if (current_transaction_length_ != expected_transaction_length_) {
+    util::exception_location().raise<std::logic_error>(
+        "transaction did not end at the declared length");
+  }
+  transaction_gtid_ = gtids::gtid{};
+  expected_transaction_length_ = 0U;
+  current_transaction_length_ = 0U;
 }
 
 [[nodiscard]] const post_header_length_container &
