@@ -24,7 +24,8 @@
 #include "binsrv/event/gtid_log_flag_type_fwd.hpp"
 
 #include "binsrv/gtids/common_types.hpp"
-#include "binsrv/gtids/uuid.hpp"
+#include "binsrv/gtids/gtid_fwd.hpp"
+#include "binsrv/gtids/uuid_fwd.hpp"
 
 #include "util/byte_span_fwd.hpp"
 
@@ -50,7 +51,12 @@ public:
   [[nodiscard]] gtids::uuid get_uuid() const noexcept;
   [[nodiscard]] std::string get_readable_uuid() const;
 
+  [[nodiscard]] gtids::gtid get_gtid() const;
+
   [[nodiscard]] std::int64_t get_gno_raw() const noexcept { return gno_; }
+  [[nodiscard]] gtids::gno_t get_gno() const noexcept {
+    return static_cast<gtids::gno_t>(get_gno_raw());
+  }
 
   [[nodiscard]] std::uint8_t get_logical_ts_code_raw() const noexcept {
     return logical_ts_code_;

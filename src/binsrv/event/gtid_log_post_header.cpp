@@ -27,6 +27,8 @@
 
 #include "binsrv/event/gtid_log_flag_type.hpp"
 
+#include "binsrv/gtids/common_types.hpp"
+#include "binsrv/gtids/gtid.hpp"
 #include "binsrv/gtids/uuid.hpp"
 
 #include "util/byte_span.hpp"
@@ -130,6 +132,13 @@ gtid_log_post_header::get_flags() const noexcept {
 
 [[nodiscard]] std::string gtid_log_post_header::get_readable_uuid() const {
   return boost::lexical_cast<std::string>(get_uuid());
+}
+
+[[nodiscard]] gtids::gtid gtid_log_post_header::get_gtid() const {
+  if (get_gno() < gtids::min_gno) {
+    return {};
+  }
+  return {get_uuid(), get_gno()};
 }
 
 std::ostream &operator<<(std::ostream &output,

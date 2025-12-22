@@ -1,0 +1,59 @@
+*** Resetting replication at the very beginning of the test.
+
+*** Determining the first fresh binary log name.
+
+*** Creating a simple table and filling it with some data.
+CREATE TABLE t1(id INT UNSIGNED NOT NULL AUTO_INCREMENT, PRIMARY KEY(id)) ENGINE=InnoDB;
+INSERT INTO t1 VALUES(DEFAULT);
+
+*** Restarting the server gracefully
+# restart
+
+*** Determining the second binary log name after restart
+
+*** Filling the table with some more data.
+INSERT INTO t1 VALUES(DEFAULT);
+
+*** Killing and restarting the server
+# Kill and restart
+
+*** Determining the third binary log name after killing and restarting
+
+*** Filling the table with some more data.
+INSERT INTO t1 VALUES(DEFAULT);
+
+*** Flushing the third binary log and switching to the fourth one.
+FLUSH BINARY LOGS;
+
+*** Determining the fourth binary log name after binlog rotation
+
+*** Filling the table with some more data.
+INSERT INTO t1 VALUES(DEFAULT);
+
+*** Checking if the first binlog file ends with the STOP event.
+
+*** Checking if the second binlog file ends with neither stop, nor ROTATE event (XID in this case).
+
+*** Checking if the third binlog file ends with the ROTATE event.
+
+*** Checking if the fourth (still open) binlog file ends with the commit of a transaction (XID).
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+
+*** Executing the Binlog Server utility to download all binlog data
+*** from the server to the <BINSRV_STORAGE_PATH> directory
+
+*** Dropping the table.
+DROP TABLE t1;
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.
