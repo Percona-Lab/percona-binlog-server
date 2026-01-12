@@ -16,9 +16,11 @@
 #include "binsrv/storage.hpp"
 
 #include <algorithm>
+#include <cassert>
 #include <chrono>
 #include <cstddef>
 #include <filesystem>
+#include <iterator>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -127,7 +129,6 @@ void storage::open_binlog(std::string_view binlog_name) {
     // writing the magic binlog footprint only if this is a newly
     // created file
     backend_->write_data_to_stream(event::magic_binlog_payload);
-    backend_->flush_stream();
 
     binlog_names_.emplace_back(binlog_name);
     save_binlog_index();
@@ -139,25 +140,50 @@ void storage::open_binlog(std::string_view binlog_name) {
   if (interval_checkpointing_enabled()) {
     last_checkpoint_timestamp_ = std::chrono::steady_clock::now();
   }
+
+  event_buffer_.reserve(default_event_buffer_size_in_bytes);
+  assert(last_transaction_boundary_position_in_event_buffer_ == 0U);
 }
 
-void storage::write_event(util::const_byte_span event_data) {
-  backend_->write_data_to_stream(event_data);
+void storage::write_event(util::const_byte_span event_data,
+                          bool at_transaction_boundary) {
+  event_buffer_.insert(std::end(event_buffer_), std::cbegin(event_data),
+                       std::cend(event_data));
+  if (at_transaction_boundary) {
+    last_transaction_boundary_position_in_event_buffer_ =
+        std::size(event_buffer_);
+  }
 
   const auto event_data_size{std::size(event_data)};
   position_ += event_data_size;
-  const auto now_ts{std::chrono::steady_clock::now()};
-  if ((size_checkpointing_enabled() &&
-       (position_ >= last_checkpoint_position_ + checkpoint_size_bytes_)) ||
-      (interval_checkpointing_enabled() &&
-       (now_ts >= last_checkpoint_timestamp_ + checkpoint_interval_seconds_))) {
-    backend_->flush_stream();
-    last_checkpoint_position_ = position_;
-    last_checkpoint_timestamp_ = now_ts;
+
+  // now we are writing data from the event buffer to the storage backend if
+  // event buffer has some data in it that can be considered a complete
+  // transaction and a checkpoint event (either size-based or time-based)
+  // occurred
+  if (last_transaction_boundary_position_in_event_buffer_ != 0U) {
+    const auto now_ts{std::chrono::steady_clock::now()};
+    if ((size_checkpointing_enabled() &&
+         (position_ >= last_checkpoint_position_ + checkpoint_size_bytes_)) ||
+        (interval_checkpointing_enabled() &&
+         (now_ts >=
+          last_checkpoint_timestamp_ + checkpoint_interval_seconds_))) {
+
+      flush_event_buffer();
+
+      last_checkpoint_position_ = position_;
+      last_checkpoint_timestamp_ = now_ts;
+    }
   }
 }
 
 void storage::close_binlog() {
+  if (last_transaction_boundary_position_in_event_buffer_ != 0U) {
+    flush_event_buffer();
+  }
+  event_buffer_.clear();
+  event_buffer_.shrink_to_fit();
+
   backend_->close_stream();
   position_ = 0ULL;
   if (size_checkpointing_enabled()) {
@@ -166,6 +192,25 @@ void storage::close_binlog() {
   if (interval_checkpointing_enabled()) {
     last_checkpoint_timestamp_ = std::chrono::steady_clock::now();
   }
+}
+
+void storage::flush_event_buffer() {
+  assert(last_transaction_boundary_position_in_event_buffer_ <=
+         std::size(event_buffer_));
+  const util::const_byte_span transactions_data{
+      std::data(event_buffer_),
+      last_transaction_boundary_position_in_event_buffer_};
+  // writing <last_transaction_boundary_position_in_event_buffer_> bytes from
+  // the beginning of the event buffer
+  backend_->write_data_to_stream(transactions_data);
+  const auto begin_it{std::begin(event_buffer_)};
+  const auto portion_it{std::next(
+      begin_it, static_cast<std::ptrdiff_t>(
+                    last_transaction_boundary_position_in_event_buffer_))};
+  // erasing those <last_transaction_boundary_position_in_event_buffer_> bytes
+  // from the beginning of this buffer
+  event_buffer_.erase(begin_it, portion_it);
+  last_transaction_boundary_position_in_event_buffer_ = 0U;
 }
 
 void storage::load_binlog_index() {

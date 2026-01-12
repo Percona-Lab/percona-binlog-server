@@ -357,6 +357,7 @@ void log_span_dump(binsrv::basic_logger &logger,
 
 void process_binlog_event(const binsrv::event::event &current_event,
                           util::const_byte_span portion,
+                          const binsrv::event::reader_context &context,
                           binsrv::storage &storage, bool &skip_open_binlog) {
   const auto &current_common_header = current_event.get_common_header();
   const auto code = current_common_header.get_type_code();
@@ -399,7 +400,7 @@ void process_binlog_event(const binsrv::event::event &current_event,
     }
   }
   if (!is_artificial && !is_pseudo) {
-    storage.write_event(portion);
+    storage.write_event(portion, context.is_at_transaction_boundary());
   }
   if ((code == binsrv::event::code_type::rotate && !is_artificial) ||
       code == binsrv::event::code_type::stop) {
@@ -515,7 +516,8 @@ void receive_binlog_events(
               boost::lexical_cast<std::string>(context.get_transaction_gtid()));
     }
 
-    process_binlog_event(current_event, portion, storage, skip_open_binlog);
+    process_binlog_event(current_event, portion, context, storage,
+                         skip_open_binlog);
   }
   if (termination_flag.test()) {
     logger.log(binsrv::log_severity::info,
@@ -531,6 +533,8 @@ void receive_binlog_events(
     util::exception_location().raise<std::logic_error>(
         "fetch operation did not reach EOF reading binlog events");
   }
+  // TODO: here (upon timing out) we also need to flush internal buffers in
+  //       the storage
   logger.log(binsrv::log_severity::info,
              "timed out waiting for events and disconnected");
 }
