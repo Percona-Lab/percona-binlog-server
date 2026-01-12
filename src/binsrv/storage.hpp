@@ -39,6 +39,8 @@ public:
   static constexpr std::string_view default_binlog_index_entry_path{"."};
   static constexpr std::string_view metadata_name{"metadata.json"};
 
+  static constexpr std::size_t default_event_buffer_size_in_bytes{16384U};
+
   // passing by value as we are going to move from this unique_ptr
   storage(const storage_config &config, replication_mode_type replication_mode);
 
@@ -76,7 +78,8 @@ public:
 
   [[nodiscard]] bool is_binlog_open() const noexcept;
   void open_binlog(std::string_view binlog_name);
-  void write_event(util::const_byte_span event_data);
+  void write_event(util::const_byte_span event_data,
+                   bool at_transaction_boundary);
   void close_binlog();
 
 private:
@@ -95,6 +98,10 @@ private:
   std::chrono::steady_clock::duration checkpoint_interval_seconds_{};
   std::chrono::steady_clock::time_point last_checkpoint_timestamp_{};
 
+  using event_buffer_type = std::vector<std::byte>;
+  event_buffer_type event_buffer_{};
+  std::size_t last_transaction_boundary_position_in_event_buffer_{};
+
   [[nodiscard]] bool size_checkpointing_enabled() const noexcept {
     return checkpoint_size_bytes_ != 0;
   }
@@ -103,6 +110,8 @@ private:
     return checkpoint_interval_seconds_ !=
            std::chrono::steady_clock::duration{};
   }
+
+  void flush_event_buffer();
 
   void load_binlog_index();
   void validate_binlog_index(const storage_object_name_container &object_names);

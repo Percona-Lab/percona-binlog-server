@@ -43,7 +43,6 @@ public:
   void open_stream(std::string_view name,
                    storage_backend_open_stream_mode mode);
   void write_data_to_stream(util::const_byte_span data);
-  void flush_stream();
   void close_stream();
 
   [[nodiscard]] std::string get_description() const;
@@ -59,7 +58,6 @@ private:
   virtual void do_open_stream(std::string_view name,
                               storage_backend_open_stream_mode mode) = 0;
   virtual void do_write_data_to_stream(util::const_byte_span data) = 0;
-  virtual void do_flush_stream() = 0;
   virtual void do_close_stream() = 0;
 
   [[nodiscard]] virtual std::string do_get_description() const = 0;

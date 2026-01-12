@@ -683,9 +683,8 @@ void s3_storage_backend::do_write_data_to_stream(util::const_byte_span data) {
     util::exception_location().raise<std::runtime_error>(
         "cannot flush the temporary file for S3 object");
   }
+  upload_tmp_stream_internal();
 }
-
-void s3_storage_backend::do_flush_stream() { upload_tmp_stream_internal(); }
 
 void s3_storage_backend::do_close_stream() {
   assert(tmp_fstream_.is_open());
@@ -743,7 +742,6 @@ void s3_storage_backend::upload_tmp_stream_internal() {
 }
 
 void s3_storage_backend::close_stream_internal() {
-  upload_tmp_stream_internal();
   tmp_fstream_.close();
   // we allow std::filesystem::remove() here to fail - worst case scenario
   // we will have a temorary file not removed

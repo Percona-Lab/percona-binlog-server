@@ -40,6 +40,9 @@ filesystem_storage_backend::filesystem_storage_backend(
     : root_path_{}, ofs_{} {
   // TODO: switch to utf8 file names
 
+  // setting "unbuffered mode" as we will be using our own buffer
+  ofs_.rdbuf()->pubsetbuf(nullptr, 0U);
+
   const auto &backend_uri = config.get<"uri">();
 
   const auto uri_parse_result{boost::urls::parse_absolute_uri(backend_uri)};
@@ -109,8 +112,9 @@ filesystem_storage_backend::do_get_object(std::string_view name) {
   const auto object_path{get_object_path(name)};
 
   // opening in binary mode
-  std::ifstream object_ifs{object_path,
-                           std::ios_base::in | std::ios_base::binary};
+  std::ifstream object_ifs{};
+  object_ifs.rdbuf()->pubsetbuf(nullptr, 0U);
+  object_ifs.open(object_path, std::ios_base::in | std::ios_base::binary);
   if (!object_ifs.is_open()) {
     util::exception_location().raise<std::runtime_error>(
         "cannot open underlying object file");
@@ -134,9 +138,10 @@ void filesystem_storage_backend::do_put_object(std::string_view name,
                                                util::const_byte_span content) {
   const auto object_path = get_object_path(name);
   // opening in binary mode with truncating
-  std::ofstream object_ofs{object_path, std::ios_base::out |
-                                            std::ios_base::binary |
-                                            std::ios_base::trunc};
+  std::ofstream object_ofs{};
+  object_ofs.rdbuf()->pubsetbuf(nullptr, 0U);
+  object_ofs.open(object_path, std::ios_base::out | std::ios_base::binary |
+                                   std::ios_base::trunc);
   if (!object_ofs.is_open()) {
     util::exception_location().raise<std::runtime_error>(
         "cannot open underlying object file for writing");
@@ -174,10 +179,6 @@ void filesystem_storage_backend::do_write_data_to_stream(
     util::exception_location().raise<std::runtime_error>(
         "cannot write data to the underlying stream file");
   }
-}
-
-void filesystem_storage_backend::do_flush_stream() {
-  assert(ofs_.is_open());
   if (!ofs_.flush()) {
     util::exception_location().raise<std::runtime_error>(
         "cannot flush the underlying stream file");

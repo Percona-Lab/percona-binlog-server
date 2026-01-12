@@ -58,8 +58,9 @@ public:
     return transaction_gtid_;
   }
   [[nodiscard]] bool is_at_transaction_boundary() const noexcept {
-    return state_ == state_type::any_other_expected &&
-           current_transaction_length_ == expected_transaction_length_;
+    return (state_ == state_type::any_other_expected &&
+            current_transaction_length_ == expected_transaction_length_) ||
+           (state_ == state_type::rotate_artificial_expected);
   }
 
 private:

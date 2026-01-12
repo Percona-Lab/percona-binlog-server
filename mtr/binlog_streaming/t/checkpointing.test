@@ -70,7 +70,7 @@ if ($extracted_init_connect_variable_value == 'interval')
 {
   --let $binsrv_checkpoint_interval = 5s
 }
-if ($extracted_init_connect_variable_value == 'interval')
+if ($extracted_init_connect_variable_value == 'both')
 {
   --let $binsrv_checkpoint_size = 2M
   --let $binsrv_checkpoint_interval = 5s
