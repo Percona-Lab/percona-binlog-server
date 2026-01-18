@@ -355,57 +355,197 @@ void log_span_dump(binsrv::basic_logger &logger,
   }
 }
 
-void process_binlog_event(const binsrv::event::event &current_event,
-                          util::const_byte_span portion,
-                          const binsrv::event::reader_context &context,
-                          binsrv::storage &storage, bool &skip_open_binlog) {
-  const auto &current_common_header = current_event.get_common_header();
-  const auto code = current_common_header.get_type_code();
+void process_artificial_rotate_event(const binsrv::event::event &current_event,
+                                     binsrv::basic_logger &logger,
+                                     binsrv::event::reader_context &context,
+                                     binsrv::storage &storage) {
+  assert(current_event.get_common_header().get_type_code() ==
+         binsrv::event::code_type::rotate);
+  assert(current_event.get_common_header().get_flags().has_element(
+      binsrv::event::common_header_flag_type::artificial));
 
-  const auto is_artificial{current_common_header.get_flags().has_element(
-      binsrv::event::common_header_flag_type::artificial)};
-  const auto is_pseudo{current_common_header.get_next_event_position_raw() ==
-                       0U};
+  const auto &current_rotate_body =
+      current_event.get_body<binsrv::event::code_type::rotate>();
 
-  if (code == binsrv::event::code_type::rotate && is_artificial) {
-    const auto &current_rotate_body =
-        current_event.get_body<binsrv::event::code_type::rotate>();
-    if (skip_open_binlog) {
-      // we are supposed to get here after reconnection, so doing
-      // basic integrity checks
-      if (current_rotate_body.get_binlog() !=
-          storage.get_current_binlog_name()) {
-        util::exception_location().raise<std::logic_error>(
-            "unexpected binlog name in artificial rotate event after "
-            "reconnection");
-      }
+  bool binlog_opening_needed{true};
+
+  if (storage.is_binlog_open()) {
+    // here we take a "shortcut" path - upon losing connection to the MySQL
+    // server, we do not close storage's binlog file immediately expecting
+    // that upon reconnection we will be able to continue writing to the
+    // same file
+
+    // so, here we just need to make sure that (binlog name, position) pair
+    // in the artificial ROTATE event matches the current storage state
+
+    // also, in case when the server was not shut down properly, it won't
+    // have ROTATE or STOP event as the last one in the binlog, so here we
+    // handle this case by closing the old binlog and opening a new one
+
+    if (current_rotate_body.get_binlog() == storage.get_current_binlog_name()) {
+      // in addition, in position-based replication mode we also need to check
+      // the position
       const auto &current_rotate_post_header =
           current_event.get_post_header<binsrv::event::code_type::rotate>();
       if (current_rotate_post_header.get_position_raw() !=
           storage.get_current_position()) {
         util::exception_location().raise<std::logic_error>(
-            "unexpected binlog position in artificial rotate event after "
-            "reconnection");
+            "unexpected binlog position in artificial rotate event");
       }
 
-      skip_open_binlog = false;
+      binlog_opening_needed = false;
+      // after reusing the existing storage binlog file, we should instruct
+      // the reader context to mark the upcoming FDE and PREVIOUS_GTIDS_LOG
+      // events as info-only
+      context.set_expect_ignorable_preamble_events();
+
+      const std::string current_binlog_name{storage.get_current_binlog_name()};
+      logger.log(binsrv::log_severity::info,
+                 "storage: reused already open binlog file: " +
+                     current_binlog_name);
+
     } else {
-      // in case when the server was not shut down properly, it won't have
-      // ROTATE or STOP event as the last one in the binlog, so here we
-      // handle this case by closing the old binlog and opening a new one
-      if (storage.is_binlog_open()) {
-        storage.close_binlog();
-      }
-      storage.open_binlog(current_rotate_body.get_binlog());
+      // if names do not match, we need to close the currently open
+      // binlog and make sure that binlog_opening_needed is set to true, so
+      // that we will open a new one later
+      const std::string old_binlog_name{storage.get_current_binlog_name()};
+      storage.close_binlog();
+      logger.log(binsrv::log_severity::info,
+                 "storage: closed binlog file left open: " + old_binlog_name);
+      // binlog_opening_needed remains true in this branch
+      assert(binlog_opening_needed);
     }
   }
-  if (!is_artificial && !is_pseudo) {
-    storage.write_event(portion, context.is_at_transaction_boundary());
+  if (binlog_opening_needed) {
+    const auto binlog_open_result{
+        storage.open_binlog(current_rotate_body.get_binlog())};
+
+    // we also need to instruct the reader context that we opened an
+    // existing file (the one that was neither empty nor just had the
+    // magic payload writtent to it), so that it would mark the upcoming FDE
+    // and PREVIOUS_GTIDS_LOG events as info-only
+
+    if (binlog_open_result ==
+        binsrv::open_binlog_status::opened_with_data_present) {
+      context.set_expect_ignorable_preamble_events();
+    }
+
+    std::string message{"storage: "};
+    if (binlog_open_result == binsrv::open_binlog_status::created) {
+      message += "created a new";
+    } else {
+      message += "opened an existing";
+      if (binlog_open_result == binsrv::open_binlog_status::opened_empty) {
+        message += " (empty)";
+      } else if (binlog_open_result ==
+                 binsrv::open_binlog_status::opened_at_magic_paylod_offset) {
+        message += " (with magic payload only)";
+      }
+    }
+    message += " binlog file: ";
+    message += current_rotate_body.get_binlog();
+    logger.log(binsrv::log_severity::info, message);
   }
+}
+
+void process_rotate_or_stop_event(binsrv::basic_logger &logger,
+                                  binsrv::storage &storage) {
+  const std::string old_binlog_name{storage.get_current_binlog_name()};
+  storage.close_binlog();
+  logger.log(binsrv::log_severity::info,
+             "storage: closed binlog file: " + old_binlog_name);
+}
+
+void process_binlog_event(const binsrv::event::event &current_event,
+                          util::const_byte_span portion,
+                          binsrv::basic_logger &logger,
+                          binsrv::event::reader_context &context,
+                          binsrv::storage &storage) {
+  const auto &current_common_header = current_event.get_common_header();
+  const auto code = current_common_header.get_type_code();
+
+  const auto is_artificial{current_common_header.get_flags().has_element(
+      binsrv::event::common_header_flag_type::artificial)};
+
+  // processing the very first event in the sequence - artificial ROTATE event
+  if (code == binsrv::event::code_type::rotate && is_artificial) {
+    process_artificial_rotate_event(current_event, logger, context, storage);
+  }
+
+  // checking if the event needs to be written to the binlog
+  if (!context.is_event_info_only()) {
+    storage.write_event(portion, context.is_at_transaction_boundary(),
+                        context.get_transaction_gtid());
+  }
+
+  // processing the very last event in the sequence - either a non-artificial
+  // ROTATE event or a STOP event
   if ((code == binsrv::event::code_type::rotate && !is_artificial) ||
       code == binsrv::event::code_type::stop) {
-    storage.close_binlog();
+    process_rotate_or_stop_event(logger, storage);
   }
+}
+
+bool open_connection_and_switch_to_replication(
+    binsrv::operation_mode_type operation_mode, binsrv::basic_logger &logger,
+    const easymysql::library &mysql_lib,
+    const easymysql::connection_config &connection_config,
+    std::uint32_t server_id, bool verify_checksum, binsrv::storage &storage,
+    easymysql::connection &connection) {
+  try {
+    connection = mysql_lib.create_connection(connection_config);
+  } catch (const easymysql::core_error &) {
+    if (operation_mode == binsrv::operation_mode_type::fetch) {
+      throw;
+    }
+    logger.log(binsrv::log_severity::info,
+               "unable to establish connection to mysql server");
+    return false;
+  }
+
+  logger.log(binsrv::log_severity::info,
+             "established connection to mysql server");
+
+  log_connection_info(logger, connection);
+
+  const auto blocking_mode{
+      operation_mode == binsrv::operation_mode_type::fetch
+          ? easymysql::connection_replication_mode_type::non_blocking
+          : easymysql::connection_replication_mode_type::blocking};
+
+  try {
+    if (storage.is_in_gtid_replication_mode()) {
+      const auto &gtids{storage.get_gtids()};
+      const auto encoded_size{gtids.calculate_encoded_size()};
+
+      binsrv::gtids::gtid_set_storage encoded_gtids_buffer(encoded_size);
+      util::byte_span destination{encoded_gtids_buffer};
+      gtids.encode_to(destination);
+
+      connection.switch_to_gtid_replication(
+          server_id, util::const_byte_span{encoded_gtids_buffer},
+          verify_checksum, blocking_mode);
+    } else {
+      if (storage.has_current_binlog_name()) {
+        connection.switch_to_position_replication(
+            server_id, storage.get_current_binlog_name(),
+            storage.get_current_position(), verify_checksum, blocking_mode);
+      } else {
+        connection.switch_to_position_replication(server_id, verify_checksum,
+                                                  blocking_mode);
+      }
+    }
+  } catch (const easymysql::core_error &) {
+    if (operation_mode == binsrv::operation_mode_type::fetch) {
+      throw;
+    }
+    logger.log(binsrv::log_severity::info, "unable to switch to replication");
+    return false;
+  }
+
+  log_replication_info(logger, server_id, storage, verify_checksum,
+                       blocking_mode);
+  return true;
 }
 
 void receive_binlog_events(
@@ -415,60 +555,11 @@ void receive_binlog_events(
     const easymysql::connection_config &connection_config,
     std::uint32_t server_id, bool verify_checksum, binsrv::storage &storage) {
   easymysql::connection connection{};
-  try {
-    connection = mysql_lib.create_connection(connection_config);
-  } catch (const easymysql::core_error &) {
-    if (operation_mode == binsrv::operation_mode_type::fetch) {
-      throw;
-    }
-    logger.log(binsrv::log_severity::info,
-               "unable to establish connection to mysql server");
+  if (!open_connection_and_switch_to_replication(
+          operation_mode, logger, mysql_lib, connection_config, server_id,
+          verify_checksum, storage, connection)) {
     return;
   }
-
-  logger.log(binsrv::log_severity::info,
-             "established connection to mysql server");
-
-  log_connection_info(logger, connection);
-
-  const auto replication_mode{storage.get_replication_mode()};
-  const auto blocking_mode{
-      operation_mode == binsrv::operation_mode_type::fetch
-          ? easymysql::connection_replication_mode_type::non_blocking
-          : easymysql::connection_replication_mode_type::blocking};
-
-  try {
-    if (replication_mode == binsrv::replication_mode_type::position) {
-      if (storage.has_current_binlog_name()) {
-        connection.switch_to_position_replication(
-            server_id, storage.get_current_binlog_name(),
-            storage.get_current_position(), verify_checksum, blocking_mode);
-      } else {
-        connection.switch_to_position_replication(server_id, verify_checksum,
-                                                  blocking_mode);
-      }
-    } else {
-      const binsrv::gtids::gtid_set empty_gtids{};
-      const auto encoded_size{empty_gtids.calculate_encoded_size()};
-
-      binsrv::gtids::gtid_set_storage buffer(encoded_size);
-      util::byte_span destination{buffer};
-      empty_gtids.encode_to(destination);
-
-      connection.switch_to_gtid_replication(server_id,
-                                            util::const_byte_span{buffer},
-                                            verify_checksum, blocking_mode);
-    }
-  } catch (const easymysql::core_error &) {
-    if (operation_mode == binsrv::operation_mode_type::fetch) {
-      throw;
-    }
-    logger.log(binsrv::log_severity::info, "unable to switch to replication");
-    return;
-  }
-
-  log_replication_info(logger, server_id, storage, verify_checksum,
-                       blocking_mode);
 
   // Network streams are requested with COM_BINLOG_DUMP and
   // each Binlog Event response is prepended with 00 OK-byte.
@@ -477,12 +568,9 @@ void receive_binlog_events(
   util::const_byte_span portion;
 
   binsrv::event::reader_context context{connection.get_server_version(),
-                                        verify_checksum, replication_mode};
+                                        verify_checksum,
+                                        storage.get_replication_mode()};
 
-  // if binlog is still open, there is no sense to close it and re-open
-  // instead, we will just instruct this loop to process the
-  // very first artificial rotate event in a special way
-  bool skip_open_binlog{storage.is_binlog_open()};
   bool fetch_result{};
 
   while (!termination_flag.test() &&
@@ -505,7 +593,8 @@ void receive_binlog_events(
     logger.log(
         binsrv::log_severity::info,
         "event: " + std::string{current_header.get_readable_type_code()} +
-            (readable_flags.empty() ? "" : "(" + readable_flags + ")"));
+            (readable_flags.empty() ? "" : " (" + readable_flags + ")") +
+            (context.is_event_info_only() ? " [info_only]" : ""));
     logger.log(binsrv::log_severity::debug,
                "Parsed event:\n" +
                    boost::lexical_cast<std::string>(current_event));
@@ -516,8 +605,7 @@ void receive_binlog_events(
               boost::lexical_cast<std::string>(context.get_transaction_gtid()));
     }
 
-    process_binlog_event(current_event, portion, context, storage,
-                         skip_open_binlog);
+    process_binlog_event(current_event, portion, logger, context, storage);
   }
   if (termination_flag.test()) {
     logger.log(binsrv::log_severity::info,
@@ -533,6 +621,18 @@ void receive_binlog_events(
     util::exception_location().raise<std::logic_error>(
         "fetch operation did not reach EOF reading binlog events");
   }
+
+  // in GTID-based replication mode we also need to discard some data in the
+  // transaction event buffer to make sure that upon reconnection we will
+  // continue operation from the transaction boundary
+
+  // in position-based replication mode this is not needed as it is not a
+  // problem to resume streaming fron a position that does not correspond to
+  // transaction boundary
+  if (storage.is_in_gtid_replication_mode()) {
+    storage.discard_incomplete_transaction_events();
+  }
+
   // TODO: here (upon timing out) we also need to flush internal buffers in
   //       the storage
   logger.log(binsrv::log_severity::info,

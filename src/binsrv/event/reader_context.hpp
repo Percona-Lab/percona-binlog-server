@@ -63,6 +63,14 @@ public:
            (state_ == state_type::rotate_artificial_expected);
   }
 
+  [[nodiscard]] bool is_event_info_only() const noexcept {
+    return info_only_event_;
+  }
+
+  void set_expect_ignorable_preamble_events() noexcept {
+    expect_ignorable_preamble_events_ = true;
+  }
+
 private:
   // this class implements the logic of the following state machine
   // (
@@ -90,6 +98,9 @@ private:
   gtids::gtid transaction_gtid_{};
   std::uint32_t expected_transaction_length_{0U};
   std::uint32_t current_transaction_length_{0U};
+
+  bool expect_ignorable_preamble_events_{false};
+  bool info_only_event_{false};
 
   void process_event(const event &current_event);
   [[nodiscard]] bool

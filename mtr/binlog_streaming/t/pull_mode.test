@@ -19,6 +19,7 @@ eval $stmt_reset_binary_logs_and_gtids;
 --let $binsrv_read_timeout = 3
 --let $binsrv_idle_time = 1
 --let $binsrv_verify_checksum = TRUE
+--let $binsrv_replication_mode = position
 --source ../include/set_up_binsrv_environment.inc
 
 --echo

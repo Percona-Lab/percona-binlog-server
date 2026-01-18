@@ -36,6 +36,7 @@ eval GRANT REPLICATION SLAVE ON *.* TO '$x509_user_name'@'$localhost_ip';
 --let $binsrv_read_timeout = 60
 --let $binsrv_idle_time = 10
 --let $binsrv_verify_checksum = TRUE
+--let $binsrv_replication_mode = position
 
 # a query that checks SSL connection status
 --let $ssl_status_query = SELECT IF(VARIABLE_VALUE = '', '<unspecified>', VARIABLE_VALUE) AS SSL_status FROM performance_schema.session_status WHERE VARIABLE_NAME = 'Ssl_version'

@@ -13,17 +13,17 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef BINSRV_STORAGE_METADATA_FWD_HPP
-#define BINSRV_STORAGE_METADATA_FWD_HPP
+#ifndef BINSRV_BINLOG_FILE_METADATA_FWD_HPP
+#define BINSRV_BINLOG_FILE_METADATA_FWD_HPP
 
 #include <cstdint>
 
 namespace binsrv {
 
-class storage_metadata;
+class binlog_file_metadata;
 
-inline constexpr std::uint32_t expected_storage_metadata_version{1U};
+inline constexpr std::uint32_t expected_binlog_file_metadata_version{1U};
 
 } // namespace binsrv
 
-#endif // BINSRV_STORAGE_METADATA_FWD_HPP
+#endif // BINSRV_BINLOG_FILE_METADATA_FWD_HPP

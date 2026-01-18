@@ -27,6 +27,7 @@
 #include "binsrv/replication_mode_type_fwd.hpp"
 #include "binsrv/storage_config_fwd.hpp"
 
+#include "binsrv/gtids/gtid_fwd.hpp"
 #include "binsrv/gtids/gtid_set.hpp"
 
 #include "util/byte_span_fwd.hpp"
@@ -38,6 +39,7 @@ public:
   static constexpr std::string_view default_binlog_index_name{"binlog.index"};
   static constexpr std::string_view default_binlog_index_entry_path{"."};
   static constexpr std::string_view metadata_name{"metadata.json"};
+  static constexpr std::string_view binlog_metadata_extension{".json"};
 
   static constexpr std::size_t default_event_buffer_size_in_bytes{16384U};
 
@@ -57,6 +59,7 @@ public:
   [[nodiscard]] replication_mode_type get_replication_mode() const noexcept {
     return replication_mode_;
   }
+  [[nodiscard]] bool is_in_gtid_replication_mode() const noexcept;
 
   [[nodiscard]] bool has_current_binlog_name() const noexcept {
     return !binlog_names_.empty();
@@ -77,10 +80,14 @@ public:
   check_binlog_name(std::string_view binlog_name) noexcept;
 
   [[nodiscard]] bool is_binlog_open() const noexcept;
-  void open_binlog(std::string_view binlog_name);
+
+  [[nodiscard]] open_binlog_status open_binlog(std::string_view binlog_name);
   void write_event(util::const_byte_span event_data,
-                   bool at_transaction_boundary);
+                   bool at_transaction_boundary,
+                   const gtids::gtid &transaction_gtid);
   void close_binlog();
+
+  void discard_incomplete_transaction_events();
 
 private:
   basic_storage_backend_ptr backend_;
@@ -101,9 +108,10 @@ private:
   using event_buffer_type = std::vector<std::byte>;
   event_buffer_type event_buffer_{};
   std::size_t last_transaction_boundary_position_in_event_buffer_{};
+  gtids::gtid_set gtids_in_event_buffer_{};
 
   [[nodiscard]] bool size_checkpointing_enabled() const noexcept {
-    return checkpoint_size_bytes_ != 0;
+    return checkpoint_size_bytes_ != 0ULL;
   }
 
   [[nodiscard]] bool interval_checkpointing_enabled() const noexcept {
@@ -111,14 +119,35 @@ private:
            std::chrono::steady_clock::duration{};
   }
 
+  [[nodiscard]] bool has_event_data_to_flush() const noexcept {
+    return last_transaction_boundary_position_in_event_buffer_ != 0ULL;
+  }
+  [[nodiscard]] std::uint64_t get_flushed_position() const noexcept {
+    return get_current_position() - std::size(event_buffer_);
+  }
+  [[nodiscard]] std::uint64_t get_ready_to_flush_position() const noexcept {
+    return get_flushed_position() +
+           last_transaction_boundary_position_in_event_buffer_;
+  }
   void flush_event_buffer();
 
   void load_binlog_index();
-  void validate_binlog_index(const storage_object_name_container &object_names);
-  void save_binlog_index();
+  void validate_binlog_index(
+      const storage_object_name_container &object_names) const;
+  void save_binlog_index() const;
+
   void load_metadata();
-  void validate_metadata(replication_mode_type replication_mode);
-  void save_metadata();
+  void validate_metadata(replication_mode_type replication_mode) const;
+  void save_metadata() const;
+
+  [[nodiscard]] static std::string
+  generate_binlog_metadata_name(std::string_view binlog_name);
+  void load_binlog_metadata(std::string_view binlog_name);
+  void save_binlog_metadata(std::string_view binlog_name) const;
+
+  void load_and_validate_binlog_metadata_set(
+      const storage_object_name_container &object_names,
+      const storage_object_name_container &object_metadata_names);
 };
 
 } // namespace binsrv

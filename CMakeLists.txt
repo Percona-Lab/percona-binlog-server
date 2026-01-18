@@ -224,6 +224,10 @@ set(source_files
   src/binsrv/basic_storage_backend.hpp
   src/binsrv/basic_storage_backend.cpp
 
+  src/binsrv/binlog_file_metadata_fwd.hpp
+  src/binsrv/binlog_file_metadata.hpp
+  src/binsrv/binlog_file_metadata.cpp
+
   src/binsrv/cout_logger.hpp
   src/binsrv/cout_logger.cpp
 

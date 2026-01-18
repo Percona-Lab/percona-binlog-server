@@ -16,6 +16,7 @@
 #include "binsrv/filesystem_storage_backend.hpp"
 
 #include <cassert>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <ios>
@@ -154,20 +155,24 @@ void filesystem_storage_backend::do_put_object(std::string_view name,
   }
 }
 
-void filesystem_storage_backend::do_open_stream(
+[[nodiscard]] std::uint64_t filesystem_storage_backend::do_open_stream(
     std::string_view name, storage_backend_open_stream_mode mode) {
   assert(!ofs_.is_open());
   const std::filesystem::path current_file_path{get_object_path(name)};
 
-  auto open_mode{std::ios_base::out | std::ios_base::binary |
-                 (mode == storage_backend_open_stream_mode::create
-                      ? std::ios_base::trunc
-                      : std::ios_base::app)};
+  const auto open_mode{std::ios_base::out | std::ios_base::binary |
+                       (mode == storage_backend_open_stream_mode::create
+                            ? std::ios_base::trunc
+                            : std::ios_base::app | std::ios_base::ate)};
   ofs_.open(current_file_path, open_mode);
   if (!ofs_.is_open()) {
     util::exception_location().raise<std::runtime_error>(
         "cannot open underlying file for the stream");
   }
+
+  const auto open_position{static_cast<std::streamoff>(ofs_.tellp())};
+
+  return static_cast<std::uint64_t>(open_position);
 }
 
 void filesystem_storage_backend::do_write_data_to_stream(

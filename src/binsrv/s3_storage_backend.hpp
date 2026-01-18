@@ -73,8 +73,9 @@ private:
   void do_put_object(std::string_view name,
                      util::const_byte_span content) override;
 
-  void do_open_stream(std::string_view name,
-                      storage_backend_open_stream_mode mode) override;
+  [[nodiscard]] std::uint64_t
+  do_open_stream(std::string_view name,
+                 storage_backend_open_stream_mode mode) override;
   void do_write_data_to_stream(util::const_byte_span data) override;
   void do_close_stream() override;
 

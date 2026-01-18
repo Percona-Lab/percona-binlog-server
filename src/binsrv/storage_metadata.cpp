@@ -31,9 +31,8 @@
 
 namespace binsrv {
 
-storage_metadata::storage_metadata() : impl_{} {
-  root().get<"version">() = expected_metadata_version;
-}
+storage_metadata::storage_metadata()
+    : impl_{{expected_storage_metadata_version}, {}} {}
 
 storage_metadata::storage_metadata(std::string_view data) : impl_{} {
   auto json_value = boost::json::parse(data);
@@ -50,7 +49,7 @@ storage_metadata::storage_metadata(std::string_view data) : impl_{} {
 }
 
 void storage_metadata::validate() const {
-  if (root().get<"version">() != expected_metadata_version) {
+  if (root().get<"version">() != expected_storage_metadata_version) {
     util::exception_location().raise<std::invalid_argument>(
         "unsupported storage metadata version");
   }

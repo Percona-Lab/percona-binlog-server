@@ -1,0 +1,105 @@
+*** Resetting replication at the very beginning of the test.
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+
+*** 1. Executing the Binlog Server utility to for the very first
+***    time on an empty storage and receive no real events.
+
+*** 1a. Executing the Binlog Server utility on a storage that has
+***     only one binlog file that has only magic payload in it and
+***     receive no events.
+
+*** Creating a simple table
+CREATE TABLE t1(id INT UNSIGNED NOT NULL AUTO_INCREMENT, PRIMARY KEY(id)) ENGINE=InnoDB;
+
+*** 2. Executing the Binlog Server utility on a storage that has
+***    only one binlog file that has only magic payload in it and
+***    receive events from the CREATE TABLE transaction.
+
+*** 2a. Executing the Binlog Server utility on a storage that has
+***     only one binlog file that has CREATE TABLE transaction and
+***     receive no events.
+
+*** Filling the table with some data (one transaction with one
+*** insert and another one with two inserts).
+INSERT INTO t1 VALUES(DEFAULT);
+START TRANSACTION;
+INSERT INTO t1 VALUES(DEFAULT);
+INSERT INTO t1 VALUES(DEFAULT);
+COMMIT;
+
+*** 3. Executing the Binlog Server utility on a storage that has
+***    only one binlog file with some data and receive events from
+***    the INSERT transactions.
+
+*** 3a. Executing the Binlog Server utility on a storage that has
+***     only one binlog file with some data and receive no events.
+
+*** Flushing the first binary log and switching to the second one.
+FLUSH BINARY LOGS;
+
+*** 4. Executing the Binlog Server utility on a storage that has
+***    only one binlog file with some data and receive a single
+***    ROTATE event.
+
+*** 4a. Executing the Binlog Server utility on a storage that has
+***     one binlog file with some data and another one with just
+***     magic payload and receive no events.
+
+*** Filling the table with some more data (one transaction with one
+*** insert and another one with two inserts).
+INSERT INTO t1 VALUES(DEFAULT);
+START TRANSACTION;
+INSERT INTO t1 VALUES(DEFAULT);
+INSERT INTO t1 VALUES(DEFAULT);
+COMMIT;
+
+*** 5. Executing the Binlog Server utility on a storage that has
+***    one binlog file with some data and another one with just
+***    magic payload and receive events from the second group of
+***    INSERT transactions.
+
+*** 5a. Executing the Binlog Server utility on a storage that has
+***     two binlog files with some data and receive no events
+
+*** Flushing the second binary log and switching to the third one.
+*** Immediately after that updating data inserted previously.
+FLUSH BINARY LOGS;
+UPDATE t1 SET id = id + 100;
+
+*** 6. Executing the Binlog Server utility on a storage that has
+***    two binlog files with some data and receive a ROTATE event
+***    followed by events from the UPDATE transaction
+
+*** 6a. Executing the Binlog Server utility on a storage that has
+***     three binlog files with some data and receive no events.
+
+*** Flushing the third binary log and switching to the fourth one.
+*** Immediately after that deleting some data updated previously and
+*** flushing one more time switching to the fifth binary log file.
+FLUSH BINARY LOGS;
+DELETE FROM t1 WHERE id <= 103;
+FLUSH BINARY LOGS;
+
+*** 7. Executing the Binlog Server utility on a storage that has
+***    three binlog files with some data and receive a ROTATE
+***    event followed by a events from the DELETE transaction
+***    followed by another ROTATE event
+
+*** 7a. Executing the Binlog Server utility on a storage that has
+***     five binlog files with some data and receive no events.
+
+*** Dropping the table.
+DROP TABLE t1;
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.

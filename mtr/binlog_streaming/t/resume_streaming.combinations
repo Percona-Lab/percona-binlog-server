@@ -1,0 +1,15 @@
+[position_buffered]
+init-connect = SET @binsrv_buffering_mode = 'buffered'
+
+[position_unbuffered]
+init-connect = SET @binsrv_buffering_mode = 'unbuffered'
+
+[gtid_buffered]
+gtid-mode=on
+enforce-gtid-consistency
+init-connect = SET @binsrv_buffering_mode = 'buffered'
+
+[gtid_unbuffered]
+gtid-mode=on
+enforce-gtid-consistency
+init-connect = SET @binsrv_buffering_mode = 'unbuffered'

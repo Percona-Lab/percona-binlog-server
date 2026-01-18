@@ -42,6 +42,7 @@ INSERT INTO t1 VALUES(DEFAULT);
 --let $binsrv_read_timeout = 60
 --let $binsrv_idle_time = 10
 --let $binsrv_verify_checksum = $extracted_init_connect_variable_value
+--let $binsrv_replication_mode = position
 --let $binsrv_checkpoint_size = 1
 --source ../include/set_up_binsrv_environment.inc
 
