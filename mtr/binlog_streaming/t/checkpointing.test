@@ -58,7 +58,8 @@ DROP TABLE t1;
 --let $binsrv_read_timeout = 60
 --let $binsrv_idle_time = 10
 --let $binsrv_verify_checksum = TRUE
-# Enabling checkointing at about 40% of expected single binlog file size, so that it
+--let $binsrv_replication_mode = position
+# Enabling checkpointing at about 40% of expected single binlog file size, so that it
 # will happen twice before rotation.
 # Like wise, from the time point of view, make interval pretty low so that
 # at lease a few interval checkpointing events will happen.

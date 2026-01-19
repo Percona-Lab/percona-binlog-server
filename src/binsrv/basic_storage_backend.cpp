@@ -15,6 +15,7 @@
 
 #include "binsrv/basic_storage_backend.hpp"
 
+#include <cstdint>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -39,15 +40,17 @@ void basic_storage_backend::put_object(std::string_view name,
   do_put_object(name, content);
 }
 
-void basic_storage_backend::open_stream(std::string_view name,
-                                        storage_backend_open_stream_mode mode) {
+[[nodiscard]] std::uint64_t
+basic_storage_backend::open_stream(std::string_view name,
+                                   storage_backend_open_stream_mode mode) {
   if (stream_open_) {
     util::exception_location().raise<std::logic_error>(
         "cannot open a new stream as the previous one has not been closed");
   }
 
-  do_open_stream(name, mode);
+  const auto result{do_open_stream(name, mode)};
   stream_open_ = true;
+  return result;
 }
 
 void basic_storage_backend::write_data_to_stream(util::const_byte_span data) {

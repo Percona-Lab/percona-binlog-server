@@ -16,7 +16,16 @@
 #ifndef BINSRV_STORAGE_FWD_HPP
 #define BINSRV_STORAGE_FWD_HPP
 
+#include <cstdint>
+
 namespace binsrv {
+
+enum class open_binlog_status : std::uint8_t {
+  created,
+  opened_empty,
+  opened_at_magic_paylod_offset,
+  opened_with_data_present
+};
 
 class storage;
 

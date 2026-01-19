@@ -34,16 +34,26 @@ namespace detail {
 // classes declared in different namespaces.
 struct insertion_context {};
 
+// A helper function that emplaces a single nv value to the specified JSON
+// object and is used by the tag_invoke() overload for nv_tuple<..>.
+template <named_value NV, named_value... NVPack>
+void emplace_element_into_json_value(boost::json::object &json_object,
+                                     const nv_tuple<NVPack...> &obj,
+                                     const insertion_context &insertion_ctx) {
+  auto subvalue{
+      boost::json::value_from(obj.template get<NV::name>(), insertion_ctx)};
+  if (!subvalue.is_null()) {
+    json_object.emplace(NV::name.sv(), std::move(subvalue));
+  }
+}
+
 // The tag_invoke() overload for nv_tuple<..>.
 template <named_value... NVPack>
 void tag_invoke(boost::json::value_from_tag /*unused*/,
                 boost::json::value &json_value, const nv_tuple<NVPack...> &obj,
                 const insertion_context &insertion_ctx) {
   boost::json::object json_object{};
-
-  (json_object.emplace(NVPack::name.sv(),
-                       boost::json::value_from(obj.template get<NVPack::name>(),
-                                               insertion_ctx)),
+  (emplace_element_into_json_value<NVPack>(json_object, obj, insertion_ctx),
    ...);
   json_value = std::move(json_object);
 }

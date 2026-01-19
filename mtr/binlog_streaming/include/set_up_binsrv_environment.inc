@@ -14,6 +14,7 @@
 #   --let $binsrv_tls_version = TLSv1.2 (optional)
 #   --let $binsrv_idle_time = 10
 #   --let $binsrv_verify_checksum = TRUE | FALSE
+#   --let $binsrv_replication_mode = position | gtid
 #   --let $binsrv_checkpoint_size = 2M (optional)
 #   --let $binsrv_checkpoint_interval = 30s (optional)
 #   --source set_up_binsrv_environment.inc
@@ -82,7 +83,7 @@ eval SET @binsrv_config_json = JSON_OBJECT(
      'server_id', @@server_id + 1,
      'idle_time', $binsrv_idle_time,
      'verify_checksum', $binsrv_verify_checksum,
-     'mode', 'position'
+     'mode', '$binsrv_replication_mode'
   ),
   'storage', JSON_OBJECT(
      'backend', '$storage_backend',

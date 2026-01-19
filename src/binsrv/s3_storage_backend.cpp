@@ -17,6 +17,7 @@
 
 #include <cassert>
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -650,8 +651,9 @@ void s3_storage_backend::do_put_object(std::string_view name,
       {.bucket = bucket_, .object_path = get_object_path(name)}, content);
 }
 
-void s3_storage_backend::do_open_stream(std::string_view name,
-                                        storage_backend_open_stream_mode mode) {
+[[nodiscard]] std::uint64_t
+s3_storage_backend::do_open_stream(std::string_view name,
+                                   storage_backend_open_stream_mode mode) {
   assert(!tmp_fstream_.is_open());
   current_name_ = name;
   current_tmp_file_path_ = generate_tmp_file_path();
@@ -662,13 +664,20 @@ void s3_storage_backend::do_open_stream(std::string_view name,
         current_tmp_file_path_);
   }
 
-  tmp_fstream_.open(current_tmp_file_path_,
-                    std::ios_base::in | std::ios_base::out |
-                        std::ios_base::binary | std::ios_base::app);
+  const auto open_mode{std::ios_base::in | std::ios_base::out |
+                       std::ios_base::binary |
+                       (mode == storage_backend_open_stream_mode::create
+                            ? std::ios_base::trunc
+                            : std::ios_base::app | std::ios_base::ate)};
+  tmp_fstream_.open(current_tmp_file_path_, open_mode);
   if (!tmp_fstream_.is_open()) {
     util::exception_location().raise<std::runtime_error>(
         "cannot open temporary file for S3 object body stream");
   }
+
+  const auto open_position{static_cast<std::streamoff>(tmp_fstream_.tellp())};
+
+  return static_cast<std::uint64_t>(open_position);
 }
 
 void s3_storage_backend::do_write_data_to_stream(util::const_byte_span data) {

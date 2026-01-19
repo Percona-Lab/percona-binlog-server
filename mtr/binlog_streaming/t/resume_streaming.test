@@ -1,0 +1,161 @@
+--source ../include/have_binsrv.inc
+
+--source ../include/v80_v84_compatibility_defines.inc
+
+# in case of --repeat=N, we need to start from a fresh binary log to make
+# this test deterministic
+--echo *** Resetting replication at the very beginning of the test.
+--disable_query_log
+eval $stmt_reset_binary_logs_and_gtids;
+--enable_query_log
+
+# identifying backend storage type ('file' or 's3')
+--source ../include/identify_storage_backend.inc
+
+# identifying utility buffering mode from the conbination
+--let $extracted_init_connect_variable_name = binsrv_buffering_mode
+--source ../include/extract_init_connect_variable_value.inc
+
+# creating data directory, configuration file, etc.
+--let $binsrv_connect_timeout = 20
+--let $binsrv_read_timeout = 60
+--let $binsrv_idle_time = 10
+--let $binsrv_verify_checksum = TRUE
+--let $binsrv_replication_mode = `SELECT IF(@@global.gtid_mode, 'gtid', 'position')`
+if ($extracted_init_connect_variable_value == 'buffered')
+{
+  --let $binsrv_checkpoint_size = 1G
+}
+if ($extracted_init_connect_variable_value == 'unbuffered')
+{
+  --let $binsrv_checkpoint_size = 1
+}
+--source ../include/set_up_binsrv_environment.inc
+
+--echo
+--echo *** 1. Executing the Binlog Server utility to for the very first
+--echo ***    time on an empty storage and receive no real events.
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+--echo
+--echo *** 1a. Executing the Binlog Server utility on a storage that has
+--echo ***     only one binlog file that has only magic payload in it and
+--echo ***     receive no events.
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+--echo
+--echo *** Creating a simple table
+CREATE TABLE t1(id INT UNSIGNED NOT NULL AUTO_INCREMENT, PRIMARY KEY(id)) ENGINE=InnoDB;
+
+--echo
+--echo *** 2. Executing the Binlog Server utility on a storage that has
+--echo ***    only one binlog file that has only magic payload in it and
+--echo ***    receive events from the CREATE TABLE transaction.
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+--echo
+--echo *** 2a. Executing the Binlog Server utility on a storage that has
+--echo ***     only one binlog file that has CREATE TABLE transaction and
+--echo ***     receive no events.
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+--echo
+--echo *** Filling the table with some data (one transaction with one
+--echo *** insert and another one with two inserts).
+INSERT INTO t1 VALUES(DEFAULT);
+START TRANSACTION;
+INSERT INTO t1 VALUES(DEFAULT);
+INSERT INTO t1 VALUES(DEFAULT);
+COMMIT;
+
+--echo
+--echo *** 3. Executing the Binlog Server utility on a storage that has
+--echo ***    only one binlog file with some data and receive events from
+--echo ***    the INSERT transactions.
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+--echo
+--echo *** 3a. Executing the Binlog Server utility on a storage that has
+--echo ***     only one binlog file with some data and receive no events.
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+--echo
+--echo *** Flushing the first binary log and switching to the second one.
+FLUSH BINARY LOGS;
+
+--echo
+--echo *** 4. Executing the Binlog Server utility on a storage that has
+--echo ***    only one binlog file with some data and receive a single
+--echo ***    ROTATE event.
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+--echo
+--echo *** 4a. Executing the Binlog Server utility on a storage that has
+--echo ***     one binlog file with some data and another one with just
+--echo ***     magic payload and receive no events.
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+--echo
+--echo *** Filling the table with some more data (one transaction with one
+--echo *** insert and another one with two inserts).
+INSERT INTO t1 VALUES(DEFAULT);
+START TRANSACTION;
+INSERT INTO t1 VALUES(DEFAULT);
+INSERT INTO t1 VALUES(DEFAULT);
+COMMIT;
+
+--echo
+--echo *** 5. Executing the Binlog Server utility on a storage that has
+--echo ***    one binlog file with some data and another one with just
+--echo ***    magic payload and receive events from the second group of
+--echo ***    INSERT transactions.
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+--echo
+--echo *** 5a. Executing the Binlog Server utility on a storage that has
+--echo ***     two binlog files with some data and receive no events
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+--echo
+--echo *** Flushing the second binary log and switching to the third one.
+--echo *** Immediately after that updating data inserted previously.
+FLUSH BINARY LOGS;
+UPDATE t1 SET id = id + 100;
+
+--echo
+--echo *** 6. Executing the Binlog Server utility on a storage that has
+--echo ***    two binlog files with some data and receive a ROTATE event
+--echo ***    followed by events from the UPDATE transaction
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+--echo
+--echo *** 6a. Executing the Binlog Server utility on a storage that has
+--echo ***     three binlog files with some data and receive no events.
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+--echo
+--echo *** Flushing the third binary log and switching to the fourth one.
+--echo *** Immediately after that deleting some data updated previously and
+--echo *** flushing one more time switching to the fifth binary log file.
+FLUSH BINARY LOGS;
+DELETE FROM t1 WHERE id <= 103;
+FLUSH BINARY LOGS;
+
+--echo
+--echo *** 7. Executing the Binlog Server utility on a storage that has
+--echo ***    three binlog files with some data and receive a ROTATE
+--echo ***    event followed by a events from the DELETE transaction
+--echo ***    followed by another ROTATE event
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+--echo
+--echo *** 7a. Executing the Binlog Server utility on a storage that has
+--echo ***     five binlog files with some data and receive no events.
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+--echo
+--echo *** Dropping the table.
+DROP TABLE t1;
+
+# cleaning up
+--source ../include/tear_down_binsrv_environment.inc

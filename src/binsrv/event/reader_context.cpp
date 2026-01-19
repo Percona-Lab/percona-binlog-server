@@ -118,6 +118,7 @@ reader_context::process_event_in_rotate_artificial_expected_state(
   position_ = static_cast<std::uint32_t>(
       current_event.get_post_header<code_type::rotate>().get_position_raw());
 
+  info_only_event_ = true;
   // transition to the next state
   state_ = state_type::format_description_expected;
   return true;
@@ -183,17 +184,57 @@ reader_context::process_event_in_format_description_expected_state(
   // from a particular position (created only for the purpose of making
   // clients aware of the protocol specifics)
 
-  // the latter can be distinguished by having next_event_position set to
-  // zero
-  const auto is_pseudo{common_header.get_next_event_position_raw() == 0U};
-  if (!is_pseudo) {
+  // in position-based mode we have 2 cases:
+  // 1) Starting from the beginning of a binary log file
+  //    artificial ROTATE - should not be written
+  //    FDE (common_header.next_event_position != 0) - should be written
+  //    PREVIOUS_GTIDS_LOG - should be written
+  //    ...
+  // 2) Resuming from the middle of a binary log file
+  //    artificial ROTATE - should not be written
+  //    FDE (common_header.next_event_position == 0) - should not be written
+  //    ...
+
+  // in GTID-based mode we have 2 cases:
+  // 1) Starting from the beginning of a binary log file
+  //    artificial ROTATE - should not be written
+  //    FDE (common_header.next_event_position != 0) - should be written
+  //    PREVIOUS_GTIDS_LOG - should be written
+  //    ...
+  // 2) Resuming from the middle of a binary log file
+  //    artificial ROTATE - should not be written
+  //    FDE (common_header.next_event_position != 0) - should not be written
+  //    PREVIOUS_GTIDS_LOG - should not be written
+  //    ...
+
+  // in other words, in GTID-based mode there is no way to distinguish whether
+  // the FDE / PREVIOUS_GTIDS_LOG is pseudo and should not be written, or not -
+  // that is why we rely only on externally supplied
+  // "start_from_new_binlog_file" constructor's argument
+  info_only_event_ = expect_ignorable_preamble_events_;
+  if (replication_mode_ == replication_mode_type::position &&
+      info_only_event_) {
+    if (common_header.get_next_event_position_raw() != 0U) {
+      util::exception_location().raise<std::logic_error>(
+          "expected next event position set to zero in pseudo format "
+          "description event");
+    }
+  }
+  if (!info_only_event_) {
     validate_position_and_advance(common_header);
   }
-  // transition to the next state: if the current format description event
-  // is a pseudo one, then the next event is expected to be one of the
-  // gtid log events, otherwise previous gtids log event
-  state_ = (is_pseudo ? state_type::gtid_log_expected
-                      : state_type::previous_gtids_expected);
+
+  // transition to the next state:
+  // the next expected event is PREVIOUS_GTIDS_LOG, unless we are in
+  // position-based replication mode and this we resumed streaming from the
+  // middle of a binlog file
+  if (replication_mode_ == replication_mode_type::position &&
+      info_only_event_) {
+    state_ = state_type::gtid_log_expected;
+    expect_ignorable_preamble_events_ = false;
+  } else {
+    state_ = state_type::previous_gtids_expected;
+  }
   return true;
 }
 
@@ -217,7 +258,11 @@ reader_context::process_event_in_previous_gtids_expected_state(
         "previous gtids log event is not expected to be artificial");
   }
 
-  validate_position_and_advance(common_header);
+  info_only_event_ = expect_ignorable_preamble_events_;
+  expect_ignorable_preamble_events_ = false;
+  if (!info_only_event_) {
+    validate_position_and_advance(common_header);
+  }
 
   state_ = state_type::gtid_log_expected;
   return true;
@@ -266,6 +311,7 @@ reader_context::process_event_in_previous_gtids_expected_state(
   start_transaction(current_event);
   validate_position_and_advance(common_header);
 
+  info_only_event_ = false;
   state_ = state_type::any_other_expected;
   return true;
 }
@@ -326,6 +372,8 @@ reader_context::process_event_in_previous_gtids_expected_state(
   }
   update_transaction(common_header);
   validate_position_and_advance(common_header);
+
+  info_only_event_ = false;
   // not changing the state here - remain in 'any_other_expected'
   return true;
 }
@@ -370,6 +418,8 @@ reader_context::process_event_in_rotate_or_stop_expected_state(
   // FORMAT_DESCRIPTION
   validate_position(common_header);
   reset_position();
+
+  info_only_event_ = false;
   state_ = state_type::rotate_artificial_expected;
 
   return true;
