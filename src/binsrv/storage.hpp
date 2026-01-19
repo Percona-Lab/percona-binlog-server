@@ -88,6 +88,7 @@ public:
   void close_binlog();
 
   void discard_incomplete_transaction_events();
+  void flush_event_buffer();
 
 private:
   basic_storage_backend_ptr backend_;
@@ -129,7 +130,7 @@ private:
     return get_flushed_position() +
            last_transaction_boundary_position_in_event_buffer_;
   }
-  void flush_event_buffer();
+  void flush_event_buffer_internal();
 
   void load_binlog_index();
   void validate_binlog_index(
