@@ -633,8 +633,11 @@ void receive_binlog_events(
     storage.discard_incomplete_transaction_events();
   }
 
-  // TODO: here (upon timing out) we also need to flush internal buffers in
-  //       the storage
+  // connection termination is a good place to flush any remaining data
+  // in the event buffer - this can be considered the third kind of
+  // checkpointing (in addition to size-based and time-based ones)
+  storage.flush_event_buffer();
+
   logger.log(binsrv::log_severity::info,
              "timed out waiting for events and disconnected");
 }

@@ -107,9 +107,7 @@ storage::storage(const storage_config &config,
 storage::~storage() {
   // bugprone-empty-catch should not be that strict in destructors
   try {
-    if (has_event_data_to_flush()) {
-      flush_event_buffer();
-    }
+    flush_event_buffer();
   } catch (...) { // NOLINT(bugprone-empty-catch)
   }
 }
@@ -255,7 +253,7 @@ void storage::write_event(util::const_byte_span event_data,
                                     checkpoint_interval_seconds_));
     }
     if (needs_flush) {
-      flush_event_buffer();
+      flush_event_buffer_internal();
 
       last_checkpoint_position_ = ready_to_flush_position;
       last_checkpoint_timestamp_ = now_ts;
@@ -264,9 +262,7 @@ void storage::write_event(util::const_byte_span event_data,
 }
 
 void storage::close_binlog() {
-  if (has_event_data_to_flush()) {
-    flush_event_buffer();
-  }
+  flush_event_buffer();
   event_buffer_.clear();
   event_buffer_.shrink_to_fit();
 
@@ -289,6 +285,12 @@ void storage::discard_incomplete_transaction_events() {
 }
 
 void storage::flush_event_buffer() {
+  if (has_event_data_to_flush()) {
+    flush_event_buffer_internal();
+  }
+}
+
+void storage::flush_event_buffer_internal() {
   assert(!event_buffer_.empty());
   assert(last_transaction_boundary_position_in_event_buffer_ <=
          std::size(event_buffer_));
