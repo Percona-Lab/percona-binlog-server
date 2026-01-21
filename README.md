@@ -248,11 +248,14 @@ Currently we use the following mapping:
 #### \<connection\> section
 - `<connection.host>` - MySQL server host name (e.g. `127.0.0.1`, `192.168.0.100`, `dbsrv.mydomain.com`, etc.). Please do not use `localhost` here as it will be interpreted differently by the `libmysqlclient` and will instruct the library to use Unix socket file for connection instead of TCP protocol - use `127.0.0.1` instead (see [this page](https://dev.mysql.com/doc/c-api/8.0/en/mysql-real-connect.html) for more details).
 - `<connection.port>` - MySQL server port (e.g. `3306` - the default MySQL server port).
+- `<connection.dns_srv_name>` - the name of a DNS SRV record that determines the candidate hosts to use for establishing a connection to a MySQL server ([--dns-srv-name](https://dev.mysql.com/doc/refman/8.4/en/mysql-command-options.html#option_mysql_dns-srv-name) `mysql` utility command line option)
 - `<connection.user>` - the name of the MySQL user that has [REPLICATION SLAVE](https://dev.mysql.com/doc/refman/8.0/en/replication-howto-repuser.html) privilege.
 - `<connection.password>` - the password for this MySQL user.
 - `<connection.connect_timeout>` - the number of seconds the MySQL client library will wait to establish a connection with a remote host.
 - `<connection.read_timeout>` - the number of seconds the MySQL client library will wait to read data from a remote server (this parameter may affect the responsiveness of the program to graceful termination - see below).
 - `<connection.write_timeout>` - the number of seconds the MySQL client library will wait to write data to a remote server.
+
+Note: you should specify either `<connection.host>` / `<connection.port>` pair or single `<connnection.dns_srv_name>`.
 
 #### \<connection.ssl\> optional section
 - `<connection.ssl.mode>` - specifies the desired security state of the connection to the MySQL server, can be one of the `disabled` / `preferred` / `required` / `verify_ca` / `verify_identity` ([--ssl-mode](https://dev.mysql.com/doc/refman/8.4/en/connection-options.html#option_general_ssl-mode) `mysql` utility command line option).
