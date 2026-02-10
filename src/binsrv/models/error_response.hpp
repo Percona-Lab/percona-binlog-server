@@ -13,58 +13,42 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef BINSRV_BINLOG_FILE_METADATA_HPP
-#define BINSRV_BINLOG_FILE_METADATA_HPP
+#ifndef BINSRV_MODELS_ERROR_RESPONSE_HPP
+#define BINSRV_MODELS_ERROR_RESPONSE_HPP
 
-#include "binsrv/binlog_file_metadata_fwd.hpp" // IWYU pragma: export
+#include "binsrv/models/error_response_fwd.hpp" // IWYU pragma: export
 
 #include <cstdint>
 #include <string>
 #include <string_view>
 
-#include "binsrv/ctime_timestamp.hpp"
+#include "binsrv/models/response_status_type_fwd.hpp"
 
-#include "binsrv/gtids/gtid_set.hpp"
-
-#include "util/common_optional_types.hpp"
 #include "util/nv_tuple.hpp"
 
-namespace binsrv {
+namespace binsrv::models {
 
-class [[nodiscard]] binlog_file_metadata {
+class [[nodiscard]] error_response {
 private:
   using impl_type = util::nv_tuple<
       // clang-format off
       util::nv<"version", std::uint32_t>,
-      util::nv<"size", std::uint64_t>,
-      util::nv<"gtids", util::optional_string>,
-      util::nv<"min_timestamp", ctime_timestamp>,
-      util::nv<"max_timestamp", ctime_timestamp>
+      util::nv<"status", response_status_type>,
+      util::nv<"message", std::string>
       // clang-format on
       >;
 
 public:
-  binlog_file_metadata();
-
-  explicit binlog_file_metadata(std::string_view data);
+  explicit error_response(std::string_view message);
 
   [[nodiscard]] std::string str() const;
 
   [[nodiscard]] auto &root() noexcept { return impl_; }
-  [[nodiscard]] const auto &root() const noexcept { return impl_; }
-
-  [[nodiscard]] bool has_gtids() const noexcept {
-    return impl_.get<"gtids">().has_value();
-  }
-  [[nodiscard]] gtids::optional_gtid_set get_gtids() const;
-  void set_gtids(const gtids::optional_gtid_set &gtids);
 
 private:
   impl_type impl_;
-
-  void validate() const;
 };
 
-} // namespace binsrv
+} // namespace binsrv::models
 
-#endif // BINSRV_BINLOG_FILE_METADATA_HPP
+#endif // BINSRV_MODELS_ERROR_RESPONSE_HPP

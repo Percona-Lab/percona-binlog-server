@@ -46,6 +46,7 @@ public:
   void close_stream();
 
   [[nodiscard]] std::string get_description() const;
+  [[nodiscard]] std::string get_object_uri(std::string_view name) const;
 
 private:
   bool stream_open_{false};
@@ -62,6 +63,8 @@ private:
   virtual void do_close_stream() = 0;
 
   [[nodiscard]] virtual std::string do_get_description() const = 0;
+  [[nodiscard]] virtual std::string
+  do_get_object_uri(std::string_view name) const = 0;
 };
 
 } // namespace binsrv

@@ -13,19 +13,13 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef BINSRV_GTIDS_GTID_SET_FWD_HPP
-#define BINSRV_GTIDS_GTID_SET_FWD_HPP
+#ifndef BINSRV_CTIME_TIMESTAMP_RANGE_FWD_HPP
+#define BINSRV_CTIME_TIMESTAMP_RANGE_FWD_HPP
 
-#include <iosfwd>
-#include <optional>
+namespace binsrv {
 
-namespace binsrv::gtids {
+class ctime_timestamp_range;
 
-class gtid_set;
-using optional_gtid_set = std::optional<gtid_set>;
+} // namespace binsrv
 
-std::ostream &operator<<(std::ostream &output, const gtid_set &obj);
-
-} // namespace binsrv::gtids
-
-#endif // BINSRV_GTIDS_GTID_SET_FWD_HPP
+#endif // BINSRV_CTIME_TIMESTAMP_RANGE_FWD_HPP

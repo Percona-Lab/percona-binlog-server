@@ -23,6 +23,8 @@
 #include <string>
 #include <string_view>
 
+#include "binsrv/ctime_timestamp_fwd.hpp"
+
 #include "binsrv/event/code_type_fwd.hpp"
 #include "binsrv/event/common_header_flag_type_fwd.hpp"
 #include "binsrv/event/protocol_traits_fwd.hpp"
@@ -40,9 +42,8 @@ public:
   [[nodiscard]] std::uint32_t get_timestamp_raw() const noexcept {
     return timestamp_;
   }
-  [[nodiscard]] std::time_t get_timestamp() const noexcept {
-    return static_cast<std::time_t>(get_timestamp_raw());
-  }
+  [[nodiscard]] ctime_timestamp get_timestamp() const noexcept;
+
   [[nodiscard]] std::string get_readable_timestamp() const;
 
   [[nodiscard]] std::uint8_t get_type_code_raw() const noexcept {

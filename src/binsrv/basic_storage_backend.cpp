@@ -74,4 +74,9 @@ void basic_storage_backend::close_stream() {
   return do_get_description();
 }
 
+[[nodiscard]] std::string
+basic_storage_backend::get_object_uri(std::string_view name) const {
+  return do_get_object_uri(name);
+}
+
 } // namespace binsrv

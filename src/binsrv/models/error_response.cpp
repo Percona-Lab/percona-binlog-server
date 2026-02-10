@@ -13,19 +13,30 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef BINSRV_GTIDS_GTID_SET_FWD_HPP
-#define BINSRV_GTIDS_GTID_SET_FWD_HPP
+#include "binsrv/models/error_response.hpp"
 
-#include <iosfwd>
-#include <optional>
+#include <string>
+#include <string_view>
 
-namespace binsrv::gtids {
+#include <boost/json/serialize.hpp>
+#include <boost/json/value.hpp>
 
-class gtid_set;
-using optional_gtid_set = std::optional<gtid_set>;
+#include "binsrv/models/response_status_type.hpp"
 
-std::ostream &operator<<(std::ostream &output, const gtid_set &obj);
+#include "util/nv_tuple_to_json.hpp"
 
-} // namespace binsrv::gtids
+namespace binsrv::models {
 
-#endif // BINSRV_GTIDS_GTID_SET_FWD_HPP
+error_response::error_response(std::string_view message)
+    : impl_{{expected_error_response_version},
+            {response_status_type::error},
+            {std::string{message}}} {}
+
+[[nodiscard]] std::string error_response::str() const {
+  boost::json::value json_value;
+  util::nv_tuple_to_json(json_value, impl_);
+
+  return boost::json::serialize(json_value);
+}
+
+} // namespace binsrv::models

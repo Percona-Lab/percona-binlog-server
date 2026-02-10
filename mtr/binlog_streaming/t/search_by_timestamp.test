@@ -1,0 +1,120 @@
+--source ../include/have_binsrv.inc
+
+--source ../include/v80_v84_compatibility_defines.inc
+
+# in case of --repeat=N, we need to start from a fresh binary log to make
+# this test deterministic
+--echo *** Resetting replication at the very beginning of the test.
+--disable_query_log
+eval $stmt_reset_binary_logs_and_gtids;
+--enable_query_log
+
+# identifying backend storage type ('file' or 's3')
+--source ../include/identify_storage_backend.inc
+
+# creating data directory, configuration file, etc.
+--let $binsrv_connect_timeout = 20
+--let $binsrv_read_timeout = 60
+--let $binsrv_idle_time = 10
+--let $binsrv_verify_checksum = TRUE
+--let $binsrv_replication_mode = `SELECT IF(@@global.gtid_mode, 'gtid', 'position')`
+--let $binsrv_checkpoint_size = 1
+--source ../include/set_up_binsrv_environment.inc
+
+--let $timestamp_query = SELECT DATE_FORMAT(CONVERT_TZ(NOW(), @@session.time_zone, '+00:00'),'%Y-%m-%dT%H:%i:%s')
+
+--let $read_from_file = $MYSQL_TMP_DIR/search_result.json
+
+--echo
+--echo *** 1. Executing the Binlog Server utility in the 'search_by_timestamp'
+--echo ***    mode with an invalid timestamp
+--error 1
+--exec $BINSRV search_by_timestamp $binsrv_config_file_path 20000101T000000 > $read_from_file
+--source include/read_file_to_var.inc
+--assert(`SELECT JSON_EXTRACT('$result', '$.status') = 'error'`)
+--assert(`SELECT JSON_EXTRACT('$result', '$.message') = 'Invalid timestamp format'`)
+
+--echo
+--echo *** 2. Executing the Binlog Server utility in the 'search_by_timestamp'
+--echo ***    mode with the beginning of Epoch (Jan 1, 1970, 00:00:00) on an
+--echo ***    empty storage
+--error 1
+--exec $BINSRV search_by_timestamp $binsrv_config_file_path 1970-01-01T00:00:00 > $read_from_file
+--source include/read_file_to_var.inc
+--assert(`SELECT JSON_EXTRACT('$result', '$.status') = 'error'`)
+--assert(`SELECT JSON_EXTRACT('$result', '$.message') = 'Binlog storage is empty'`)
+
+--let $before_activity_timestamp = 2000-01-01T00:00:00
+
+--echo
+--echo *** Creating a simple table.
+CREATE TABLE t1(id INT UNSIGNED NOT NULL AUTO_INCREMENT, PRIMARY KEY(id)) ENGINE=InnoDB;
+
+--echo
+--echo *** Filling the table with some data.
+INSERT INTO t1 VALUES();
+
+--let $inside_activity_timestamp = `$timestamp_query`
+--sleep 2
+
+--echo
+--echo *** Flushing the first binary log and switching to the second one.
+FLUSH BINARY LOGS;
+
+--echo
+--echo *** Filling the table with more data.
+INSERT INTO t1 VALUES();
+
+--let $after_activity_timestamp = `$timestamp_query`
+
+--echo
+--echo *** Executing the Binlog Server utility and fetching all events.
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+--echo
+--echo *** 3. Executing the Binlog Server utility in the 'search_by_timestamp'
+--echo ***    mode with the beginning of Epoch (Jan 1, 1970, 00:00:00) on an
+--echo ***    non-empty storage
+--error 1
+--exec $BINSRV search_by_timestamp $binsrv_config_file_path 1970-01-01T00:00:00 > $read_from_file
+--source include/read_file_to_var.inc
+--assert(`SELECT JSON_EXTRACT('$result', '$.status') = 'error'`)
+--assert(`SELECT JSON_EXTRACT('$result', '$.message') = 'Timestamp is too old'`)
+
+--echo
+--echo *** 4. Executing the Binlog Server utility in the 'search_by_timestamp'
+--echo ***    mode with the <before_activity_timestamp>
+--error 1
+--exec $BINSRV search_by_timestamp $binsrv_config_file_path $before_activity_timestamp > $read_from_file
+--source include/read_file_to_var.inc
+--assert(`SELECT JSON_EXTRACT('$result', '$.status') = 'error'`)
+--assert(`SELECT JSON_EXTRACT('$result', '$.message') = 'Timestamp is too old'`)
+
+--echo
+--echo *** 5. Executing the Binlog Server utility in the 'search_by_timestamp'
+--echo ***    mode with the <inside_activity_timestamp> and expecting one binlog
+--echo ***    file to be returned
+--exec $BINSRV search_by_timestamp $binsrv_config_file_path $inside_activity_timestamp > $read_from_file
+--source include/read_file_to_var.inc
+--assert(`SELECT JSON_EXTRACT('$result', '$.status') = 'success'`)
+--assert(`SELECT JSON_LENGTH(JSON_EXTRACT('$result', '$.result')) = 1`)
+
+--echo
+--echo *** 6. Executing the Binlog Server utility in the 'search_by_timestamp'
+--echo ***    mode with the <after_activity_timestamp> and expecting two binlog
+--echo ***    files to be returned
+--exec $BINSRV search_by_timestamp $binsrv_config_file_path $after_activity_timestamp > $read_from_file
+--source include/read_file_to_var.inc
+--assert(`SELECT JSON_EXTRACT('$result', '$.status') = 'success'`)
+--assert(`SELECT JSON_LENGTH(JSON_EXTRACT('$result', '$.result')) = 2`)
+
+--echo
+--echo *** Removing the search result file.
+--remove_file $read_from_file
+
+--echo
+--echo *** Dropping the table.
+DROP TABLE t1;
+
+# cleaning up
+--source ../include/tear_down_binsrv_environment.inc

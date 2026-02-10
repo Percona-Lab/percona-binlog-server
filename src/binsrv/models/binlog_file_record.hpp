@@ -13,27 +13,31 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef BINSRV_STORAGE_FWD_HPP
-#define BINSRV_STORAGE_FWD_HPP
+#ifndef BINSRV_MODELS_BINLOG_FILE_RECORD_HPP
+#define BINSRV_MODELS_BINLOG_FILE_RECORD_HPP
+
+#include "binsrv/models/binlog_file_record_fwd.hpp" // IWYU pragma: export
 
 #include <cstdint>
+#include <string>
 
-namespace binsrv {
+#include "binsrv/ctime_timestamp.hpp"
 
-enum class storage_construction_mode_type : std::uint8_t {
-  querying_only,
-  streaming
-};
+#include "util/nv_tuple.hpp"
 
-enum class open_binlog_status : std::uint8_t {
-  created,
-  opened_empty,
-  opened_at_magic_paylod_offset,
-  opened_with_data_present
-};
+namespace binsrv::models {
 
-class storage;
+struct [[nodiscard]] binlog_file_record
+    : util::nv_tuple<
+          // clang-format off
+          util::nv<"name", std::string>,
+          util::nv<"size", std::uint64_t>,
+          util::nv<"uri", std::string>,
+          util::nv<"min_timestamp", ctime_timestamp>,
+          util::nv<"max_timestamp", ctime_timestamp>
+          // clang-format on
+          > {};
 
-} // namespace binsrv
+} // namespace binsrv::models
 
-#endif // BINSRV_STORAGE_FWD_HPP
+#endif // BINSRV_MODELS_BINLOG_FILE_RECORD_HPP

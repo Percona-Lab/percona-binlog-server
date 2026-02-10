@@ -13,19 +13,26 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef BINSRV_GTIDS_GTID_SET_FWD_HPP
-#define BINSRV_GTIDS_GTID_SET_FWD_HPP
+#ifndef BINSRV_CTIME_TIMESTAMP_FWD_HPP
+#define BINSRV_CTIME_TIMESTAMP_FWD_HPP
 
-#include <iosfwd>
-#include <optional>
+#include <istream>
+#include <ostream>
 
-namespace binsrv::gtids {
+#include "util/nv_tuple_json_support.hpp"
 
-class gtid_set;
-using optional_gtid_set = std::optional<gtid_set>;
+namespace binsrv {
 
-std::ostream &operator<<(std::ostream &output, const gtid_set &obj);
+class ctime_timestamp;
 
-} // namespace binsrv::gtids
+std::ostream &operator<<(std::ostream &output,
+                         const ctime_timestamp &timestamp);
 
-#endif // BINSRV_GTIDS_GTID_SET_FWD_HPP
+std::istream &operator>>(std::istream &input, ctime_timestamp &timestamp);
+
+} // namespace binsrv
+
+template <>
+struct util::is_string_convertable<binsrv::ctime_timestamp> : std::true_type {};
+
+#endif // BINSRV_CTIME_TIMESTAMP_FWD_HPP
