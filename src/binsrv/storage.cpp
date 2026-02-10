@@ -29,6 +29,7 @@
 
 #include "binsrv/basic_storage_backend.hpp"
 #include "binsrv/binlog_file_metadata.hpp"
+#include "binsrv/ctime_timestamp.hpp"
 #include "binsrv/replication_mode_type.hpp"
 #include "binsrv/storage_backend_factory.hpp"
 #include "binsrv/storage_config.hpp"
@@ -45,8 +46,10 @@
 namespace binsrv {
 
 storage::storage(const storage_config &config,
+                 storage_construction_mode_type construction_mode,
                  replication_mode_type replication_mode)
-    : backend_{}, replication_mode_{replication_mode}, binlog_names_{} {
+    : construction_mode_{construction_mode}, backend_{},
+      replication_mode_{replication_mode} {
   const auto &checkpoint_size_opt{config.get<"checkpoint_size">()};
   if (checkpoint_size_opt.has_value()) {
     checkpoint_size_bytes_ = checkpoint_size_opt.value().get_value();
@@ -63,7 +66,9 @@ storage::storage(const storage_config &config,
   auto storage_objects{backend_->list_objects()};
   if (storage_objects.empty()) {
     // initialized on a new / empty storage - just save metadata and return
-    save_metadata();
+    if (construction_mode_ == storage_construction_mode_type::streaming) {
+      save_metadata();
+    }
     return;
   }
 
@@ -105,10 +110,12 @@ storage::storage(const storage_config &config,
 }
 
 storage::~storage() {
-  // bugprone-empty-catch should not be that strict in destructors
-  try {
-    flush_event_buffer();
-  } catch (...) { // NOLINT(bugprone-empty-catch)
+  if (construction_mode_ == storage_construction_mode_type::streaming) {
+    // bugprone-empty-catch should not be that strict in destructors
+    try {
+      flush_event_buffer();
+    } catch (...) { // NOLINT(bugprone-empty-catch)
+    }
   }
 }
 
@@ -137,6 +144,8 @@ storage::check_binlog_name(std::string_view binlog_name) noexcept {
 
 [[nodiscard]] open_binlog_status
 storage::open_binlog(std::string_view binlog_name) {
+  ensure_streaming_mode();
+
   auto result{open_binlog_status::opened_with_data_present};
 
   if (!check_binlog_name(binlog_name)) {
@@ -145,13 +154,14 @@ storage::open_binlog(std::string_view binlog_name) {
   }
 
   // here we either create a new binlog file if its name is not presen in the
-  // "binlog_names_", or we open an existing one and append to it, in which
+  // "binlog_records_", or we open an existing one and append to it, in which
   // case we need to make sure that the current position is properly set
-  const bool binlog_exists{std::ranges::find(binlog_names_, binlog_name) !=
-                           std::end(binlog_names_)};
+  const bool binlog_exists{
+      std::ranges::find(binlog_records_, binlog_name, &binlog_record::name) !=
+      std::end(binlog_records_)};
 
   // in the case when binlog exists, the name must be equal to the last item in
-  // "binlog_names_" list and "position_" must be set to a non-zero value
+  // "binlog_records_" list and "position_" must be set to a non-zero value
   if (binlog_exists) {
     if (binlog_name != get_current_binlog_name()) {
       util::exception_location().raise<std::logic_error>(
@@ -173,16 +183,22 @@ storage::open_binlog(std::string_view binlog_name) {
     // created file
     backend_->write_data_to_stream(event::magic_binlog_payload);
 
-    binlog_names_.emplace_back(binlog_name);
+    gtids::optional_gtid_set previous_binlog_gtids{};
+    if (is_in_gtid_replication_mode()) {
+      previous_binlog_gtids = get_gtids();
+    }
+
+    binlog_records_.emplace_back(
+        std::string{binlog_name}, event::magic_binlog_offset,
+        std::move(previous_binlog_gtids), ctime_timestamp_range{});
+    save_binlog_metadata(get_current_binlog_record());
     save_binlog_index();
-    position_ = event::magic_binlog_offset;
-    save_binlog_metadata(get_current_binlog_name());
     result = open_binlog_status::created;
   } else {
-    assert(position_ == open_stream_offset);
+    assert(get_current_position() == open_stream_offset);
     if (open_stream_offset == 0ULL) {
       backend_->write_data_to_stream(event::magic_binlog_payload);
-      position_ = event::magic_binlog_offset;
+      get_current_binlog_record().size = event::magic_binlog_offset;
       result = open_binlog_status::opened_empty;
     } else if (open_stream_offset == event::magic_binlog_offset) {
       result = open_binlog_status::opened_at_magic_paylod_offset;
@@ -192,36 +208,37 @@ storage::open_binlog(std::string_view binlog_name) {
       result = open_binlog_status::opened_with_data_present;
     }
   }
-  if (size_checkpointing_enabled()) {
-    last_checkpoint_position_ = get_current_position();
-  }
-  if (interval_checkpointing_enabled()) {
-    last_checkpoint_timestamp_ = std::chrono::steady_clock::now();
-  }
+  update_last_checkpoint_info();
 
   assert(std::size(event_buffer_) == 0U);
   event_buffer_.reserve(default_event_buffer_size_in_bytes);
   assert(!has_event_data_to_flush());
   assert(gtids_in_event_buffer_.is_empty());
+  assert(ready_to_flush_timestamps_.is_empty());
+  assert(incomplete_transaction_timestamps_.is_empty());
 
   return result;
 }
 
 void storage::write_event(util::const_byte_span event_data,
                           bool at_transaction_boundary,
-                          const gtids::gtid &transaction_gtid) {
+                          const gtids::gtid &transaction_gtid,
+                          const ctime_timestamp &event_timestamp) {
+  ensure_streaming_mode();
+
   event_buffer_.insert(std::end(event_buffer_), std::cbegin(event_data),
                        std::cend(event_data));
+  incomplete_transaction_timestamps_.add_timestamp(event_timestamp);
+
   if (at_transaction_boundary) {
     last_transaction_boundary_position_in_event_buffer_ =
         std::size(event_buffer_);
     if (is_in_gtid_replication_mode() && !transaction_gtid.is_empty()) {
       gtids_in_event_buffer_ += transaction_gtid;
     }
+    ready_to_flush_timestamps_.add_range(incomplete_transaction_timestamps_);
+    incomplete_transaction_timestamps_.clear();
   }
-
-  const auto event_data_size{std::size(event_data)};
-  position_ += event_data_size;
 
   // now we are writing data from the event buffer to the storage backend if
   // event buffer has some data in it that can be considered a complete
@@ -262,31 +279,49 @@ void storage::write_event(util::const_byte_span event_data,
 }
 
 void storage::close_binlog() {
+  ensure_streaming_mode();
+
   flush_event_buffer();
   event_buffer_.clear();
   event_buffer_.shrink_to_fit();
 
   backend_->close_stream();
-  position_ = 0ULL;
+  update_last_checkpoint_info();
+}
+
+void storage::discard_incomplete_transaction_events() {
+  ensure_streaming_mode();
+
+  event_buffer_.resize(last_transaction_boundary_position_in_event_buffer_);
+  incomplete_transaction_timestamps_.clear();
+}
+
+void storage::flush_event_buffer() {
+  ensure_streaming_mode();
+
+  if (has_event_data_to_flush()) {
+    flush_event_buffer_internal();
+  }
+}
+
+[[nodiscard]] std::string
+storage::get_binlog_uri(std::string_view binlog_name) const {
+  return backend_->get_object_uri(binlog_name);
+}
+
+void storage::ensure_streaming_mode() const {
+  if (construction_mode_ != storage_construction_mode_type::streaming) {
+    util::exception_location().raise<std::logic_error>(
+        "operation requires storage to be constructed in streaming mode");
+  }
+}
+
+void storage::update_last_checkpoint_info() {
   if (size_checkpointing_enabled()) {
     last_checkpoint_position_ = get_current_position();
   }
   if (interval_checkpointing_enabled()) {
     last_checkpoint_timestamp_ = std::chrono::steady_clock::now();
-  }
-}
-
-void storage::discard_incomplete_transaction_events() {
-  const std::size_t bytes_to_discard{
-      std::size(event_buffer_) -
-      last_transaction_boundary_position_in_event_buffer_};
-  position_ -= bytes_to_discard;
-  event_buffer_.resize(last_transaction_boundary_position_in_event_buffer_);
-}
-
-void storage::flush_event_buffer() {
-  if (has_event_data_to_flush()) {
-    flush_event_buffer_internal();
   }
 }
 
@@ -301,10 +336,17 @@ void storage::flush_event_buffer_internal() {
   // writing <last_transaction_boundary_position_in_event_buffer_> bytes from
   // the beginning of the event buffer
   backend_->write_data_to_stream(transactions_data);
+  get_current_binlog_record().size +=
+      last_transaction_boundary_position_in_event_buffer_;
   if (is_in_gtid_replication_mode()) {
-    gtids_ += gtids_in_event_buffer_;
+    auto &optional_gtids{get_current_binlog_record().gtids};
+    if (optional_gtids.has_value()) {
+      optional_gtids.value() += gtids_in_event_buffer_;
+    }
   }
-  save_binlog_metadata(get_current_binlog_name());
+  get_current_binlog_record().timestamps.add_range(ready_to_flush_timestamps_);
+
+  save_binlog_metadata(get_current_binlog_record());
 
   const auto begin_it{std::begin(event_buffer_)};
   const auto portion_it{std::next(
@@ -317,6 +359,7 @@ void storage::flush_event_buffer_internal() {
   if (is_in_gtid_replication_mode()) {
     gtids_in_event_buffer_.clear();
   }
+  ready_to_flush_timestamps_.clear();
 }
 
 void storage::load_binlog_index() {
@@ -344,29 +387,29 @@ void storage::load_binlog_index() {
           "binlog index contains a reference to a binlog with invalid "
           "name");
     }
-    if (std::ranges::find(binlog_names_, current_binlog_name) !=
-        std::end(binlog_names_)) {
+    if (std::ranges::find(binlog_records_, current_binlog_name,
+                          &binlog_record::name) != std::end(binlog_records_)) {
       util::exception_location().raise<std::logic_error>(
           "binlog index contains a duplicate entry");
     }
-    binlog_names_.emplace_back(std::move(current_binlog_name));
+    binlog_records_.emplace_back(current_binlog_name, 0ULL, gtids::gtid_set{},
+                                 ctime_timestamp_range{});
   }
 }
 
 void storage::validate_binlog_index(
     const storage_object_name_container &object_names) const {
-  for (auto const &[object_name, object_size] : object_names) {
-    if (std::ranges::find(binlog_names_, object_name) ==
-        std::end(binlog_names_)) {
+  for (auto const &record : binlog_records_) {
+    if (!object_names.contains(record.name)) {
       util::exception_location().raise<std::logic_error>(
-          "storage contains an object that is not "
-          "referenced in the binlog index");
+          "binlog index contains a reference to a non-existing object");
     }
   }
 
-  if (std::size(object_names) != std::size(binlog_names_)) {
+  if (std::size(object_names) != std::size(binlog_records_)) {
     util::exception_location().raise<std::logic_error>(
-        "binlog index contains a reference to a non-existing object");
+        "storage contains an object that is not "
+        "referenced in the binlog index");
   }
 
   // TODO: add integrity checks (parsing + checksumming) for the binlog
@@ -375,9 +418,9 @@ void storage::validate_binlog_index(
 
 void storage::save_binlog_index() const {
   std::ostringstream oss;
-  for (const auto &binlog_name : binlog_names_) {
+  for (const auto &record : binlog_records_) {
     std::filesystem::path binlog_path{default_binlog_index_entry_path};
-    binlog_path /= binlog_name;
+    binlog_path /= record.name;
     oss << binlog_path.generic_string() << '\n';
   }
   const auto content{oss.str()};
@@ -413,24 +456,45 @@ storage::generate_binlog_metadata_name(std::string_view binlog_name) {
   return binlog_metadata_name;
 }
 
-void storage::load_binlog_metadata(std::string_view binlog_name) {
+[[nodiscard]] storage::binlog_record
+storage::load_binlog_metadata(std::string_view binlog_name) const {
   const auto content{
       backend_->get_object(generate_binlog_metadata_name(binlog_name))};
   binlog_file_metadata metadata{content};
-  position_ = metadata.root().get<"size">();
+
+  return binlog_record{.name = std::string(binlog_name),
+                       .size = metadata.root().get<"size">(),
+                       .gtids = metadata.get_gtids(),
+                       .timestamps = {metadata.root().get<"min_timestamp">(),
+                                      metadata.root().get<"max_timestamp">()}};
+}
+
+void storage::validate_binlog_metadata(const binlog_record &record) const {
   if (is_in_gtid_replication_mode()) {
-    gtids_ = metadata.get_gtids();
+    if (!record.gtids.has_value()) {
+      util::exception_location().raise<std::logic_error>(
+          "missing GTID set in the binlog metadata while in GTID replication "
+          "mode");
+    }
+  } else {
+    if (record.gtids.has_value()) {
+      util::exception_location().raise<std::logic_error>(
+          "found GTID set in the binlog metadata while in position "
+          "replication mode");
+    }
   }
 }
 
-void storage::save_binlog_metadata(std::string_view binlog_name) const {
+void storage::save_binlog_metadata(const binlog_record &record) const {
   binlog_file_metadata metadata{};
-  metadata.root().get<"size">() = get_ready_to_flush_position();
-  if (is_in_gtid_replication_mode()) {
-    metadata.set_gtids(get_gtids());
-  }
+  metadata.root().get<"size">() = record.size;
+  metadata.set_gtids(record.gtids);
+  metadata.root().get<"min_timestamp">() =
+      ctime_timestamp{record.timestamps.get_min_timestamp()};
+  metadata.root().get<"max_timestamp">() =
+      ctime_timestamp{record.timestamps.get_max_timestamp()};
   const auto content{metadata.str()};
-  backend_->put_object(generate_binlog_metadata_name(binlog_name),
+  backend_->put_object(generate_binlog_metadata_name(record.name),
                        util::as_const_byte_span(content));
 }
 
@@ -438,28 +502,26 @@ void storage::load_and_validate_binlog_metadata_set(
     // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
     const storage_object_name_container &object_names,
     const storage_object_name_container &object_metadata_names) {
-  for (const auto &binlog_name : binlog_names_) {
-    const auto binlog_metadata_name{generate_binlog_metadata_name(binlog_name)};
+  for (auto &record : binlog_records_) {
+    const auto binlog_metadata_name{generate_binlog_metadata_name(record.name)};
     if (!object_metadata_names.contains(binlog_metadata_name)) {
       util::exception_location().raise<std::logic_error>(
           "missing metadata for a binlog listed in the binlog index");
     }
-    load_binlog_metadata(binlog_name);
-    if (get_current_position() != object_names.at(binlog_name)) {
+    auto loaded_binlog_metadata{load_binlog_metadata(record.name)};
+    validate_binlog_metadata(loaded_binlog_metadata);
+    // validating that the size stored in the metadata matches the actual size
+    if (loaded_binlog_metadata.size != object_names.at(record.name)) {
       util::exception_location().raise<std::logic_error>(
           "size from the binlog metadata does not match the actual binlog "
           "size");
     }
-    if (!is_in_gtid_replication_mode() && !gtids_.is_empty()) {
-      util::exception_location().raise<std::logic_error>(
-          "found non-empty GTID set in the binlog metadata while in position "
-          "replication mode");
-    }
+    record = std::move(loaded_binlog_metadata);
   }
   // after this loop position_ and gtids_ should store the values from the last
   // binlog file metadata
 
-  if (std::size(object_metadata_names) != std::size(binlog_names_)) {
+  if (std::size(object_metadata_names) != std::size(binlog_records_)) {
     util::exception_location().raise<std::logic_error>(
         "found metadata for a non-existing binlog");
   }

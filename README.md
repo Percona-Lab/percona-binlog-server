@@ -146,17 +146,18 @@ The result binary can be found under the following path `ws/percona-binlog-serve
 
 Please run
 ```bash
-./binlog_server <operation_mode> [ <json_config_file> ]
+./binlog_server <operation_mode> [ <json_config_file> [ <subcommand_parameter> ] ]
 ```
 where
-`<operation_mode>` can be either `version`, `fetch`, or `pull`
-and
-`<json_config_file>` is an optional parameter (required only when `<operation_mode>` is not `version`) that represents a path to a JSON configuration file (described below).
+`<operation_mode>` can be either `version`, `search_by_timestamp`, `fetch`, or `pull`,
+`<json_config_file>` is an optional parameter (required when `<operation_mode>` is not `version`) that represents a path to a JSON configuration file (described below),
+and `<subcommand_parameter>` is an optional parameter (required only when `<operation_mode>` is `search_by_timestamp`), that represents a valid timestamp in ISO format (e.g. `2026-02-10T14:30:00`)
 
 ### Operation modes
 
 Percona Binary Log Server utility can operate in three modes:
 - 'version'
+- 'search_by_timestamp'
 - 'fetch'
 - 'pull'
 
@@ -171,6 +172,48 @@ may print
 ```
 0.1.0
 ```
+
+#### 'search_by_timestamp' operation mode
+
+In this mode the utility requires one additional command line parameter `<iso_timestamp>` and will print to the standard output the list of binlog files stored in the Binary Log Server data directory that have at least one event whose timestamp is less or equal to the provided `<iso_timestamp>`.
+Along with the file name the output will also return its current size in bytes, timestamps and URI.
+For instance,
+```bash
+./binlog_server search_by_timestamp config.json 2026-02-10T14:30:00
+```
+may print
+```json
+{
+  "status": "success",
+  "result": [
+    {
+      "name": "binlog.000001",
+      "size": 134217728,
+      "uri": "s3://binsrv-bucket/storage/binlog.000001",
+      "min_timestamp":"2026-02-09T17:22:01",
+      "max_timestamp":"2026-02-09T17:22:08"
+    },
+    {
+      "name": "binlog.000002",
+      "size": 134217728,
+      "uri": "s3://binsrv-bucket/storage/binlog.000002",
+      "min_timestamp":"2026-02-09T17:22:08",
+      "max_timestamp":"2026-02-09T17:22:09"
+    }
+  ]
+}
+```
+If an error occurs,
+```json
+{
+  "status": "error",
+  "message": "<reason>"
+}
+```
+The `<reason>` may be one of the following (but not limited to):
+- `Invalid timestamp format`
+- `Binlog storage is empty`
+- `Timestamp is too old`
 
 #### 'fetch' operation mode
 

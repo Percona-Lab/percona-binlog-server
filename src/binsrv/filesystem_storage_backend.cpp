@@ -28,6 +28,7 @@
 #include <boost/url/host_type.hpp>
 #include <boost/url/parse.hpp>
 #include <boost/url/scheme.hpp>
+#include <boost/url/url.hpp>
 
 #include "binsrv/storage_config.hpp"
 
@@ -200,6 +201,17 @@ void filesystem_storage_backend::do_close_stream() {
 [[nodiscard]] std::string
 filesystem_storage_backend::do_get_description() const {
   return "local filesystem - " + root_path_.generic_string();
+}
+
+[[nodiscard]] std::string
+filesystem_storage_backend::do_get_object_uri(std::string_view name) const {
+  boost::urls::url result;
+  result.set_scheme_id(boost::urls::scheme::file);
+  // set_encoded_authority() is needed to create proper 'file:///path'
+  // instead of 'file:/path'
+  result.set_encoded_authority("");
+  result.set_path(get_object_path(name).generic_string());
+  return result.c_str();
 }
 
 [[nodiscard]] std::filesystem::path

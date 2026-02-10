@@ -15,6 +15,7 @@
 
 #include "binsrv/event/common_header.hpp"
 
+#include <ctime>
 #include <ostream>
 #include <stdexcept>
 #include <string>
@@ -22,8 +23,7 @@
 
 #include <boost/align/align_up.hpp>
 
-#include <boost/date_time/posix_time/conversion.hpp>
-#include <boost/date_time/posix_time/time_formatters.hpp>
+#include "binsrv/ctime_timestamp.hpp"
 
 #include "binsrv/event/code_type.hpp"
 #include "binsrv/event/common_header_flag_type.hpp"
@@ -96,9 +96,12 @@ common_header::common_header(util::const_byte_span portion) {
   // TODO: check if flags are valid (all the bits have corresponding enum)
 }
 
+[[nodiscard]] ctime_timestamp common_header::get_timestamp() const noexcept {
+  return ctime_timestamp{static_cast<std::time_t>(get_timestamp_raw())};
+}
+
 [[nodiscard]] std::string common_header::get_readable_timestamp() const {
-  return boost::posix_time::to_simple_string(
-      boost::posix_time::from_time_t(get_timestamp()));
+  return get_timestamp().str();
 }
 
 [[nodiscard]] std::string_view

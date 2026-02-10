@@ -1,0 +1,5 @@
+[position]
+
+[gtid]
+gtid-mode=on
+enforce-gtid-consistency

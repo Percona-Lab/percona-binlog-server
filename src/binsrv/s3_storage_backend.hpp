@@ -80,6 +80,8 @@ private:
   void do_close_stream() override;
 
   [[nodiscard]] std::string do_get_description() const override;
+  [[nodiscard]] std::string
+  do_get_object_uri(std::string_view name) const override;
 
   [[nodiscard]] std::filesystem::path
   get_object_path(std::string_view name) const;

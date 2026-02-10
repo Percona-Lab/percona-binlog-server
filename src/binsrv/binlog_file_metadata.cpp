@@ -39,7 +39,7 @@
 namespace binsrv {
 
 binlog_file_metadata::binlog_file_metadata()
-    : impl_{{expected_binlog_file_metadata_version}, {}, {}} {}
+    : impl_{{expected_binlog_file_metadata_version}, {}, {}, {}, {}} {}
 
 binlog_file_metadata::binlog_file_metadata(std::string_view data) : impl_{} {
   auto json_value = boost::json::parse(data);
@@ -55,7 +55,7 @@ binlog_file_metadata::binlog_file_metadata(std::string_view data) : impl_{} {
   return boost::json::serialize(json_value);
 }
 
-[[nodiscard]] gtids::gtid_set binlog_file_metadata::get_gtids() const {
+[[nodiscard]] gtids::optional_gtid_set binlog_file_metadata::get_gtids() const {
   const auto &optional_gtids{root().get<"gtids">()};
   if (!optional_gtids.has_value()) {
     return {};
@@ -64,20 +64,26 @@ binlog_file_metadata::binlog_file_metadata(std::string_view data) : impl_{} {
   const auto &encoded_gtids{optional_gtids.value()};
   std::string decoded_gtids(std::size(encoded_gtids) / 2U, 'x');
   boost::algorithm::unhex(encoded_gtids, std::data(decoded_gtids));
-  return gtids::gtid_set{util::as_const_byte_span(decoded_gtids)};
+  return gtids::optional_gtid_set{std::in_place,
+                                  util::as_const_byte_span(decoded_gtids)};
 }
 
-void binlog_file_metadata::set_gtids(const gtids::gtid_set &gtids) {
-  const auto encoded_size{gtids.calculate_encoded_size()};
+void binlog_file_metadata::set_gtids(const gtids::optional_gtid_set &gtids) {
+  auto &optional_gtids{root().get<"gtids">()};
+  if (!gtids.has_value()) {
+    optional_gtids.reset();
+    return;
+  }
+  const auto encoded_size{gtids.value().calculate_encoded_size()};
 
   gtids::gtid_set_storage buffer(encoded_size);
   util::byte_span destination{buffer};
-  gtids.encode_to(destination);
+  gtids.value().encode_to(destination);
 
   std::string encoded_gtids(std::size(buffer) * 2U, 'x');
   const auto buffer_sv{util::as_string_view(std::as_const(buffer))};
   boost::algorithm::hex_lower(buffer_sv, std::data(encoded_gtids));
-  root().get<"gtids">().emplace(std::move(encoded_gtids));
+  optional_gtids.emplace(std::move(encoded_gtids));
 }
 
 void binlog_file_metadata::validate() const {

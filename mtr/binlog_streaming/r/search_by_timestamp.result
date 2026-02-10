@@ -1,0 +1,62 @@
+*** Resetting replication at the very beginning of the test.
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+
+*** 1. Executing the Binlog Server utility in the 'search_by_timestamp'
+***    mode with an invalid timestamp
+include/read_file_to_var.inc
+
+*** 2. Executing the Binlog Server utility in the 'search_by_timestamp'
+***    mode with the beginning of Epoch (Jan 1, 1970, 00:00:00) on an
+***    empty storage
+include/read_file_to_var.inc
+
+*** Creating a simple table.
+CREATE TABLE t1(id INT UNSIGNED NOT NULL AUTO_INCREMENT, PRIMARY KEY(id)) ENGINE=InnoDB;
+
+*** Filling the table with some data.
+INSERT INTO t1 VALUES();
+
+*** Flushing the first binary log and switching to the second one.
+FLUSH BINARY LOGS;
+
+*** Filling the table with more data.
+INSERT INTO t1 VALUES();
+
+*** Executing the Binlog Server utility and fetching all events.
+
+*** 3. Executing the Binlog Server utility in the 'search_by_timestamp'
+***    mode with the beginning of Epoch (Jan 1, 1970, 00:00:00) on an
+***    non-empty storage
+include/read_file_to_var.inc
+
+*** 4. Executing the Binlog Server utility in the 'search_by_timestamp'
+***    mode with the <before_activity_timestamp>
+include/read_file_to_var.inc
+
+*** 5. Executing the Binlog Server utility in the 'search_by_timestamp'
+***    mode with the <inside_activity_timestamp> and expecting one binlog
+***    file to be returned
+include/read_file_to_var.inc
+
+*** 6. Executing the Binlog Server utility in the 'search_by_timestamp'
+***    mode with the <after_activity_timestamp> and expecting two binlog
+***    files to be returned
+include/read_file_to_var.inc
+
+*** Removing the search result file.
+
+*** Dropping the table.
+DROP TABLE t1;
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.

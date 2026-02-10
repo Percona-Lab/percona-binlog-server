@@ -13,19 +13,17 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef BINSRV_GTIDS_GTID_SET_FWD_HPP
-#define BINSRV_GTIDS_GTID_SET_FWD_HPP
+#ifndef BINSRV_MODELS_ERROR_RESPONSE_FWD_HPP
+#define BINSRV_MODELS_ERROR_RESPONSE_FWD_HPP
 
-#include <iosfwd>
-#include <optional>
+#include <cstdint>
 
-namespace binsrv::gtids {
+namespace binsrv::models {
 
-class gtid_set;
-using optional_gtid_set = std::optional<gtid_set>;
+class error_response;
 
-std::ostream &operator<<(std::ostream &output, const gtid_set &obj);
+inline constexpr std::uint32_t expected_error_response_version{1U};
 
-} // namespace binsrv::gtids
+} // namespace binsrv::models
 
-#endif // BINSRV_GTIDS_GTID_SET_FWD_HPP
+#endif // BINSRV_MODELS_ERROR_RESPONSE_FWD_HPP

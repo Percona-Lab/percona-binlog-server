@@ -21,6 +21,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <exception>
 #include <iomanip>
 #include <iostream>
 #include <locale>
@@ -39,6 +40,7 @@
 #include "app_version.hpp"
 
 #include "binsrv/basic_logger.hpp"
+#include "binsrv/ctime_timestamp.hpp"
 #include "binsrv/exception_handling_helpers.hpp"
 #include "binsrv/log_severity.hpp"
 #include "binsrv/logger_factory.hpp"
@@ -53,6 +55,9 @@
 
 #include "binsrv/gtids/common_types.hpp"
 #include "binsrv/gtids/gtid_set.hpp"
+
+#include "binsrv/models/error_response.hpp"
+#include "binsrv/models/search_by_timestamp_response.hpp"
 
 #include "binsrv/event/code_type.hpp"
 #include "binsrv/event/common_header_flag_type.hpp"
@@ -75,9 +80,12 @@
 
 namespace {
 
-[[nodiscard]] bool check_cmd_args(const util::command_line_arg_view &cmd_args,
-                                  binsrv::operation_mode_type &operation_mode,
-                                  std::string_view &config_file_path) noexcept {
+[[nodiscard]] bool
+check_cmd_args(const util::command_line_arg_view &cmd_args,
+               binsrv::operation_mode_type &operation_mode,
+               // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+               std::string_view &config_file_path,
+               std::string_view &subcommand_value) noexcept {
   const auto number_of_cmd_args = std::size(cmd_args);
 
   static constexpr std::size_t expected_number_of_cmd_args_min{2U};
@@ -97,6 +105,8 @@ namespace {
   }
 
   static constexpr std::size_t expected_number_of_cmd_args_with_config{3U};
+  static constexpr std::size_t
+      expected_number_of_cmd_args_with_config_and_value{4U};
 
   switch (operation_mode) {
   case binsrv::operation_mode_type::fetch:
@@ -105,6 +115,15 @@ namespace {
       return false;
     }
     config_file_path = cmd_args[expected_number_of_cmd_args_with_config - 1U];
+    return true;
+  case binsrv::operation_mode_type::search_by_timestamp:
+    if (number_of_cmd_args !=
+        expected_number_of_cmd_args_with_config_and_value) {
+      return false;
+    }
+    config_file_path = cmd_args[expected_number_of_cmd_args_with_config - 1U];
+    subcommand_value =
+        cmd_args[expected_number_of_cmd_args_with_config_and_value - 1U];
     return true;
   case binsrv::operation_mode_type::version:
     return number_of_cmd_args == expected_number_of_cmd_args_min;
@@ -237,7 +256,7 @@ void log_storage_info(binsrv::basic_logger &logger,
   logger.log(binsrv::log_severity::info, msg);
 
   msg.clear();
-  if (storage.has_current_binlog_name()) {
+  if (storage.is_empty()) {
     msg = "binlog storage initialized at \"";
     msg += storage.get_current_binlog_name();
     msg += "\":";
@@ -297,7 +316,7 @@ void log_replication_info(
               : "non-blocking");
   msg += ", starting from ";
   if (replication_mode == binsrv::replication_mode_type::position) {
-    if (storage.has_current_binlog_name()) {
+    if (storage.is_empty()) {
       msg += storage.get_current_binlog_name();
       msg += ":";
       msg += std::to_string(storage.get_current_position());
@@ -475,7 +494,8 @@ void process_binlog_event(const binsrv::event::event &current_event,
   // checking if the event needs to be written to the binlog
   if (!context.is_event_info_only()) {
     storage.write_event(portion, context.is_at_transaction_boundary(),
-                        context.get_transaction_gtid());
+                        context.get_transaction_gtid(),
+                        current_common_header.get_timestamp());
   }
 
   // processing the very last event in the sequence - either a non-artificial
@@ -526,7 +546,7 @@ bool open_connection_and_switch_to_replication(
           server_id, util::const_byte_span{encoded_gtids_buffer},
           verify_checksum, blocking_mode);
     } else {
-      if (storage.has_current_binlog_name()) {
+      if (storage.is_empty()) {
         connection.switch_to_position_replication(
             server_id, storage.get_current_binlog_name(),
             storage.get_current_position(), verify_checksum, blocking_mode);
@@ -662,6 +682,61 @@ bool wait_for_interruptable(std::uint32_t idle_time_seconds,
   return !termination_flag.test();
 }
 
+bool handle_version() {
+  std::cout << app_version.get_string() << '\n';
+  return true;
+}
+
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+bool handle_search_by_timestamp(std::string_view config_file_path,
+                                std::string_view subcommand_value) {
+  bool operation_successful{false};
+  std::string result;
+
+  try {
+    binsrv::ctime_timestamp timestamp;
+    if (!binsrv::ctime_timestamp::try_parse(subcommand_value, timestamp)) {
+      throw std::runtime_error("Invalid timestamp format");
+    }
+
+    const binsrv::main_config config{config_file_path};
+    const auto &storage_config = config.root().get<"storage">();
+    const auto &replication_config = config.root().get<"replication">();
+    const auto replication_mode{replication_config.get<"mode">()};
+
+    const binsrv::storage storage{
+        storage_config, binsrv::storage_construction_mode_type::querying_only,
+        replication_mode};
+
+    binsrv::models::search_by_timestamp_response response;
+    const auto &binlog_records{storage.get_binlog_records()};
+    if (binlog_records.empty()) {
+      throw std::runtime_error("Binlog storage is empty");
+    }
+    for (const auto &record : binlog_records) {
+      // break when we find a binlog file with min timestamp greater
+      // than the provided one
+      if (record.timestamps.get_min_timestamp() > timestamp) {
+        break;
+      }
+      response.add_record(record.name, record.size,
+                          storage.get_binlog_uri(record.name),
+                          record.timestamps.get_min_timestamp().get_value(),
+                          record.timestamps.get_max_timestamp().get_value());
+    }
+    if (response.root().get<"result">().empty()) {
+      throw std::runtime_error("Timestamp is too old");
+    }
+    result = response.str();
+    operation_successful = true;
+  } catch (const std::exception &e) {
+    const binsrv::models::error_response response{e.what()};
+    result = response.str();
+  }
+  std::cout << result << '\n';
+  return operation_successful;
+}
+
 // since c++20 it is no longer needed to initialize std::atomic_flag with
 // ATOMIC_FLAG_INIT as this flag is modified from a signal handler it is marked
 // as volatile to make sure optimizer do optimizations which will be unsafe for
@@ -683,18 +758,28 @@ int main(int argc, char *argv[]) {
   binsrv::operation_mode_type operation_mode{
       binsrv::operation_mode_type::delimiter};
   std::string_view config_file_path;
-  const auto cmd_args_checked{
-      check_cmd_args(cmd_args, operation_mode, config_file_path)};
+  std::string_view subcommand_value;
+  const auto cmd_args_checked{check_cmd_args(
+      cmd_args, operation_mode, config_file_path, subcommand_value)};
   if (!cmd_args_checked) {
     std::cerr << "usage: " << executable_name
               << " (fetch|pull)) <json_config_file>\n"
+              << "       " << executable_name
+              << " search_by_timestamp <json_config_file> <iso_utc_timestamp>\n"
               << "       " << executable_name << " version\n";
     return EXIT_FAILURE;
   }
 
+  // handling the 'version' command
   if (operation_mode == binsrv::operation_mode_type::version) {
-    std::cout << app_version.get_string() << '\n';
-    return EXIT_SUCCESS;
+    return handle_version() ? EXIT_SUCCESS : EXIT_FAILURE;
+  }
+
+  // handling the 'search_by_timestamp' command
+  if (operation_mode == binsrv::operation_mode_type::search_by_timestamp) {
+    return handle_search_by_timestamp(config_file_path, subcommand_value)
+               ? EXIT_SUCCESS
+               : EXIT_FAILURE;
   }
 
   int exit_code = EXIT_FAILURE;
@@ -715,13 +800,11 @@ int main(int argc, char *argv[]) {
     logger->log(binsrv::log_severity::delimiter,
                 util::get_readable_command_line_arguments(cmd_args));
 
-    binsrv::main_config_ptr config;
     logger->log(binsrv::log_severity::delimiter,
                 "reading configuration from the JSON file.");
-    config = std::make_shared<binsrv::main_config>(config_file_path);
-    assert(config);
+    const binsrv::main_config config{config_file_path};
 
-    const auto &logger_config = config->root().get<"logger">();
+    const auto &logger_config = config.root().get<"logger">();
     if (!logger_config.has_file()) {
       logger->set_min_level(logger_config.get<"level">());
     } else {
@@ -763,13 +846,13 @@ int main(int argc, char *argv[]) {
                 "set custom handlers for SIGINT and SIGTERM signals");
     const volatile std::atomic_flag &termination_flag{global_termination_flag};
 
-    const auto &storage_config = config->root().get<"storage">();
+    const auto &storage_config = config.root().get<"storage">();
     log_storage_config_info(*logger, storage_config);
 
-    const auto &connection_config = config->root().get<"connection">();
+    const auto &connection_config = config.root().get<"connection">();
     log_connection_config_info(*logger, connection_config);
 
-    const auto &replication_config = config->root().get<"replication">();
+    const auto &replication_config = config.root().get<"replication">();
     log_replication_config_info(*logger, replication_config);
 
     const auto server_id{replication_config.get<"server_id">()};
@@ -777,7 +860,9 @@ int main(int argc, char *argv[]) {
     const auto verify_checksum{replication_config.get<"verify_checksum">()};
     const auto replication_mode{replication_config.get<"mode">()};
 
-    binsrv::storage storage{storage_config, replication_mode};
+    binsrv::storage storage{storage_config,
+                            binsrv::storage_construction_mode_type::streaming,
+                            replication_mode};
     log_storage_info(*logger, storage);
 
     const easymysql::library mysql_lib;

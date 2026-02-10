@@ -215,6 +215,21 @@ set(source_files
   src/binsrv/gtids/uuid.hpp
   src/binsrv/gtids/uuid.cpp
 
+  # models files
+  src/binsrv/models/binlog_file_record_fwd.hpp
+  src/binsrv/models/binlog_file_record.hpp
+
+  src/binsrv/models/error_response_fwd.hpp
+  src/binsrv/models/error_response.hpp
+  src/binsrv/models/error_response.cpp
+
+  src/binsrv/models/response_status_type_fwd.hpp
+  src/binsrv/models/response_status_type.hpp
+
+  src/binsrv/models/search_by_timestamp_response_fwd.hpp
+  src/binsrv/models/search_by_timestamp_response.hpp
+  src/binsrv/models/search_by_timestamp_response.cpp
+
   # binlog files
   src/binsrv/basic_logger_fwd.hpp
   src/binsrv/basic_logger.hpp
@@ -230,6 +245,14 @@ set(source_files
 
   src/binsrv/cout_logger.hpp
   src/binsrv/cout_logger.cpp
+
+  src/binsrv/ctime_timestamp_fwd.hpp
+  src/binsrv/ctime_timestamp.hpp
+  src/binsrv/ctime_timestamp.cpp
+
+  src/binsrv/ctime_timestamp_range_fwd.hpp
+  src/binsrv/ctime_timestamp_range.hpp
+  src/binsrv/ctime_timestamp_range.cpp
 
   src/binsrv/exception_handling_helpers.hpp
   src/binsrv/exception_handling_helpers.cpp

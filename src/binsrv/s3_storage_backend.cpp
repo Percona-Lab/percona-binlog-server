@@ -34,6 +34,7 @@
 #include <boost/url/host_type.hpp>
 #include <boost/url/parse.hpp>
 #include <boost/url/scheme.hpp>
+#include <boost/url/url.hpp>
 #include <boost/url/url_view_base.hpp>
 
 #include <boost/uuid/uuid_io.hpp>
@@ -729,6 +730,23 @@ void s3_storage_backend::do_close_stream() {
   res += (impl_->has_credentials() ? "***hidden***" : "none");
 
   return res;
+}
+
+[[nodiscard]] std::string
+s3_storage_backend::do_get_object_uri(std::string_view name) const {
+  boost::urls::url result;
+  if (impl_->has_endpoint()) {
+    result.set_scheme(impl_->get_scheme_label());
+    result.set_encoded_authority(impl_->get_endpoint());
+    std::filesystem::path result_path{result.path()};
+    result_path /= get_object_path(name);
+    result.set_path(result_path.generic_string());
+  } else {
+    result.set_scheme(original_uri_schema);
+    result.set_host(get_bucket());
+    result.set_path(get_object_path(name).generic_string());
+  }
+  return result.c_str();
 }
 
 [[nodiscard]] std::filesystem::path
