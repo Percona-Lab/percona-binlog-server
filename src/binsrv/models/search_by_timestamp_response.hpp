@@ -24,6 +24,8 @@
 #include <string_view>
 #include <vector>
 
+#include "binsrv/gtids/gtid_set_fwd.hpp"
+
 #include "binsrv/models/binlog_file_record_fwd.hpp"
 #include "binsrv/models/response_status_type_fwd.hpp"
 
@@ -57,8 +59,8 @@ public:
   [[nodiscard]] auto &root() noexcept { return impl_; }
 
   void add_record(std::string_view name, std::uint64_t size,
-                  std::string_view uri, std::time_t min_timestamp,
-                  std::time_t max_timestamp);
+                  std::string_view uri, const gtids::optional_gtid_set &gtids,
+                  std::time_t min_timestamp, std::time_t max_timestamp);
 
 private:
   impl_type impl_;

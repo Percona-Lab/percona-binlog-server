@@ -23,6 +23,8 @@
 
 #include "binsrv/ctime_timestamp.hpp"
 
+#include "binsrv/gtids/gtid_set.hpp"
+
 #include "util/nv_tuple.hpp"
 
 namespace binsrv::models {
@@ -33,6 +35,7 @@ struct [[nodiscard]] binlog_file_record
           util::nv<"name", std::string>,
           util::nv<"size", std::uint64_t>,
           util::nv<"uri", std::string>,
+          util::nv<"gtids", gtids::optional_gtid_set>,
           util::nv<"min_timestamp", ctime_timestamp>,
           util::nv<"max_timestamp", ctime_timestamp>
           // clang-format on
