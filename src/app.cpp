@@ -257,12 +257,12 @@ void log_storage_info(binsrv::basic_logger &logger,
 
   msg.clear();
   if (storage.is_empty()) {
+    msg = "binlog storage initialized on an empty directory";
+  } else {
     msg = "binlog storage initialized at \"";
     msg += storage.get_current_binlog_name();
     msg += "\":";
     msg += std::to_string(storage.get_current_position());
-  } else {
-    msg = "binlog storage initialized on an empty directory";
   }
   logger.log(binsrv::log_severity::info, msg);
 }
@@ -317,11 +317,11 @@ void log_replication_info(
   msg += ", starting from ";
   if (replication_mode == binsrv::replication_mode_type::position) {
     if (storage.is_empty()) {
+      msg += "the very beginning";
+    } else {
       msg += storage.get_current_binlog_name();
       msg += ":";
       msg += std::to_string(storage.get_current_position());
-    } else {
-      msg += "the very beginning";
     }
   } else {
     const auto &gtids{storage.get_gtids()};
@@ -547,12 +547,12 @@ bool open_connection_and_switch_to_replication(
           verify_checksum, blocking_mode);
     } else {
       if (storage.is_empty()) {
+        connection.switch_to_position_replication(server_id, verify_checksum,
+                                                  blocking_mode);
+      } else {
         connection.switch_to_position_replication(
             server_id, storage.get_current_binlog_name(),
             storage.get_current_position(), verify_checksum, blocking_mode);
-      } else {
-        connection.switch_to_position_replication(server_id, verify_checksum,
-                                                  blocking_mode);
       }
     }
   } catch (const easymysql::core_error &) {
@@ -720,7 +720,7 @@ bool handle_search_by_timestamp(std::string_view config_file_path,
         break;
       }
       response.add_record(record.name, record.size,
-                          storage.get_binlog_uri(record.name),
+                          storage.get_binlog_uri(record.name), record.gtids,
                           record.timestamps.get_min_timestamp().get_value(),
                           record.timestamps.get_max_timestamp().get_value());
     }

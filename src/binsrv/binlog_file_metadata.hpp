@@ -26,7 +26,6 @@
 
 #include "binsrv/gtids/gtid_set.hpp"
 
-#include "util/common_optional_types.hpp"
 #include "util/nv_tuple.hpp"
 
 namespace binsrv {
@@ -37,7 +36,7 @@ private:
       // clang-format off
       util::nv<"version", std::uint32_t>,
       util::nv<"size", std::uint64_t>,
-      util::nv<"gtids", util::optional_string>,
+      util::nv<"gtids", gtids::optional_gtid_set>,
       util::nv<"min_timestamp", ctime_timestamp>,
       util::nv<"max_timestamp", ctime_timestamp>
       // clang-format on
@@ -56,8 +55,6 @@ public:
   [[nodiscard]] bool has_gtids() const noexcept {
     return impl_.get<"gtids">().has_value();
   }
-  [[nodiscard]] gtids::optional_gtid_set get_gtids() const;
-  void set_gtids(const gtids::optional_gtid_set &gtids);
 
 private:
   impl_type impl_;

@@ -79,10 +79,10 @@ public:
     return binlog_records_;
   }
   [[nodiscard]] bool is_empty() const noexcept {
-    return !binlog_records_.empty();
+    return binlog_records_.empty();
   }
   [[nodiscard]] std::string_view get_current_binlog_name() const noexcept {
-    return is_empty() ? get_current_binlog_record().name : std::string_view{};
+    return is_empty() ? std::string_view{} : get_current_binlog_record().name;
   }
   [[nodiscard]] std::uint64_t get_current_position() const noexcept {
     return get_flushed_position() + std::size(event_buffer_);
@@ -162,7 +162,7 @@ private:
     return last_transaction_boundary_position_in_event_buffer_ != 0ULL;
   }
   [[nodiscard]] std::uint64_t get_flushed_position() const noexcept {
-    return is_empty() ? get_current_binlog_record().size : 0ULL;
+    return is_empty() ? 0ULL : get_current_binlog_record().size;
   }
   [[nodiscard]] std::uint64_t get_ready_to_flush_position() const noexcept {
     return get_flushed_position() +

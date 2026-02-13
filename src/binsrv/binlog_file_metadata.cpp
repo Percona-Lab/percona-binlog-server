@@ -18,21 +18,12 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
-#include <utility>
-
-#include <boost/algorithm/hex.hpp>
 
 #include <boost/json/parse.hpp>
 #include <boost/json/serialize.hpp>
 #include <boost/json/value.hpp>
 
-// needed for binsrv::gtids::gtid_set_storage
-#include <boost/container/small_vector.hpp> // IWYU pragma: keep
-
-#include "binsrv/gtids/common_types.hpp"
-#include "binsrv/gtids/gtid_set.hpp"
-
-#include "util/byte_span.hpp"
+#include "util/exception_location_helpers.hpp"
 #include "util/nv_tuple_from_json.hpp"
 #include "util/nv_tuple_to_json.hpp"
 
@@ -53,37 +44,6 @@ binlog_file_metadata::binlog_file_metadata(std::string_view data) : impl_{} {
   util::nv_tuple_to_json(json_value, impl_);
 
   return boost::json::serialize(json_value);
-}
-
-[[nodiscard]] gtids::optional_gtid_set binlog_file_metadata::get_gtids() const {
-  const auto &optional_gtids{root().get<"gtids">()};
-  if (!optional_gtids.has_value()) {
-    return {};
-  }
-
-  const auto &encoded_gtids{optional_gtids.value()};
-  std::string decoded_gtids(std::size(encoded_gtids) / 2U, 'x');
-  boost::algorithm::unhex(encoded_gtids, std::data(decoded_gtids));
-  return gtids::optional_gtid_set{std::in_place,
-                                  util::as_const_byte_span(decoded_gtids)};
-}
-
-void binlog_file_metadata::set_gtids(const gtids::optional_gtid_set &gtids) {
-  auto &optional_gtids{root().get<"gtids">()};
-  if (!gtids.has_value()) {
-    optional_gtids.reset();
-    return;
-  }
-  const auto encoded_size{gtids.value().calculate_encoded_size()};
-
-  gtids::gtid_set_storage buffer(encoded_size);
-  util::byte_span destination{buffer};
-  gtids.value().encode_to(destination);
-
-  std::string encoded_gtids(std::size(buffer) * 2U, 'x');
-  const auto buffer_sv{util::as_string_view(std::as_const(buffer))};
-  boost::algorithm::hex_lower(buffer_sv, std::data(encoded_gtids));
-  optional_gtids.emplace(std::move(encoded_gtids));
 }
 
 void binlog_file_metadata::validate() const {

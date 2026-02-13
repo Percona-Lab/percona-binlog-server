@@ -464,7 +464,7 @@ storage::load_binlog_metadata(std::string_view binlog_name) const {
 
   return binlog_record{.name = std::string(binlog_name),
                        .size = metadata.root().get<"size">(),
-                       .gtids = metadata.get_gtids(),
+                       .gtids = metadata.root().get<"gtids">(),
                        .timestamps = {metadata.root().get<"min_timestamp">(),
                                       metadata.root().get<"max_timestamp">()}};
 }
@@ -488,7 +488,7 @@ void storage::validate_binlog_metadata(const binlog_record &record) const {
 void storage::save_binlog_metadata(const binlog_record &record) const {
   binlog_file_metadata metadata{};
   metadata.root().get<"size">() = record.size;
-  metadata.set_gtids(record.gtids);
+  metadata.root().get<"gtids">() = record.gtids;
   metadata.root().get<"min_timestamp">() =
       ctime_timestamp{record.timestamps.get_min_timestamp()};
   metadata.root().get<"max_timestamp">() =
