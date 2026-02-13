@@ -59,7 +59,7 @@ tag::tag(std::string_view name) {
     current_ch = *name_it;
     if (current_ch != underscore && std::isalnum(current_ch) == 0) {
       util::exception_location().raise<std::invalid_argument>(
-          "tag name must includeonly alphanumeric characters or underscores");
+          "tag name must include only alphanumeric characters or underscores");
     }
     *data_it = static_cast<std::byte>(current_ch);
   }

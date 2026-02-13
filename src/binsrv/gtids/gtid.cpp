@@ -15,8 +15,11 @@
 
 #include "binsrv/gtids/gtid.hpp"
 
+#include <cstddef>
+#include <limits>
 #include <ostream>
 #include <stdexcept>
+#include <string>
 
 #include "binsrv/gtids/common_types.hpp"
 #include "binsrv/gtids/tag_fwd.hpp"
@@ -25,6 +28,23 @@
 #include "util/exception_location_helpers.hpp"
 
 namespace binsrv::gtids {
+
+[[nodiscard]] std::string gtid::str() const {
+  std::string result;
+  static constexpr std::size_t gno_str_max_length{
+      std::numeric_limits<gno_t>::digits10 + 1U};
+
+  result.reserve(uuid::readable_size + (has_tag() ? tag_.get_size() + 1U : 0U) +
+                 1U + gno_str_max_length);
+  result += uuid_.str();
+  if (has_tag()) {
+    result += component_separator;
+    result += tag_.get_name();
+  }
+  result += component_separator;
+  result += std::to_string(gno_);
+  return result;
+}
 
 void gtid::validate_components(const uuid &uuid_component,
                                const tag & /*tag_component*/,
@@ -40,12 +60,7 @@ void gtid::validate_components(const uuid &uuid_component,
 }
 
 std::ostream &operator<<(std::ostream &output, const gtid &obj) {
-  output << obj.get_uuid();
-  if (obj.has_tag()) {
-    output << gtid::tag_separator << obj.get_tag();
-  }
-  output << gtid::gno_separator << obj.get_gno();
-  return output;
+  return output << obj.str();
 }
 
 } // namespace binsrv::gtids

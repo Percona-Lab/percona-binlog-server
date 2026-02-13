@@ -16,8 +16,7 @@
 #ifndef BINSRV_CTIME_TIMESTAMP_FWD_HPP
 #define BINSRV_CTIME_TIMESTAMP_FWD_HPP
 
-#include <istream>
-#include <ostream>
+#include <iosfwd>
 
 #include "util/nv_tuple_json_support.hpp"
 

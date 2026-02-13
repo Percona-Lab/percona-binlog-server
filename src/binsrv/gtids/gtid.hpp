@@ -26,8 +26,7 @@ namespace binsrv::gtids {
 
 class gtid {
 public:
-  static constexpr char tag_separator{':'};
-  static constexpr char gno_separator{':'};
+  static constexpr char component_separator{':'};
 
   gtid() = default;
 
@@ -51,6 +50,8 @@ public:
   [[nodiscard]] const tag &get_tag() const noexcept { return tag_; }
 
   [[nodiscard]] gno_t get_gno() const noexcept { return gno_; }
+
+  [[nodiscard]] std::string str() const;
 
   [[nodiscard]] friend bool operator==(const gtid &first,
                                        const gtid &second) noexcept = default;

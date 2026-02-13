@@ -31,6 +31,9 @@ namespace binsrv::gtids {
 
 class uuid {
 public:
+  static constexpr std::size_t readable_size{36U};
+  static constexpr char group_separator{'-'};
+
   uuid() noexcept = default;
 
   explicit uuid(std::string_view value);

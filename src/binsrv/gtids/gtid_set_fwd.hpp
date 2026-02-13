@@ -19,13 +19,19 @@
 #include <iosfwd>
 #include <optional>
 
+#include "util/nv_tuple_json_support.hpp"
+
 namespace binsrv::gtids {
 
 class gtid_set;
 using optional_gtid_set = std::optional<gtid_set>;
 
 std::ostream &operator<<(std::ostream &output, const gtid_set &obj);
+std::istream &operator>>(std::istream &input, gtid_set &obj);
 
 } // namespace binsrv::gtids
+
+template <>
+struct util::is_string_convertable<binsrv::gtids::gtid_set> : std::true_type {};
 
 #endif // BINSRV_GTIDS_GTID_SET_FWD_HPP

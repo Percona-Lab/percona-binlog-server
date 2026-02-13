@@ -34,6 +34,7 @@ namespace binsrv::gtids {
 class gtid_set {
 public:
   static constexpr char uuid_separator{','};
+  static constexpr char uuid_separator_whitespace{' '};
   static constexpr char interval_separator{'-'};
 
   gtid_set();
@@ -42,6 +43,8 @@ public:
   // in order to deal with incomplete tag type
   // NOLINTNEXTLINE(hicpp-explicit-conversions)
   gtid_set(const gtid &value) : gtid_set() { *this += value; }
+
+  explicit gtid_set(std::string_view value);
 
   explicit gtid_set(util::const_byte_span portion);
 
@@ -54,6 +57,8 @@ public:
 
   [[nodiscard]] bool is_empty() const noexcept { return data_.empty(); }
   [[nodiscard]] bool contains_tags() const noexcept;
+
+  [[nodiscard]] std::string str() const;
 
   [[nodiscard]] std::size_t calculate_encoded_size() const noexcept;
   void encode_to(util::byte_span &destination) const;
@@ -81,8 +86,6 @@ public:
 
   friend bool operator==(const gtid_set &first,
                          const gtid_set &second) noexcept;
-
-  friend std::ostream &operator<<(std::ostream &output, const gtid_set &obj);
 
 private:
   using gno_container = boost::icl::interval_set<gno_t>;

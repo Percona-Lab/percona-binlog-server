@@ -18,9 +18,14 @@
 #include <algorithm>
 #include <charconv>
 #include <cstddef>
+#include <exception>
+#include <ios>
+#include <istream>
 #include <iterator>
 #include <limits>
+#include <ostream>
 #include <stdexcept>
+#include <string>
 #include <string_view>
 #include <system_error>
 
@@ -80,6 +85,24 @@ time_unit::time_unit(std::string_view value_sv)
 
   multiplier_index_ =
       static_cast<std::size_t>(std::distance(multipliers_bg, multipliers_it));
+}
+
+std::ostream &operator<<(std::ostream &output, const time_unit &unit) {
+  return output << unit.to_string();
+}
+
+std::istream &operator>>(std::istream &input, time_unit &unit) {
+  std::string unit_str;
+  input >> unit_str;
+  if (!input) {
+    return input;
+  }
+  try {
+    unit = time_unit{unit_str};
+  } catch (const std::exception &) {
+    input.setstate(std::ios_base::failbit);
+  }
+  return input;
 }
 
 } // namespace binsrv
