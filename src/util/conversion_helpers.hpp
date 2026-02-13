@@ -13,8 +13,8 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef UTIL_CONVERSION_HELPOERS_HPP
-#define UTIL_CONVERSION_HELPOERS_HPP
+#ifndef UTIL_CONVERSION_HELPERS_HPP
+#define UTIL_CONVERSION_HELPERS_HPP
 
 #include <concepts>
 #include <type_traits>
@@ -48,4 +48,4 @@ template <typename EnumType>
 
 } // namespace util
 
-#endif // UTIL_CONVERSION_HELPOERS_HPP
+#endif // UTIL_CONVERSION_HELPERS_HPP

@@ -19,11 +19,8 @@
 #include "binsrv/time_unit_fwd.hpp" // IWYU pragma: export
 
 #include <array>
-#include <concepts>
 #include <cstdint>
-#include <istream>
-#include <ostream>
-#include <stdexcept>
+#include <string>
 #include <string_view>
 #include <utility>
 
@@ -70,30 +67,6 @@ private:
   };
   // clang-format on
 };
-
-template <typename Char, typename Traits>
-  requires std::same_as<Char, char>
-std::basic_ostream<Char, Traits> &
-operator<<(std::basic_ostream<Char, Traits> &output, const time_unit &unit) {
-  return output << unit.to_string();
-}
-
-template <typename Char, typename Traits>
-  requires std::same_as<Char, char>
-std::basic_istream<Char, Traits> &
-operator>>(std::basic_istream<Char, Traits> &input, time_unit &unit) {
-  std::string unit_str;
-  input >> unit_str;
-  if (!input) {
-    return input;
-  }
-  try {
-    unit = time_unit{unit_str};
-  } catch (const std::exception &) {
-    input.setstate(std::ios_base::failbit);
-  }
-  return input;
-}
 
 } // namespace binsrv
 

@@ -15,14 +15,22 @@
 
 #include "binsrv/gtids/gtid_set.hpp"
 
+#include <array>
+#include <cassert>
+#include <cctype>
 #include <cstddef>
 #include <cstdint>
+#include <exception>
+#include <ios>
+#include <istream>
 #include <iterator>
 #include <limits>
 #include <ostream>
 #include <span>
 #include <stdexcept>
+#include <string>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 
 #include <boost/icl/concept/interval.hpp>
@@ -34,6 +42,7 @@
 #include "binsrv/gtids/tag.hpp"
 #include "binsrv/gtids/uuid.hpp"
 
+#include "util/bnf_parser_helpers.hpp"
 #include "util/byte_span_extractors.hpp"
 #include "util/byte_span_fwd.hpp"
 #include "util/byte_span_inserters.hpp"
@@ -41,12 +50,255 @@
 
 namespace binsrv::gtids {
 
+class gtid_set_parser {
+public:
+  gtid_set_parser(const gtid_set_parser &) = delete;
+  gtid_set_parser(gtid_set_parser &&) = delete;
+  gtid_set_parser &operator=(const gtid_set_parser &) = delete;
+  gtid_set_parser &operator=(gtid_set_parser &&) = delete;
+  ~gtid_set_parser() = default;
+
+  static void parse(std::string_view readable_value, gtid_set &gtids) {
+    gtid_set_parser parser{gtids};
+    std::string_view remainder{readable_value};
+    parser.parse_gtid_set(remainder);
+  }
+
+private:
+  /*
+    BNF grammar for GTID sets
+
+    <gtid_set> ::= <uuid_set> (',' <space> <uuid_set>)*
+    <uuid_set> ::= <uuid> ':' <optionally_tagged_intervals>
+    <uuid> ::= <hexadecimal_pair>{4} '-' <hexadecimal_pair>{2} '-'
+               <hexadecimal_pair>{2} '-' <hexadecimal_pair>{2} '-'
+               <hexadecimal_pair>{6}
+    <hexadecimal_pair> ::= <hexadecimal>{2}
+    <hexadecimal> ::= [a-fA-F0-9]
+    <optionally_tagged_intervals> ::= <optionally_tagged_interval>
+                                      (':' <optionally_tagged_interval>)*
+    <optionally_tagged_interval> ::= (<tag> ':')? <gno> ('-' <gno>)?
+    <tag> ::= [a-zA-Z_][a-zA-Z0-9_]{0,31}
+    <gno> ::= [0-9]+
+    <space> ::= [ \t\r\n\f\v]+
+  */
+
+  gtid_set *result_gtids_;
+  uuid current_uuid_{};
+  tag current_tag_{};
+
+  explicit gtid_set_parser(gtid_set &gtids) noexcept : result_gtids_(&gtids) {}
+
+  static constexpr auto hexadecimal_predicate{
+      [](char character) noexcept -> bool {
+        return std::isxdigit(character) != 0;
+      }};
+  static constexpr auto tag_first_character_predicate{
+      [](char character) noexcept -> bool {
+        return character == '_' || std::isalpha(character) != 0;
+      }};
+  static constexpr auto tag_other_characters_predicate{
+      [](char character) noexcept -> bool {
+        return character == '_' || std::isalnum(character) != 0;
+      }};
+  static constexpr auto digit_predicate{[](char character) noexcept -> bool {
+    return std::isdigit(character) != 0;
+  }};
+  static constexpr auto space_predicate{[](char character) noexcept -> bool {
+    return std::isspace(character) != 0;
+  }};
+
+  template <typename T>
+  [[nodiscard]] static T char_to_value(char character, char base,
+                                       T shift = T{}) noexcept {
+    using default_unsigned = std::make_unsigned_t<decltype(character - base)>;
+    return static_cast<T>(
+        static_cast<T>(static_cast<default_unsigned>(character - base)) +
+        shift);
+  }
+
+  // <hexadecimal> ::= [a-fA-F0-9]
+  [[nodiscard]] static std::uint8_t
+  parse_hexadecimal(std::string_view &remainder) {
+    static constexpr char lower_a_character{'a'};
+    static constexpr char upper_a_character{'A'};
+    static constexpr char zero_digit_character{'0'};
+
+    static constexpr std::uint8_t hex_shift{10U};
+
+    const char character{
+        util::parse_character_predicate(remainder, hexadecimal_predicate)};
+    if (character >= lower_a_character) {
+      return char_to_value<std::uint8_t>(character, lower_a_character,
+                                         hex_shift);
+    }
+    if (character >= upper_a_character) {
+      return char_to_value<std::uint8_t>(character, upper_a_character,
+                                         hex_shift);
+    }
+    return char_to_value<std::uint8_t>(character, zero_digit_character);
+  }
+
+  // <hexadecimal_pair> ::= <hexadecimal>{2}
+  [[nodiscard]] static std::byte
+  parse_hexadecimal_pair(std::string_view &remainder) {
+    std::uint8_t result{parse_hexadecimal(remainder)};
+    result <<= 4U;
+    result |= parse_hexadecimal(remainder);
+    using underlying_byte_type = std::underlying_type_t<std::byte>;
+    return static_cast<std::byte>(static_cast<underlying_byte_type>(result));
+  }
+
+  // <uuid> ::= <hexadecimal_pair>{4} '-' <hexadecimal_pair>{2} '-'
+  //            <hexadecimal_pair>{2} '-' <hexadecimal_pair>{2} '-'
+  //            <hexadecimal_pair>{6}
+  [[nodiscard]] static uuid parse_uuid(std::string_view &remainder) {
+    uuid_storage buffer{};
+    auto *buffer_it{std::begin(buffer)};
+
+    const auto parse_group{
+        [](std::string_view &input, std::byte *&output, std::size_t count) {
+          for (std::size_t index{0U}; index < count; ++index) {
+            *output = parse_hexadecimal_pair(input);
+            std::advance(output, 1U);
+          }
+        }};
+    static constexpr std::array group_sizes{4U, 2U, 2U, 2U, 6U};
+    const auto *group_it{std::cbegin(group_sizes)};
+    const auto *const group_en{std::cend(group_sizes)};
+
+    parse_group(remainder, buffer_it, *group_it);
+    std::advance(group_it, 1U);
+
+    while (group_it != group_en) {
+      util::parse_character(remainder, uuid::group_separator);
+      parse_group(remainder, buffer_it, *group_it);
+      std::advance(group_it, 1U);
+    }
+
+    assert(buffer_it == std::end(buffer));
+    return uuid{buffer};
+  }
+
+  // <tag> ::= [a-zA-Z_][a-zA-Z0-9_]{0,31}
+  [[nodiscard]] static tag parse_tag(std::string_view &remainder) {
+    using underlying_byte_type = std::underlying_type_t<std::byte>;
+
+    tag_storage buffer{};
+    char tag_character{util::parse_character_predicate(
+        remainder, tag_first_character_predicate)};
+    buffer.push_back(static_cast<std::byte>(
+        static_cast<underlying_byte_type>(tag_character)));
+
+    while (std::size(buffer) < tag_max_length &&
+           util::parse_character_predicate_ex(
+               remainder, tag_other_characters_predicate, tag_character)) {
+      buffer.push_back(static_cast<std::byte>(
+          static_cast<underlying_byte_type>(tag_character)));
+    }
+    assert(std::size(buffer) <= tag_max_length);
+
+    return tag{buffer};
+  }
+
+  // <gno> ::= [0-9]+
+  [[nodiscard]] static gno_t parse_gno(std::string_view &remainder) {
+    static constexpr gno_t radix{10ULL};
+    gno_t result{0ULL};
+
+    char digit{};
+
+    digit = util::parse_character_predicate(remainder, digit_predicate);
+    result += char_to_value<gno_t>(digit, '0', 0U);
+
+    while (
+        util::parse_character_predicate_ex(remainder, digit_predicate, digit)) {
+      // TODO: add overflow checks
+      result *= radix;
+      result += char_to_value<gno_t>(digit, '0', 0U);
+    }
+    return result;
+  }
+
+  // <optionally_tagged_interval> ::= (<tag> ':')? <gno> ('-' <gno>)?
+  void parse_optionally_tagged_interval(std::string_view &remainder) {
+    if (!util::check_character_predicate(remainder, digit_predicate)) {
+      current_tag_ = parse_tag(remainder);
+      util::parse_character(remainder, gtid::component_separator);
+    }
+    const gno_t gno_lower{parse_gno(remainder)};
+    char character{};
+    if (util::parse_character_ex(remainder, gtid_set::interval_separator,
+                                 character)) {
+      const gno_t gno_upper{parse_gno(remainder)};
+      result_gtids_->add_interval(current_uuid_, current_tag_, gno_lower,
+                                  gno_upper);
+    } else {
+      result_gtids_->add(current_uuid_, current_tag_, gno_lower);
+    }
+  }
+
+  // <optionally_tagged_intervals> ::= <optionally_tagged_interval>
+  //                                   (':' <optionally_tagged_interval>)*
+  void parse_optionally_tagged_intervals(std::string_view &remainder) {
+    parse_optionally_tagged_interval(remainder);
+    char character{};
+    while (util::parse_character_ex(remainder, gtid::component_separator,
+                                    character)) {
+      parse_optionally_tagged_interval(remainder);
+    }
+  }
+
+  // <uuid_set> ::= <uuid> ':' <optionally_tagged_intervals>
+  void parse_uuid_set(std::string_view &remainder) {
+    current_uuid_ = parse_uuid(remainder);
+    current_tag_ = tag{};
+    util::parse_character(remainder, gtid::component_separator);
+    parse_optionally_tagged_intervals(remainder);
+  }
+
+  // <space> ::= [ \t\r\n\f\v]+
+  static void parse_space(std::string_view &remainder) {
+    util::parse_character_predicate(remainder, space_predicate);
+
+    char character{};
+    while (util::parse_character_predicate_ex(remainder, space_predicate,
+                                              character)) {
+    }
+  }
+
+  // <gtid_set> ::= <uuid_set> (',' <space> <uuid_set>)*
+  void parse_gtid_set(std::string_view &remainder) {
+    parse_uuid_set(remainder);
+    char character{};
+    while (util::parse_character_ex(remainder, gtid_set::uuid_separator,
+                                    character)) {
+      parse_space(remainder);
+      parse_uuid_set(remainder);
+    }
+  }
+};
+
 gtid_set::gtid_set() = default;
 gtid_set::gtid_set(const gtid_set &other) = default;
 gtid_set::gtid_set(gtid_set &&other) noexcept = default;
 gtid_set &gtid_set::operator=(const gtid_set &other) = default;
 gtid_set &gtid_set::operator=(gtid_set &&other) noexcept = default;
 gtid_set::~gtid_set() = default;
+
+gtid_set::gtid_set(std::string_view value) {
+  // empty string correspond to an empty GTID set
+  if (value.empty()) {
+    return;
+  }
+
+  try {
+    gtid_set_parser::parse(value, *this);
+  } catch (const std::exception &) {
+    util::exception_location().raise<std::invalid_argument>(
+        "cannot parse GTID set");
+  }
+}
 
 gtid_set::gtid_set(util::const_byte_span portion) {
   // Gtid_set encoding:
@@ -165,6 +417,64 @@ gtid_set::gtid_set(util::const_byte_span portion) {
     }
   }
   return false;
+}
+
+[[nodiscard]] std::string gtid_set::str() const {
+  const auto string_size_estimator{
+      [](const tagged_gnos_by_uid_container &data) -> std::size_t {
+        // Rough estimate for up to 1 billion transactions
+        static constexpr std::size_t average_gno_readable_size{9};
+        std::size_t estimate{0U};
+        for (const auto &[current_uuid, current_tagged_gnos] : data) {
+          estimate += uuid::readable_size;
+          estimate += 2; // for ", "
+
+          for (const auto &[current_tag, current_gnos] : current_tagged_gnos) {
+            ++estimate; // for ':' before tag
+            estimate += current_tag.get_size();
+            // for each interval one ':', one '-' and two numbers
+            estimate += boost::icl::interval_count(current_gnos) *
+                        (2U * average_gno_readable_size + 2U);
+          }
+        }
+        return estimate;
+      }};
+
+  const auto gno_container_printer{
+      [](std::string &result, const gno_container &gnos) {
+        for (const auto &interval : gnos) {
+          const auto lower = boost::icl::lower(interval);
+          const auto upper = boost::icl::upper(interval);
+          result += gtid::component_separator;
+          result += std::to_string(lower);
+          if (upper != lower) {
+            result += interval_separator;
+            result += std::to_string(upper);
+          }
+        }
+      }};
+
+  std::string result{};
+  result.reserve(string_size_estimator(data_));
+  bool first_uuid{true};
+  for (const auto &[current_uuid, current_tagged_gnos] : data_) {
+    if (!first_uuid) {
+      result += uuid_separator;
+      result += uuid_separator_whitespace;
+    } else {
+      first_uuid = false;
+    }
+    result += current_uuid.str();
+
+    for (const auto &[current_tag, current_gnos] : current_tagged_gnos) {
+      if (!current_tag.is_empty()) {
+        result += gtid::component_separator;
+        result += current_tag.get_name();
+      }
+      gno_container_printer(result, current_gnos);
+    }
+  }
+  return result;
 }
 
 [[nodiscard]] std::size_t gtid_set::calculate_encoded_size() const noexcept {
@@ -380,34 +690,21 @@ void gtid_set::process_intervals(util::const_byte_span &remainder,
 }
 
 std::ostream &operator<<(std::ostream &output, const gtid_set &obj) {
-  const auto gno_container_printer{
-      [](std::ostream &stream, const gtid_set::gno_container &gnos) {
-        for (const auto &interval : gnos) {
-          const auto lower = boost::icl::lower(interval);
-          const auto upper = boost::icl::upper(interval);
-          stream << gtid::gno_separator << lower;
-          if (upper != lower) {
-            stream << gtid_set::interval_separator << upper;
-          }
-        }
-      }};
+  return output << obj.str();
+}
 
-  bool first_uuid{true};
-  for (const auto &[current_uuid, current_tagged_gnos] : obj.data_) {
-    if (!first_uuid) {
-      output << gtid_set::uuid_separator << output.fill();
-    } else {
-      first_uuid = false;
-    }
-    output << current_uuid;
-    for (const auto &[current_tag, current_gnos] : current_tagged_gnos) {
-      if (!current_tag.is_empty()) {
-        output << gtid::tag_separator << current_tag;
-      }
-      gno_container_printer(output, current_gnos);
-    }
+std::istream &operator>>(std::istream &input, gtid_set &obj) {
+  std::string gtids_str;
+  input >> gtids_str;
+  if (!input) {
+    return input;
   }
-  return output;
+  try {
+    obj = gtid_set{gtids_str};
+  } catch (const std::exception &) {
+    input.setstate(std::ios_base::failbit);
+  }
+  return input;
 }
 
 } // namespace binsrv::gtids

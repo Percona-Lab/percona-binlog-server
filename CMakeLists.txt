@@ -319,6 +319,8 @@ set(source_files
   src/binsrv/time_unit.cpp
 
   # various utility files
+  src/util/bnf_parser_helpers.hpp
+
   src/util/bounded_string_storage_fwd.hpp
   src/util/bounded_string_storage.hpp
 

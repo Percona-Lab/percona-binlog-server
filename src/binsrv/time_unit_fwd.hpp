@@ -16,10 +16,8 @@
 #ifndef BINSRV_TIME_UNIT_FWD_HPP
 #define BINSRV_TIME_UNIT_FWD_HPP
 
-#include <concepts>
-#include <istream>
+#include <iosfwd>
 #include <optional>
-#include <ostream>
 
 #include "util/nv_tuple_json_support.hpp"
 
@@ -29,15 +27,9 @@ class time_unit;
 
 using optional_time_unit = std::optional<time_unit>;
 
-template <typename Char, typename Traits>
-  requires std::same_as<Char, char>
-std::basic_ostream<Char, Traits> &
-operator<<(std::basic_ostream<Char, Traits> &output, const time_unit &unit);
+std::ostream &operator<<(std::ostream &output, const time_unit &unit);
 
-template <typename Char, typename Traits>
-  requires std::same_as<Char, char>
-std::basic_istream<Char, Traits> &
-operator>>(std::basic_istream<Char, Traits> &input, time_unit &unit);
+std::istream &operator>>(std::istream &input, time_unit &unit);
 
 } // namespace binsrv
 
