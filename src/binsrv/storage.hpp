@@ -41,7 +41,8 @@ private:
   struct binlog_record {
     std::string name;
     std::uint64_t size{0ULL};
-    gtids::optional_gtid_set gtids{};
+    gtids::optional_gtid_set previous_gtids{};
+    gtids::optional_gtid_set added_gtids{};
     ctime_timestamp_range timestamps{};
   };
   using binlog_record_container = std::vector<binlog_record>;
@@ -88,15 +89,22 @@ public:
     return get_flushed_position() + std::size(event_buffer_);
   }
 
-  [[nodiscard]] const gtids::gtid_set &get_gtids() const noexcept {
+  [[nodiscard]] gtids::gtid_set get_gtids() const {
+    gtids::gtid_set result{};
     if (is_empty()) {
-      return empty_gtids_;
+      return result;
     }
-    const auto &optional_gtids{get_current_binlog_record().gtids};
-    if (!optional_gtids.has_value()) {
-      return empty_gtids_;
+    const auto &optional_previous_gtids{
+        get_current_binlog_record().previous_gtids};
+    if (!optional_previous_gtids.has_value()) {
+      return result;
     }
-    return *optional_gtids;
+    result = *optional_previous_gtids;
+    const auto &optional_added_gtids{get_current_binlog_record().added_gtids};
+    if (optional_added_gtids.has_value()) {
+      result.add(*optional_added_gtids);
+    }
+    return result;
   }
 
   [[nodiscard]] static bool
@@ -128,8 +136,6 @@ private:
 
   std::chrono::steady_clock::duration checkpoint_interval_seconds_{};
   std::chrono::steady_clock::time_point last_checkpoint_timestamp_{};
-
-  gtids::gtid_set empty_gtids_{};
 
   using event_buffer_type = std::vector<std::byte>;
   event_buffer_type event_buffer_{};

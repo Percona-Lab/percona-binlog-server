@@ -347,7 +347,8 @@ BOOST_AUTO_TEST_CASE(GtidSetStreamOperatorEmpty) {
 
   const auto gtids_str{boost::lexical_cast<std::string>(gtids)};
   BOOST_CHECK_EQUAL(gtids_str, "");
-  const auto restored_gtids{binsrv::gtids::gtid_set{gtids_str}};
+  const auto restored_gtids{
+      boost::lexical_cast<binsrv::gtids::gtid_set>(gtids_str)};
   BOOST_CHECK_EQUAL(gtids, restored_gtids);
 }
 
@@ -371,7 +372,8 @@ BOOST_AUTO_TEST_CASE(GtidSetStreamOperatorUntagged) {
   const auto gtids_str{boost::lexical_cast<std::string>(gtids)};
   BOOST_CHECK_EQUAL(gtids_str, "11111111-aaaa-1111-aaaa-111111111111:1-3:5, "
                                "22222222-bbbb-2222-bbbb-222222222222:11-13:15");
-  const auto restored_gtids{binsrv::gtids::gtid_set{gtids_str}};
+  const auto restored_gtids{
+      boost::lexical_cast<binsrv::gtids::gtid_set>(gtids_str)};
   BOOST_CHECK_EQUAL(gtids, restored_gtids);
 }
 
@@ -411,7 +413,8 @@ BOOST_AUTO_TEST_CASE(GtidSetStreamOperatorTagged) {
                     "beta:121-123:125, "
                     "22222222-bbbb-2222-bbbb-222222222222:alpha:211-213:215:"
                     "beta:221-223:225");
-  const auto restored_gtids{binsrv::gtids::gtid_set{gtids_str}};
+  const auto restored_gtids{
+      boost::lexical_cast<binsrv::gtids::gtid_set>(gtids_str)};
   BOOST_CHECK_EQUAL(gtids, restored_gtids);
 }
 
@@ -461,6 +464,7 @@ BOOST_AUTO_TEST_CASE(GtidSetStreamOperatorMixed) {
                     "111-113:115:beta:121-123:125, "
                     "22222222-bbbb-2222-bbbb-222222222222:201-203:205:alpha:"
                     "211-213:215:beta:221-223:225");
-  const auto restored_gtids{binsrv::gtids::gtid_set{gtids_str}};
+  const auto restored_gtids{
+      boost::lexical_cast<binsrv::gtids::gtid_set>(gtids_str)};
   BOOST_CHECK_EQUAL(gtids, restored_gtids);
 }

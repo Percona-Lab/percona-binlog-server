@@ -695,7 +695,9 @@ std::ostream &operator<<(std::ostream &output, const gtid_set &obj) {
 
 std::istream &operator>>(std::istream &input, gtid_set &obj) {
   std::string gtids_str;
-  input >> gtids_str;
+  if (input.peek() != std::istream::traits_type::eof()) {
+    std::getline(input, gtids_str);
+  }
   if (!input) {
     return input;
   }

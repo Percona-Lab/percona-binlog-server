@@ -36,7 +36,8 @@ private:
       // clang-format off
       util::nv<"version", std::uint32_t>,
       util::nv<"size", std::uint64_t>,
-      util::nv<"gtids", gtids::optional_gtid_set>,
+      util::nv<"previous_gtids", gtids::optional_gtid_set>,
+      util::nv<"added_gtids", gtids::optional_gtid_set>,
       util::nv<"min_timestamp", ctime_timestamp>,
       util::nv<"max_timestamp", ctime_timestamp>
       // clang-format on
@@ -51,10 +52,6 @@ public:
 
   [[nodiscard]] auto &root() noexcept { return impl_; }
   [[nodiscard]] const auto &root() const noexcept { return impl_; }
-
-  [[nodiscard]] bool has_gtids() const noexcept {
-    return impl_.get<"gtids">().has_value();
-  }
 
 private:
   impl_type impl_;

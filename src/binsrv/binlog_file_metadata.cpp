@@ -30,7 +30,7 @@
 namespace binsrv {
 
 binlog_file_metadata::binlog_file_metadata()
-    : impl_{{expected_binlog_file_metadata_version}, {}, {}, {}, {}} {}
+    : impl_{{expected_binlog_file_metadata_version}, {}, {}, {}, {}, {}} {}
 
 binlog_file_metadata::binlog_file_metadata(std::string_view data) : impl_{} {
   auto json_value = boost::json::parse(data);

@@ -720,7 +720,8 @@ bool handle_search_by_timestamp(std::string_view config_file_path,
         break;
       }
       response.add_record(record.name, record.size,
-                          storage.get_binlog_uri(record.name), record.gtids,
+                          storage.get_binlog_uri(record.name),
+                          record.previous_gtids, record.added_gtids,
                           record.timestamps.get_min_timestamp().get_value(),
                           record.timestamps.get_max_timestamp().get_value());
     }
