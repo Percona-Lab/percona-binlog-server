@@ -184,13 +184,16 @@ storage::open_binlog(std::string_view binlog_name) {
     backend_->write_data_to_stream(event::magic_binlog_payload);
 
     gtids::optional_gtid_set previous_binlog_gtids{};
+    gtids::optional_gtid_set added_binlog_gtids{};
     if (is_in_gtid_replication_mode()) {
       previous_binlog_gtids = get_gtids();
+      added_binlog_gtids = gtids::gtid_set{};
     }
 
     binlog_records_.emplace_back(
         std::string{binlog_name}, event::magic_binlog_offset,
-        std::move(previous_binlog_gtids), ctime_timestamp_range{});
+        std::move(previous_binlog_gtids), std::move(added_binlog_gtids),
+        ctime_timestamp_range{});
     save_binlog_metadata(get_current_binlog_record());
     save_binlog_index();
     result = open_binlog_status::created;
@@ -339,9 +342,9 @@ void storage::flush_event_buffer_internal() {
   get_current_binlog_record().size +=
       last_transaction_boundary_position_in_event_buffer_;
   if (is_in_gtid_replication_mode()) {
-    auto &optional_gtids{get_current_binlog_record().gtids};
-    if (optional_gtids.has_value()) {
-      optional_gtids.value() += gtids_in_event_buffer_;
+    auto &optional_added_gtids{get_current_binlog_record().added_gtids};
+    if (optional_added_gtids.has_value()) {
+      optional_added_gtids.value() += gtids_in_event_buffer_;
     }
   }
   get_current_binlog_record().timestamps.add_range(ready_to_flush_timestamps_);
@@ -392,8 +395,15 @@ void storage::load_binlog_index() {
       util::exception_location().raise<std::logic_error>(
           "binlog index contains a duplicate entry");
     }
-    binlog_records_.emplace_back(current_binlog_name, 0ULL, gtids::gtid_set{},
-                                 ctime_timestamp_range{});
+    gtids::optional_gtid_set previous_binlog_gtids{};
+    gtids::optional_gtid_set added_binlog_gtids{};
+    if (is_in_gtid_replication_mode()) {
+      previous_binlog_gtids = gtids::gtid_set{};
+      added_binlog_gtids = gtids::gtid_set{};
+    }
+    binlog_records_.emplace_back(
+        current_binlog_name, 0ULL, std::move(previous_binlog_gtids),
+        std::move(added_binlog_gtids), ctime_timestamp_range{});
   }
 }
 
@@ -464,22 +474,36 @@ storage::load_binlog_metadata(std::string_view binlog_name) const {
 
   return binlog_record{.name = std::string(binlog_name),
                        .size = metadata.root().get<"size">(),
-                       .gtids = metadata.root().get<"gtids">(),
+                       .previous_gtids =
+                           metadata.root().get<"previous_gtids">(),
+                       .added_gtids = metadata.root().get<"added_gtids">(),
                        .timestamps = {metadata.root().get<"min_timestamp">(),
                                       metadata.root().get<"max_timestamp">()}};
 }
 
 void storage::validate_binlog_metadata(const binlog_record &record) const {
   if (is_in_gtid_replication_mode()) {
-    if (!record.gtids.has_value()) {
+    if (!record.previous_gtids.has_value()) {
       util::exception_location().raise<std::logic_error>(
-          "missing GTID set in the binlog metadata while in GTID replication "
+          "missing previous GTID set in the binlog metadata while in GTID "
+          "replication "
+          "mode");
+    }
+    if (!record.added_gtids.has_value()) {
+      util::exception_location().raise<std::logic_error>(
+          "missing added GTID set in the binlog metadata while in GTID "
+          "replication "
           "mode");
     }
   } else {
-    if (record.gtids.has_value()) {
+    if (record.previous_gtids.has_value()) {
       util::exception_location().raise<std::logic_error>(
-          "found GTID set in the binlog metadata while in position "
+          "found previous GTID set in the binlog metadata while in position "
+          "replication mode");
+    }
+    if (record.added_gtids.has_value()) {
+      util::exception_location().raise<std::logic_error>(
+          "found added GTID set in the binlog metadata while in position "
           "replication mode");
     }
   }
@@ -488,7 +512,8 @@ void storage::validate_binlog_metadata(const binlog_record &record) const {
 void storage::save_binlog_metadata(const binlog_record &record) const {
   binlog_file_metadata metadata{};
   metadata.root().get<"size">() = record.size;
-  metadata.root().get<"gtids">() = record.gtids;
+  metadata.root().get<"previous_gtids">() = record.previous_gtids;
+  metadata.root().get<"added_gtids">() = record.added_gtids;
   metadata.root().get<"min_timestamp">() =
       ctime_timestamp{record.timestamps.get_min_timestamp()};
   metadata.root().get<"max_timestamp">() =

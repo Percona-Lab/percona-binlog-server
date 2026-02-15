@@ -57,12 +57,14 @@ search_by_timestamp_response::~search_by_timestamp_response() = default;
 
 void search_by_timestamp_response::add_record(
     std::string_view name, std::uint64_t size, std::string_view uri,
-    const gtids::optional_gtid_set &gtids, std::time_t min_timestamp,
+    gtids::optional_gtid_set previous_gtids,
+    gtids::optional_gtid_set added_gtids, std::time_t min_timestamp,
     std::time_t max_timestamp) {
   binlog_file_record record{{{std::string{name}},
                              {size},
                              {std::string{uri}},
-                             {gtids},
+                             {std::move(previous_gtids)},
+                             {std::move(added_gtids)},
                              {ctime_timestamp{min_timestamp}},
                              {ctime_timestamp{max_timestamp}}}};
   impl_.template get<"result">().emplace_back(std::move(record));

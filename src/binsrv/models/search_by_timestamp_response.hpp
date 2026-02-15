@@ -58,8 +58,11 @@ public:
 
   [[nodiscard]] auto &root() noexcept { return impl_; }
 
+  // 'previous_gtids' and 'added_gtids' are deliberately taken by value as we
+  // are going to move from them
   void add_record(std::string_view name, std::uint64_t size,
-                  std::string_view uri, const gtids::optional_gtid_set &gtids,
+                  std::string_view uri, gtids::optional_gtid_set previous_gtids,
+                  gtids::optional_gtid_set added_gtids,
                   std::time_t min_timestamp, std::time_t max_timestamp);
 
 private:
