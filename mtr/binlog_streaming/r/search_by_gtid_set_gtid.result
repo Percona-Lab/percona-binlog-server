@@ -1,0 +1,82 @@
+*** Resetting replication at the very beginning of the test.
+
+*** Determining the first binary log name.
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+
+*** 1. Executing the Binlog Server utility in the 'search_by_gtid_set'
+***    mode with an invalid GTID set
+include/read_file_to_var.inc
+
+*** 2. Executing the Binlog Server utility in the 'search_by_gtid_set'
+***    mode with an empty GTID set on an empty storage
+include/read_file_to_var.inc
+
+*** Creating a simple table.
+CREATE TABLE t1(id INT UNSIGNED NOT NULL AUTO_INCREMENT, PRIMARY KEY(id)) ENGINE=InnoDB;
+
+*** Filling the table with some data.
+INSERT INTO t1 VALUES();
+
+*** Flushing the first binary log and switching to the second one.
+FLUSH BINARY LOGS;
+
+*** Determining the second binary log name.
+
+*** Filling the table with more data.
+INSERT INTO t1 VALUES();
+
+*** Executing the Binlog Server utility and fetching all events.
+
+*** 3. Executing the Binlog Server utility in the 'search_by_gtid_set'
+***    mode with an empty GTID set on an non-empty storage
+include/read_file_to_var.inc
+
+*** 4. Executing the Binlog Server utility in the 'search_by_gtid_set'
+***    mode with the "create table" GTID
+include/read_file_to_var.inc
+
+*** 5. Executing the Binlog Server utility in the 'search_by_gtid_set'
+***    mode with the "first insert" GTID
+include/read_file_to_var.inc
+
+*** 6. Executing the Binlog Server utility in the 'search_by_gtid_set'
+***    mode with the "second insert" GTID
+include/read_file_to_var.inc
+
+*** 7. Executing the Binlog Server utility in the 'search_by_gtid_set'
+***    mode with a non-existing GTID
+include/read_file_to_var.inc
+
+*** 8. Executing the Binlog Server utility in the 'search_by_gtid_set'
+***    mode with the "create table" + "first insert" GTID
+include/read_file_to_var.inc
+
+*** 9. Executing the Binlog Server utility in the 'search_by_gtid_set'
+***    mode with the "first insert" + "second insert" GTID
+include/read_file_to_var.inc
+
+*** 10. Executing the Binlog Server utility in the 'search_by_gtid_set'
+***     mode with the full GTID set + non-existing GTID
+include/read_file_to_var.inc
+
+*** 11. Executing the Binlog Server utility in the 'search_by_gtid_set'
+***     mode with a non-existing GTID range
+include/read_file_to_var.inc
+
+*** Removing the search result file.
+
+*** Dropping the table.
+DROP TABLE t1;
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.

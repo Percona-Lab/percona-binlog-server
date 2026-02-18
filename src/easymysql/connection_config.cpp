@@ -37,7 +37,7 @@ std::string connection_config::get_connection_string() const {
     res += opt_host.value_or("<unspecified host>");
     res += ':';
     const auto &opt_port{get<"port">()};
-    res += (opt_port.has_value() ? std::to_string(opt_port.value())
+    res += (opt_port.has_value() ? std::to_string(*opt_port)
                                  : "<unspecified port>");
   }
   res += (has_password() ? " (password ***hidden***)" : " (no password)");

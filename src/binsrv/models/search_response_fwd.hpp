@@ -13,18 +13,17 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef BINSRV_MODELS_SEARCH_BY_TIMESTAMP_RESPONSE_FWD_HPP
-#define BINSRV_MODELS_SEARCH_BY_TIMESTAMP_RESPONSE_FWD_HPP
+#ifndef BINSRV_MODELS_SEARCH_RESPONSE_FWD_HPP
+#define BINSRV_MODELS_SEARCH_RESPONSE_FWD_HPP
 
 #include <cstdint>
 
 namespace binsrv::models {
 
-class search_by_timestamp_response;
+class search_response;
 
-inline constexpr std::uint32_t expected_search_by_timestamp_response_version{
-    1U};
+inline constexpr std::uint32_t expected_search_response_version{1U};
 
 } // namespace binsrv::models
 
-#endif // BINSRV_MODELS_SEARCH_BY_TIMESTAMP_RESPONSE_FWD_HPP
+#endif // BINSRV_MODELS_SEARCH_RESPONSE_FWD_HPP

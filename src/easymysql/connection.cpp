@@ -92,7 +92,7 @@ set_generic_mysql_option_helper(MYSQL *impl, mysql_option option_id,
   if (!value.has_value()) {
     return true;
   }
-  return set_generic_mysql_option_helper(impl, option_id, value.value());
+  return set_generic_mysql_option_helper(impl, option_id, *value);
 }
 
 template <util::ct_string CTS, util::derived_from_named_value_tuple Config>
@@ -311,12 +311,12 @@ void connection::process_connection_config(const connection_config &config) {
 
   const auto &opt_ssl_config{config.get<"ssl">()};
   if (opt_ssl_config.has_value()) {
-    process_ssl_config(opt_ssl_config.value());
+    process_ssl_config(*opt_ssl_config);
   }
 
   const auto &opt_tls_config{config.get<"tls">()};
   if (opt_tls_config.has_value()) {
-    process_tls_config(opt_tls_config.value());
+    process_tls_config(*opt_tls_config);
   }
 }
 
@@ -333,8 +333,8 @@ connection::connection(const connection_config &config)
   const std::string empty_string{};
   if (config.has_dns_srv_name()) {
     const auto &opt_dns_srv_name{config.get<"dns_srv_name">()};
-    const auto &dns_srv_name{
-        opt_dns_srv_name.has_value() ? opt_dns_srv_name.value() : empty_string};
+    const auto &dns_srv_name{opt_dns_srv_name.has_value() ? *opt_dns_srv_name
+                                                          : empty_string};
     if (mysql_real_connect_dns_srv(
             casted_impl,
             /* dns_srv_name */ dns_srv_name.c_str(),
@@ -347,7 +347,7 @@ connection::connection(const connection_config &config)
     }
   } else {
     const auto &opt_host{config.get<"host">()};
-    const auto &host{opt_host.has_value() ? opt_host.value() : empty_string};
+    const auto &host{opt_host.has_value() ? *opt_host : empty_string};
     const auto port{config.get<"port">().value_or(0U)};
     if (mysql_real_connect(casted_impl,
                            /*        host */ host.c_str(),

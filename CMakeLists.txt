@@ -226,9 +226,9 @@ set(source_files
   src/binsrv/models/response_status_type_fwd.hpp
   src/binsrv/models/response_status_type.hpp
 
-  src/binsrv/models/search_by_timestamp_response_fwd.hpp
-  src/binsrv/models/search_by_timestamp_response.hpp
-  src/binsrv/models/search_by_timestamp_response.cpp
+  src/binsrv/models/search_response_fwd.hpp
+  src/binsrv/models/search_response.hpp
+  src/binsrv/models/search_response.cpp
 
   # binlog files
   src/binsrv/basic_logger_fwd.hpp

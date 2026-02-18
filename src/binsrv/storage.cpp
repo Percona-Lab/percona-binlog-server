@@ -52,13 +52,13 @@ storage::storage(const storage_config &config,
       replication_mode_{replication_mode} {
   const auto &checkpoint_size_opt{config.get<"checkpoint_size">()};
   if (checkpoint_size_opt.has_value()) {
-    checkpoint_size_bytes_ = checkpoint_size_opt.value().get_value();
+    checkpoint_size_bytes_ = checkpoint_size_opt->get_value();
   }
 
   const auto &checkpoint_interval_opt{config.get<"checkpoint_interval">()};
   if (checkpoint_interval_opt.has_value()) {
     checkpoint_interval_seconds_ =
-        std::chrono::seconds{checkpoint_interval_opt.value().get_value()};
+        std::chrono::seconds{checkpoint_interval_opt->get_value()};
   }
 
   backend_ = storage_backend_factory::create(config);
@@ -344,7 +344,7 @@ void storage::flush_event_buffer_internal() {
   if (is_in_gtid_replication_mode()) {
     auto &optional_added_gtids{get_current_binlog_record().added_gtids};
     if (optional_added_gtids.has_value()) {
-      optional_added_gtids.value() += gtids_in_event_buffer_;
+      *optional_added_gtids += gtids_in_event_buffer_;
     }
   }
   get_current_binlog_record().timestamps.add_range(ready_to_flush_timestamps_);

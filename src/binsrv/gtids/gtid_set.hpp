@@ -73,6 +73,14 @@ public:
   void add_interval(const uuid &uuid_component, const tag &tag_component,
                     gno_t gno_lower_component, gno_t gno_upper_component);
 
+  void subtract(const uuid &uuid_component, const tag &tag_component,
+                gno_t gno_component);
+  void subtract(const gtid &value);
+  void subtract(const gtid_set &values);
+
+  void subtract_interval(const uuid &uuid_component, const tag &tag_component,
+                         gno_t gno_lower_component, gno_t gno_upper_component);
+
   gtid_set &operator+=(const gtid &value) {
     add(value);
     return *this;
@@ -82,9 +90,21 @@ public:
     return *this;
   }
 
+  gtid_set &operator-=(const gtid &value) {
+    subtract(value);
+    return *this;
+  }
+  gtid_set &operator-=(const gtid_set &values) {
+    subtract(values);
+    return *this;
+  }
+
   void clear() noexcept;
 
   friend bool operator==(const gtid_set &first,
+                         const gtid_set &second) noexcept;
+
+  friend bool intersects(const gtid_set &first,
                          const gtid_set &second) noexcept;
 
 private:
@@ -94,6 +114,12 @@ private:
 
   tagged_gnos_by_uid_container data_;
 
+  bool find_gnos(const uuid &uuid_component, const tag &tag_component,
+                 tagged_gnos_by_uid_container::iterator &uuid_iterator,
+                 gnos_by_tag_container::iterator &tag_iterator) noexcept;
+  void cleanup_if_empty(tagged_gnos_by_uid_container::iterator uuid_iterator,
+                        gnos_by_tag_container::iterator tag_iterator) noexcept;
+
   void process_intervals(util::const_byte_span &remainder,
                          const uuid &current_uuid, const tag &current_tag);
 };
@@ -102,6 +128,13 @@ inline gtid_set operator+(const gtid_set &first, const gtid_set &second) {
   gtid_set result{first};
   return result += second;
 }
+
+inline gtid_set operator-(const gtid_set &first, const gtid_set &second) {
+  gtid_set result{first};
+  return result -= second;
+}
+
+bool intersects(const gtid_set &first, const gtid_set &second) noexcept;
 
 } // namespace binsrv::gtids
 
