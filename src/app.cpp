@@ -57,7 +57,7 @@
 #include "binsrv/gtids/gtid_set.hpp"
 
 #include "binsrv/models/error_response.hpp"
-#include "binsrv/models/search_by_timestamp_response.hpp"
+#include "binsrv/models/search_response.hpp"
 
 #include "binsrv/event/code_type.hpp"
 #include "binsrv/event/common_header_flag_type.hpp"
@@ -117,6 +117,7 @@ check_cmd_args(const util::command_line_arg_view &cmd_args,
     config_file_path = cmd_args[expected_number_of_cmd_args_with_config - 1U];
     return true;
   case binsrv::operation_mode_type::search_by_timestamp:
+  case binsrv::operation_mode_type::search_by_gtid_set:
     if (number_of_cmd_args !=
         expected_number_of_cmd_args_with_config_and_value) {
       return false;
@@ -156,7 +157,7 @@ util::optional_string to_log_string(const std::optional<T> &value) {
   if (!value.has_value()) {
     return {};
   }
-  return to_log_string(value.value());
+  return to_log_string(*value);
 }
 
 template <util::ct_string CTS, util::derived_from_named_value_tuple Config>
@@ -166,7 +167,7 @@ void log_config_param(binsrv::basic_logger &logger, const Config &config,
   if (opt_log_string.has_value()) {
     std::string msg{label};
     msg += ": ";
-    msg += opt_log_string.value();
+    msg += *opt_log_string;
     logger.log(binsrv::log_severity::info, msg);
   }
 }
@@ -206,11 +207,11 @@ void log_connection_config_info(
 
   const auto &optional_ssl_config{connection_config.get<"ssl">()};
   if (optional_ssl_config.has_value()) {
-    log_ssl_config_info(logger, optional_ssl_config.value());
+    log_ssl_config_info(logger, *optional_ssl_config);
   }
   const auto &optional_tls_config{connection_config.get<"tls">()};
   if (optional_tls_config.has_value()) {
-    log_tls_config_info(logger, optional_tls_config.value());
+    log_tls_config_info(logger, *optional_tls_config);
   }
 }
 
@@ -708,7 +709,7 @@ bool handle_search_by_timestamp(std::string_view config_file_path,
         storage_config, binsrv::storage_construction_mode_type::querying_only,
         replication_mode};
 
-    binsrv::models::search_by_timestamp_response response;
+    binsrv::models::search_response response;
     const auto &binlog_records{storage.get_binlog_records()};
     if (binlog_records.empty()) {
       throw std::runtime_error("Binlog storage is empty");
@@ -727,6 +728,66 @@ bool handle_search_by_timestamp(std::string_view config_file_path,
     }
     if (response.root().get<"result">().empty()) {
       throw std::runtime_error("Timestamp is too old");
+    }
+    result = response.str();
+    operation_successful = true;
+  } catch (const std::exception &e) {
+    const binsrv::models::error_response response{e.what()};
+    result = response.str();
+  }
+  std::cout << result << '\n';
+  return operation_successful;
+}
+
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+bool handle_search_by_gtid_set(std::string_view config_file_path,
+                               std::string_view subcommand_value) {
+  bool operation_successful{false};
+  std::string result;
+
+  try {
+    binsrv::gtids::gtid_set remaining_gtids{subcommand_value};
+
+    const binsrv::main_config config{config_file_path};
+    const auto &storage_config = config.root().get<"storage">();
+    const auto &replication_config = config.root().get<"replication">();
+    const auto replication_mode{replication_config.get<"mode">()};
+
+    const binsrv::storage storage{
+        storage_config, binsrv::storage_construction_mode_type::querying_only,
+        replication_mode};
+
+    const auto &binlog_records{storage.get_binlog_records()};
+    if (binlog_records.empty()) {
+      throw std::runtime_error("Binlog storage is empty");
+    }
+
+    binsrv::models::search_response response;
+    if (!storage.is_in_gtid_replication_mode()) {
+      throw std::runtime_error("GTID set search is not supported in storages "
+                               "created in position-based replication mode");
+    }
+
+    for (const auto &record : binlog_records) {
+      if (remaining_gtids.is_empty()) {
+        break;
+      }
+      if (!record.added_gtids.has_value()) {
+        continue;
+      }
+      if (!binsrv::gtids::intersects(remaining_gtids, *record.added_gtids)) {
+        continue;
+      }
+      remaining_gtids.subtract(*record.added_gtids);
+
+      response.add_record(record.name, record.size,
+                          storage.get_binlog_uri(record.name),
+                          record.previous_gtids, record.added_gtids,
+                          record.timestamps.get_min_timestamp().get_value(),
+                          record.timestamps.get_max_timestamp().get_value());
+    }
+    if (!remaining_gtids.is_empty()) {
+      throw std::runtime_error("The specified GTID set cannot be covered");
     }
     result = response.str();
     operation_successful = true;
@@ -779,6 +840,13 @@ int main(int argc, char *argv[]) {
   // handling the 'search_by_timestamp' command
   if (operation_mode == binsrv::operation_mode_type::search_by_timestamp) {
     return handle_search_by_timestamp(config_file_path, subcommand_value)
+               ? EXIT_SUCCESS
+               : EXIT_FAILURE;
+  }
+
+  // handling the 'search_by_gtid_set' command
+  if (operation_mode == binsrv::operation_mode_type::search_by_gtid_set) {
+    return handle_search_by_gtid_set(config_file_path, subcommand_value)
                ? EXIT_SUCCESS
                : EXIT_FAILURE;
   }

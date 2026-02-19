@@ -444,7 +444,8 @@ gtid_set::gtid_set(util::const_byte_span portion) {
       [](std::string &result, const gno_container &gnos) {
         for (const auto &interval : gnos) {
           const auto lower = boost::icl::lower(interval);
-          const auto upper = boost::icl::upper(interval);
+          // we have a half-open interval in boost::icl::interval_set
+          const auto upper = boost::icl::upper(interval) - 1ULL;
           result += gtid::component_separator;
           result += std::to_string(lower);
           if (upper != lower) {
@@ -555,11 +556,10 @@ void gtid_set::encode_to(util::byte_span &destination) const {
         // 16 bytes for each interval
         util::insert_fixed_int_to_byte_span(
             remainder, std::uint64_t{boost::icl::lower(interval)});
-        // here we need to uncrement upper bound as we have a half-open interval
-        // in the encoded representation and use closed interval in
-        // boost::icl::interval_set
+        // here we do not need to do anything with the upper bound as we
+        // already have a half-open interval in boost::icl::interval_set
         util::insert_fixed_int_to_byte_span(
-            remainder, std::uint64_t{boost::icl::upper(interval) + 1ULL});
+            remainder, std::uint64_t{boost::icl::upper(interval)});
       }
       ++number_of_tsids;
     }
@@ -592,7 +592,9 @@ void gtid_set::encode_to(util::byte_span &destination) const {
 void gtid_set::add(const uuid &uuid_component, const tag &tag_component,
                    gno_t gno_component) {
   gtid::validate_components(uuid_component, tag_component, gno_component);
-  data_[uuid_component][tag_component] += gno_component;
+  data_[uuid_component][tag_component].insert(
+      gno_container::interval_type::right_open(gno_component,
+                                               gno_component + 1ULL));
 }
 
 void gtid_set::add(const gtid &value) {
@@ -600,8 +602,11 @@ void gtid_set::add(const gtid &value) {
     util::exception_location().raise<std::invalid_argument>(
         "cannot add an empty gtid");
   }
-  data_[value.get_uuid()][value.get_tag()] += value.get_gno();
+  data_[value.get_uuid()][value.get_tag()].insert(
+      gno_container::interval_type::right_open(value.get_gno(),
+                                               value.get_gno() + 1ULL));
 }
+
 void gtid_set::add(const gtid_set &values) {
   for (const auto &[current_uuid, current_tagged_gnos] : values.data_) {
     for (const auto &[current_tag, current_gnos] : current_tagged_gnos) {
@@ -622,14 +627,132 @@ void gtid_set::add_interval(const uuid &uuid_component,
         "cannot add an interval with invalid bounds");
   }
   gtid::validate_components(uuid_component, tag_component, gno_lower_component);
-  data_[uuid_component][tag_component] += gno_container::interval_type::closed(
-      gno_lower_component, gno_upper_component);
+  data_[uuid_component][tag_component].insert(
+      gno_container::interval_type::right_open(gno_lower_component,
+                                               gno_upper_component + 1ULL));
+}
+
+void gtid_set::subtract(const uuid &uuid_component, const tag &tag_component,
+                        gno_t gno_component) {
+  gtid::validate_components(uuid_component, tag_component, gno_component);
+  tagged_gnos_by_uid_container::iterator uuid_iterator{};
+  gnos_by_tag_container::iterator tag_iterator{};
+  if (!find_gnos(uuid_component, tag_component, uuid_iterator, tag_iterator)) {
+    return;
+  }
+  tag_iterator->second.erase(gno_container::interval_type::right_open(
+      gno_component, gno_component + 1ULL));
+  cleanup_if_empty(uuid_iterator, tag_iterator);
+}
+
+void gtid_set::subtract(const gtid &value) {
+  if (value.is_empty()) {
+    util::exception_location().raise<std::invalid_argument>(
+        "cannot subtract an empty gtid");
+  }
+  tagged_gnos_by_uid_container::iterator uuid_iterator{};
+  gnos_by_tag_container::iterator tag_iterator{};
+  if (!find_gnos(value.get_uuid(), value.get_tag(), uuid_iterator,
+                 tag_iterator)) {
+    return;
+  }
+  tag_iterator->second.erase(gno_container::interval_type::right_open(
+      value.get_gno(), value.get_gno() + 1ULL));
+  cleanup_if_empty(uuid_iterator, tag_iterator);
+}
+
+void gtid_set::subtract(const gtid_set &values) {
+  for (const auto &[current_uuid, current_tagged_gnos] : values.data_) {
+    for (const auto &[current_tag, current_gnos] : current_tagged_gnos) {
+      tagged_gnos_by_uid_container::iterator uuid_iterator{};
+      gnos_by_tag_container::iterator tag_iterator{};
+      if (!find_gnos(current_uuid, current_tag, uuid_iterator, tag_iterator)) {
+        continue;
+      }
+      tag_iterator->second -= current_gnos;
+      cleanup_if_empty(uuid_iterator, tag_iterator);
+    }
+  }
+}
+
+void gtid_set::subtract_interval(const uuid &uuid_component,
+                                 const tag &tag_component,
+                                 gno_t gno_lower_component,
+                                 gno_t gno_upper_component) {
+  if (gno_upper_component == gno_lower_component) {
+    subtract(uuid_component, tag_component, gno_lower_component);
+    return;
+  }
+  if (gno_upper_component < gno_lower_component) {
+    util::exception_location().raise<std::invalid_argument>(
+        "cannot subtract an interval with invalid bounds");
+  }
+  gtid::validate_components(uuid_component, tag_component, gno_lower_component);
+
+  tagged_gnos_by_uid_container::iterator uuid_iterator{};
+  gnos_by_tag_container::iterator tag_iterator{};
+  if (!find_gnos(uuid_component, tag_component, uuid_iterator, tag_iterator)) {
+    return;
+  }
+
+  tag_iterator->second.erase(gno_container::interval_type::right_open(
+      gno_lower_component, gno_upper_component + 1ULL));
+  cleanup_if_empty(uuid_iterator, tag_iterator);
 }
 
 void gtid_set::clear() noexcept { data_.clear(); }
 
 bool operator==(const gtid_set &first,
                 const gtid_set &second) noexcept = default;
+
+bool intersects(const gtid_set &first, const gtid_set &second) noexcept {
+  for (const auto &[current_uuid, current_tagged_gnos] : second.data_) {
+    const auto uuid_iterator{first.data_.find(current_uuid)};
+    if (uuid_iterator == std::cend(first.data_)) {
+      continue;
+    }
+    for (const auto &[current_tag, current_gnos] : current_tagged_gnos) {
+      const auto tag_iterator{uuid_iterator->second.find(current_tag)};
+      if (tag_iterator == std::cend(uuid_iterator->second)) {
+        continue;
+      }
+      if (boost::icl::intersects(tag_iterator->second, current_gnos)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+bool gtid_set::find_gnos(
+    const uuid &uuid_component, const tag &tag_component,
+    tagged_gnos_by_uid_container::iterator &uuid_iterator,
+    gnos_by_tag_container::iterator &tag_iterator) noexcept {
+  auto local_uuid_iterator{data_.find(uuid_component)};
+  if (local_uuid_iterator == std::end(data_)) {
+    return false;
+  }
+  auto local_tag_iterator{local_uuid_iterator->second.find(tag_component)};
+  if (local_tag_iterator == std::end(local_uuid_iterator->second)) {
+    return false;
+  }
+  uuid_iterator = local_uuid_iterator;
+  tag_iterator = local_tag_iterator;
+  return true;
+}
+
+void gtid_set::cleanup_if_empty(
+    tagged_gnos_by_uid_container::iterator uuid_iterator,
+    gnos_by_tag_container::iterator tag_iterator) noexcept {
+  if (!tag_iterator->second.empty()) {
+    return;
+  }
+  uuid_iterator->second.erase(tag_iterator);
+  if (!uuid_iterator->second.empty()) {
+    return;
+  }
+  data_.erase(uuid_iterator);
+}
 
 void gtid_set::process_intervals(util::const_byte_span &remainder,
                                  const uuid &current_uuid,
@@ -673,19 +796,17 @@ void gtid_set::process_intervals(util::const_byte_span &remainder,
   std::uint64_t current_interval_lower{};
   std::uint64_t current_interval_upper{};
 
+  gno_container &gnos{data_[current_uuid][current_tag]};
   for (std::size_t interval_idx{0U}; interval_idx < current_number_of_intervals;
        ++interval_idx) {
     interval_parser(remainder, current_interval_lower, current_interval_upper);
     // TODO: validate that interval boundary values are increasing between
     // iterations
 
-    // here we need to decrement upper bound as we have a half-open interval
-    // in the encoded representation and use closed interval in the
-    // gtid_set::add_interval() method
-    --current_interval_upper;
-
-    add_interval(current_uuid, current_tag, current_interval_lower,
-                 current_interval_upper);
+    // here we do not need to do anything with the upper bound as we already
+    // have a half-open interval in the encoded representation
+    gnos.insert(gno_container::interval_type::right_open(
+        current_interval_lower, current_interval_upper));
   }
 }
 

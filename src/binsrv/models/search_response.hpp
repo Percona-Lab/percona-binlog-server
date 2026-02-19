@@ -13,10 +13,10 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef BINSRV_MODELS_SEARCH_BY_TIMESTAMP_RESPONSE_HPP
-#define BINSRV_MODELS_SEARCH_BY_TIMESTAMP_RESPONSE_HPP
+#ifndef BINSRV_MODELS_SEARCH_RESPONSE_HPP
+#define BINSRV_MODELS_SEARCH_RESPONSE_HPP
 
-#include "binsrv/models/search_by_timestamp_response_fwd.hpp" // IWYU pragma: export
+#include "binsrv/models/search_response_fwd.hpp" // IWYU pragma: export
 
 #include <cstdint>
 #include <ctime>
@@ -33,7 +33,7 @@
 
 namespace binsrv::models {
 
-class [[nodiscard]] search_by_timestamp_response {
+class [[nodiscard]] search_response {
 private:
   using binlog_file_record_container = std::vector<binlog_file_record>;
 
@@ -46,13 +46,12 @@ private:
       >;
 
 public:
-  explicit search_by_timestamp_response();
-  search_by_timestamp_response(const search_by_timestamp_response &);
-  search_by_timestamp_response(search_by_timestamp_response &&) noexcept;
-  search_by_timestamp_response &operator=(const search_by_timestamp_response &);
-  search_by_timestamp_response &
-  operator=(search_by_timestamp_response &&) noexcept;
-  ~search_by_timestamp_response();
+  explicit search_response();
+  search_response(const search_response &);
+  search_response(search_response &&) noexcept;
+  search_response &operator=(const search_response &);
+  search_response &operator=(search_response &&) noexcept;
+  ~search_response();
 
   [[nodiscard]] std::string str() const;
 
@@ -71,4 +70,4 @@ private:
 
 } // namespace binsrv::models
 
-#endif // BINSRV_MODELS_SEARCH_BY_TIMESTAMP_RESPONSE_HPP
+#endif // BINSRV_MODELS_SEARCH_RESPONSE_HPP

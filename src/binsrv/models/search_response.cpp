@@ -13,7 +13,7 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#include "binsrv/models/search_by_timestamp_response.hpp"
+#include "binsrv/models/search_response.hpp"
 
 #include <cstdint>
 #include <ctime>
@@ -33,33 +33,31 @@
 
 namespace binsrv::models {
 
-search_by_timestamp_response::search_by_timestamp_response()
-    : impl_{{expected_search_by_timestamp_response_version},
+search_response::search_response()
+    : impl_{{expected_search_response_version},
             {response_status_type::success},
             {}} {}
 
-search_by_timestamp_response::search_by_timestamp_response(
-    const search_by_timestamp_response &) = default;
-search_by_timestamp_response::search_by_timestamp_response(
-    search_by_timestamp_response &&) noexcept = default;
-search_by_timestamp_response &search_by_timestamp_response::operator=(
-    const search_by_timestamp_response &) = default;
-search_by_timestamp_response &search_by_timestamp_response::operator=(
-    search_by_timestamp_response &&) noexcept = default;
-search_by_timestamp_response::~search_by_timestamp_response() = default;
+search_response::search_response(const search_response &) = default;
+search_response::search_response(search_response &&) noexcept = default;
+search_response &search_response::operator=(const search_response &) = default;
+search_response &
+search_response::operator=(search_response &&) noexcept = default;
+search_response::~search_response() = default;
 
-[[nodiscard]] std::string search_by_timestamp_response::str() const {
+[[nodiscard]] std::string search_response::str() const {
   boost::json::value json_value;
   util::nv_tuple_to_json(json_value, impl_);
 
   return boost::json::serialize(json_value);
 }
 
-void search_by_timestamp_response::add_record(
-    std::string_view name, std::uint64_t size, std::string_view uri,
-    gtids::optional_gtid_set previous_gtids,
-    gtids::optional_gtid_set added_gtids, std::time_t min_timestamp,
-    std::time_t max_timestamp) {
+void search_response::add_record(std::string_view name, std::uint64_t size,
+                                 std::string_view uri,
+                                 gtids::optional_gtid_set previous_gtids,
+                                 gtids::optional_gtid_set added_gtids,
+                                 std::time_t min_timestamp,
+                                 std::time_t max_timestamp) {
   binlog_file_record record{{{std::string{name}},
                              {size},
                              {std::string{uri}},

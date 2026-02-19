@@ -1,0 +1,175 @@
+--source ../include/have_binsrv.inc
+
+--source ../include/v80_v84_compatibility_defines.inc
+
+# in case of --repeat=N, we need to start from a fresh binary log to make
+# this test deterministic
+--echo *** Resetting replication at the very beginning of the test.
+--disable_query_log
+eval $stmt_reset_binary_logs_and_gtids;
+--enable_query_log
+
+--echo
+--echo *** Determining the first binary log name.
+--let $first_binlog = query_get_value($stmt_show_binary_log_status, File, 1)
+
+# identifying backend storage type ('file' or 's3')
+--source ../include/identify_storage_backend.inc
+
+# creating data directory, configuration file, etc.
+--let $binsrv_connect_timeout = 20
+--let $binsrv_read_timeout = 60
+--let $binsrv_idle_time = 10
+--let $binsrv_verify_checksum = TRUE
+--let $binsrv_replication_mode = gtid
+--let $binsrv_checkpoint_size = 1
+--source ../include/set_up_binsrv_environment.inc
+
+--let $read_from_file = $MYSQL_TMP_DIR/search_result.json
+
+--echo
+--echo *** 1. Executing the Binlog Server utility in the 'search_by_gtid_set'
+--echo ***    mode with an invalid GTID set
+--error 1
+--exec $BINSRV search_by_gtid_set $binsrv_config_file_path 11111111-aaaa-1111-aaaa-111111111111$1-3 > $read_from_file
+--source include/read_file_to_var.inc
+--assert(`SELECT JSON_EXTRACT('$result', '$.status') = 'error'`)
+--assert(`SELECT JSON_EXTRACT('$result', '$.message') = 'cannot parse GTID set'`)
+
+--echo
+--echo *** 2. Executing the Binlog Server utility in the 'search_by_gtid_set'
+--echo ***    mode with an empty GTID set on an empty storage
+--error 1
+--exec $BINSRV search_by_gtid_set $binsrv_config_file_path "" > $read_from_file
+--source include/read_file_to_var.inc
+--assert(`SELECT JSON_EXTRACT('$result', '$.status') = 'error'`)
+--assert(`SELECT JSON_EXTRACT('$result', '$.message') = 'Binlog storage is empty'`)
+
+--let $gtid_executed_initial = `SELECT @@global.gtid_executed`
+
+--echo
+--echo *** Creating a simple table.
+CREATE TABLE t1(id INT UNSIGNED NOT NULL AUTO_INCREMENT, PRIMARY KEY(id)) ENGINE=InnoDB;
+
+--let $gtid_executed_after_create_table = `SELECT @@global.gtid_executed`
+--let $create_table_gtid = `SELECT GTID_SUBTRACT(@@global.gtid_executed, '$gtid_executed_initial')`
+
+--echo
+--echo *** Filling the table with some data.
+INSERT INTO t1 VALUES();
+--let $gtid_executed_after_first_insert = `SELECT @@global.gtid_executed`
+--let $first_insert_gtid = `SELECT GTID_SUBTRACT(@@global.gtid_executed, '$gtid_executed_after_create_table')`
+
+--echo
+--echo *** Flushing the first binary log and switching to the second one.
+FLUSH BINARY LOGS;
+
+--echo
+--echo *** Determining the second binary log name.
+--let $second_binlog = query_get_value($stmt_show_binary_log_status, File, 1)
+
+--echo
+--echo *** Filling the table with more data.
+INSERT INTO t1 VALUES();
+--let $gtid_executed_after_second_insert = `SELECT @@global.gtid_executed`
+--let $second_insert_gtid = `SELECT GTID_SUBTRACT(@@global.gtid_executed, '$gtid_executed_after_first_insert')`
+
+--echo
+--echo *** Executing the Binlog Server utility and fetching all events.
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+--echo
+--echo *** 3. Executing the Binlog Server utility in the 'search_by_gtid_set'
+--echo ***    mode with an empty GTID set on an non-empty storage
+--exec $BINSRV search_by_gtid_set $binsrv_config_file_path "" > $read_from_file
+--source include/read_file_to_var.inc
+--assert(`SELECT JSON_EXTRACT('$result', '$.status') = 'success'`)
+--assert(`SELECT JSON_LENGTH(JSON_EXTRACT('$result', '$.result')) = 0`)
+
+--echo
+--echo *** 4. Executing the Binlog Server utility in the 'search_by_gtid_set'
+--echo ***    mode with the "create table" GTID
+--exec $BINSRV search_by_gtid_set $binsrv_config_file_path $create_table_gtid > $read_from_file
+--source include/read_file_to_var.inc
+--assert(`SELECT JSON_EXTRACT('$result', '$.status') = 'success'`)
+--assert(`SELECT JSON_LENGTH(JSON_EXTRACT('$result', '$.result')) = 1`)
+--assert(`SELECT JSON_EXTRACT('$result', '$.result[0].name') = '$first_binlog'`)
+
+--echo
+--echo *** 5. Executing the Binlog Server utility in the 'search_by_gtid_set'
+--echo ***    mode with the "first insert" GTID
+--exec $BINSRV search_by_gtid_set $binsrv_config_file_path $first_insert_gtid > $read_from_file
+--source include/read_file_to_var.inc
+--assert(`SELECT JSON_EXTRACT('$result', '$.status') = 'success'`)
+--assert(`SELECT JSON_LENGTH(JSON_EXTRACT('$result', '$.result')) = 1`)
+--assert(`SELECT JSON_EXTRACT('$result', '$.result[0].name') = '$first_binlog'`)
+
+--echo
+--echo *** 6. Executing the Binlog Server utility in the 'search_by_gtid_set'
+--echo ***    mode with the "second insert" GTID
+--exec $BINSRV search_by_gtid_set $binsrv_config_file_path $second_insert_gtid > $read_from_file
+--source include/read_file_to_var.inc
+--assert(`SELECT JSON_EXTRACT('$result', '$.status') = 'success'`)
+--assert(`SELECT JSON_LENGTH(JSON_EXTRACT('$result', '$.result')) = 1`)
+--assert(`SELECT JSON_EXTRACT('$result', '$.result[0].name') = '$second_binlog'`)
+
+--echo
+--echo *** 7. Executing the Binlog Server utility in the 'search_by_gtid_set'
+--echo ***    mode with a non-existing GTID
+--let $non_existing_gtid = `SELECT CONCAT(@@server_uuid, ':424242')`
+--error 1
+--exec $BINSRV search_by_gtid_set $binsrv_config_file_path $non_existing_gtid > $read_from_file
+--source include/read_file_to_var.inc
+--assert(`SELECT JSON_EXTRACT('$result', '$.status') = 'error'`)
+--assert(`SELECT JSON_EXTRACT('$result', '$.message') = 'The specified GTID set cannot be covered'`)
+
+--echo
+--echo *** 8. Executing the Binlog Server utility in the 'search_by_gtid_set'
+--echo ***    mode with the "create table" + "first insert" GTID
+--exec $BINSRV search_by_gtid_set $binsrv_config_file_path $gtid_executed_after_first_insert > $read_from_file
+--source include/read_file_to_var.inc
+--assert(`SELECT JSON_EXTRACT('$result', '$.status') = 'success'`)
+--assert(`SELECT JSON_LENGTH(JSON_EXTRACT('$result', '$.result')) = 1`)
+--assert(`SELECT JSON_EXTRACT('$result', '$.result[0].name') = '$first_binlog'`)
+
+--echo
+--echo *** 9. Executing the Binlog Server utility in the 'search_by_gtid_set'
+--echo ***    mode with the "first insert" + "second insert" GTID
+--let $combined_gtids = `SELECT GTID_SUBTRACT('$gtid_executed_after_second_insert', '$create_table_gtid')`
+--exec $BINSRV search_by_gtid_set $binsrv_config_file_path "$combined_gtids" > $read_from_file
+--source include/read_file_to_var.inc
+--assert(`SELECT JSON_EXTRACT('$result', '$.status') = 'success'`)
+--assert(`SELECT JSON_LENGTH(JSON_EXTRACT('$result', '$.result')) = 2`)
+--assert(`SELECT JSON_EXTRACT('$result', '$.result[0].name') = '$first_binlog'`)
+--assert(`SELECT JSON_EXTRACT('$result', '$.result[1].name') = '$second_binlog'`)
+
+--echo
+--echo *** 10. Executing the Binlog Server utility in the 'search_by_gtid_set'
+--echo ***     mode with the full GTID set + non-existing GTID
+--let $combined_gtids = $gtid_executed_after_second_insert, $non_existing_gtid
+--error 1
+--exec $BINSRV search_by_gtid_set $binsrv_config_file_path "$combined_gtids" > $read_from_file
+--source include/read_file_to_var.inc
+--assert(`SELECT JSON_EXTRACT('$result', '$.status') = 'error'`)
+--assert(`SELECT JSON_EXTRACT('$result', '$.message') = 'The specified GTID set cannot be covered'`)
+
+--echo
+--echo *** 11. Executing the Binlog Server utility in the 'search_by_gtid_set'
+--echo ***     mode with a non-existing GTID range
+--let $non_existing_gtid_range = `SELECT CONCAT(@@server_uuid, ':424242-434343')`
+--error 1
+--exec $BINSRV search_by_gtid_set $binsrv_config_file_path $non_existing_gtid_range > $read_from_file
+--source include/read_file_to_var.inc
+--assert(`SELECT JSON_EXTRACT('$result', '$.status') = 'error'`)
+--assert(`SELECT JSON_EXTRACT('$result', '$.message') = 'The specified GTID set cannot be covered'`)
+
+--echo
+--echo *** Removing the search result file.
+--remove_file $read_from_file
+
+--echo
+--echo *** Dropping the table.
+DROP TABLE t1;
+
+# cleaning up
+--source ../include/tear_down_binsrv_environment.inc

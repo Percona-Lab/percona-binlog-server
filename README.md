@@ -146,18 +146,23 @@ The result binary can be found under the following path `ws/percona-binlog-serve
 
 Please run
 ```bash
-./binlog_server <operation_mode> [ <json_config_file> [ <subcommand_parameter> ] ]
+./binlog_server version
+./binlog_server fetch <json_config_file>
+./binlog_server pull <json_config_file>
+./binlog_server search_by_timestamp <json_config_file> <timestamp>
+./binlog_server search_by_gtid_set <json_config_file> <gtid_set>
 ```
 where
-`<operation_mode>` can be either `version`, `search_by_timestamp`, `fetch`, or `pull`,
-`<json_config_file>` is an optional parameter (required when `<operation_mode>` is not `version`) that represents a path to a JSON configuration file (described below),
-and `<subcommand_parameter>` is an optional parameter (required only when `<operation_mode>` is `search_by_timestamp`), that represents a valid timestamp in ISO format (e.g. `2026-02-10T14:30:00`)
+`<json_config_file>` is a path to a JSON configuration file (described below),
+`<timestamp>` is a valid timestamp in ISO format (e.g. `2026-02-10T14:30:00`),
+`<gtid_set>` is a valid gtid set (e.g. `11111111-aaaa-1111-aaaa-111111111111:1:3, 22222222-bbbb-2222-bbbb-222222222222:1-6`).
 
 ### Operation modes
 
-Percona Binary Log Server utility can operate in three modes:
+Percona Binary Log Server utility can operate in five modes:
 - 'version'
 - 'search_by_timestamp'
+- 'search_by_gtid_set'
 - 'fetch'
 - 'pull'
 
@@ -176,7 +181,7 @@ may print
 #### 'search_by_timestamp' operation mode
 
 In this mode the utility requires one additional command line parameter `<iso_timestamp>` and will print to the standard output the list of binlog files stored in the Binary Log Server data directory that have at least one event whose timestamp is less or equal to the provided `<iso_timestamp>`.
-Along with the file name the output will also return its current size in bytes, timestamps and URI.
+Along with the file name the output will also return its current size in bytes, timestamps, URI and optional initial / added GTIDs (when the replication is configured to use GTID mode).
 For instance,
 ```bash
 ./binlog_server search_by_timestamp config.json 2026-02-10T14:30:00
@@ -190,15 +195,19 @@ may print
       "name": "binlog.000001",
       "size": 134217728,
       "uri": "s3://binsrv-bucket/storage/binlog.000001",
-      "min_timestamp":"2026-02-09T17:22:01",
-      "max_timestamp":"2026-02-09T17:22:08"
+      "min_timestamp": "2026-02-09T17:22:01",
+      "max_timestamp": "2026-02-09T17:22:08",
+      "initial_gtids": "",
+      "added_gtids": "11111111-aaaa-1111-aaaa-111111111111:1-123456"
     },
     {
       "name": "binlog.000002",
       "size": 134217728,
       "uri": "s3://binsrv-bucket/storage/binlog.000002",
-      "min_timestamp":"2026-02-09T17:22:08",
-      "max_timestamp":"2026-02-09T17:22:09"
+      "min_timestamp": "2026-02-09T17:22:08",
+      "max_timestamp": "2026-02-09T17:22:09",
+      "initial_gtids": "11111111-aaaa-1111-aaaa-111111111111:1-123456",
+      "added_gtids": "11111111-aaaa-1111-aaaa-111111111111:123457-246912"
     }
   ]
 }
@@ -214,6 +223,75 @@ The `<reason>` may be one of the following (but not limited to):
 - `Invalid timestamp format`
 - `Binlog storage is empty`
 - `Timestamp is too old`
+
+#### 'search_by_gtid_set' operation mode
+
+In this mode the utility requires one additional command line parameter `<gtid_set>` and will print to the standard output the minimal set of binlog files stored in the Binary Log Server data directory required to cover the specidfied GTID set `<gtid_set>`. This operation makes sense only when the storage we are querying was created in GTID-based replication mode.
+Along with the file name the output will also return its current size in bytes, timestamps, URI and optional initial / added GTIDs.
+For instance,
+```bash
+./binlog_server search_by_timestamp config.json 11111111-aaaa-1111-aaaa-111111111111:10-20
+```
+may print
+```json
+{
+  "status": "success",
+  "result": [
+    {
+      "name": "binlog.000001",
+      "size": 134217728,
+      "uri": "s3://binsrv-bucket/storage/binlog.000001",
+      "min_timestamp": "2026-02-09T17:22:01",
+      "max_timestamp": "2026-02-09T17:22:08",
+      "initial_gtids": "",
+      "added_gtids": "11111111-aaaa-1111-aaaa-111111111111:1-123456"
+    }
+  ]
+}
+```
+whereas
+```bash
+./binlog_server search_by_timestamp config.json 11111111-aaaa-1111-aaaa-111111111111:100000-100001:200000-200001
+```
+may print
+```json
+{
+  "status": "success",
+  "result": [
+    {
+      "name": "binlog.000001",
+      "size": 134217728,
+      "uri": "s3://binsrv-bucket/storage/binlog.000001",
+      "min_timestamp": "2026-02-09T17:22:01",
+      "max_timestamp": "2026-02-09T17:22:08",
+      "initial_gtids": "",
+      "added_gtids": "11111111-aaaa-1111-aaaa-111111111111:1-123456",
+    },
+    {
+      "name": "binlog.000002",
+      "size": 134217728,
+      "uri": "s3://binsrv-bucket/storage/binlog.000002",
+      "min_timestamp": "2026-02-09T17:22:08",
+      "max_timestamp": "2026-02-09T17:22:09",
+      "initial_gtids": "11111111-aaaa-1111-aaaa-111111111111:1-123456",
+      "added_gtids": "11111111-aaaa-1111-aaaa-111111111111:123457-246912"
+    }
+  ]
+}
+```
+
+If an error occurs,
+```json
+{
+  "status": "error",
+  "message": "<reason>"
+}
+```
+The `<reason>` may be one of the following (but not limited to):
+- `cannot parse GTID set`
+- `Binlog storage is empty`
+- `The specified GTID set cannot be covered`
+- `GTID set search is not supported in storages created in position-based replication mode`
 
 #### 'fetch' operation mode
 
