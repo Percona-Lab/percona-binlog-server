@@ -59,10 +59,10 @@
 #include "binsrv/models/error_response.hpp"
 #include "binsrv/models/search_response.hpp"
 
-#include "binsrv/event/code_type.hpp"
-#include "binsrv/event/common_header_flag_type.hpp"
-#include "binsrv/event/event.hpp"
-#include "binsrv/event/reader_context.hpp"
+#include "binsrv/events/code_type.hpp"
+#include "binsrv/events/common_header_flag_type.hpp"
+#include "binsrv/events/event.hpp"
+#include "binsrv/events/reader_context.hpp"
 
 #include "easymysql/connection.hpp"
 #include "easymysql/connection_config.hpp"
@@ -375,16 +375,16 @@ void log_span_dump(binsrv::basic_logger &logger,
   }
 }
 
-void process_artificial_rotate_event(const binsrv::event::event &current_event,
+void process_artificial_rotate_event(const binsrv::events::event &current_event,
                                      binsrv::basic_logger &logger,
                                      binsrv::storage &storage) {
   assert(current_event.get_common_header().get_type_code() ==
-         binsrv::event::code_type::rotate);
+         binsrv::events::code_type::rotate);
   assert(current_event.get_common_header().get_flags().has_element(
-      binsrv::event::common_header_flag_type::artificial));
+      binsrv::events::common_header_flag_type::artificial));
 
   const auto &current_rotate_body =
-      current_event.get_body<binsrv::event::code_type::rotate>();
+      current_event.get_body<binsrv::events::code_type::rotate>();
 
   bool binlog_opening_needed{true};
 
@@ -405,7 +405,7 @@ void process_artificial_rotate_event(const binsrv::event::event &current_event,
       // in addition, in position-based replication mode we also need to check
       // the position
       const auto &current_rotate_post_header =
-          current_event.get_post_header<binsrv::event::code_type::rotate>();
+          current_event.get_post_header<binsrv::events::code_type::rotate>();
       if (current_rotate_post_header.get_position_raw() !=
           storage.get_current_position()) {
         util::exception_location().raise<std::logic_error>(
@@ -461,19 +461,19 @@ void process_rotate_or_stop_event(binsrv::basic_logger &logger,
              "storage: closed binlog file: " + old_binlog_name);
 }
 
-void process_binlog_event(const binsrv::event::event &current_event,
+void process_binlog_event(const binsrv::events::event &current_event,
                           util::const_byte_span portion,
                           binsrv::basic_logger &logger,
-                          binsrv::event::reader_context &context,
+                          binsrv::events::reader_context &context,
                           binsrv::storage &storage) {
   const auto &current_common_header = current_event.get_common_header();
   const auto code = current_common_header.get_type_code();
 
   const auto is_artificial{current_common_header.get_flags().has_element(
-      binsrv::event::common_header_flag_type::artificial)};
+      binsrv::events::common_header_flag_type::artificial)};
 
   // processing the very first event in the sequence - artificial ROTATE event
-  if (code == binsrv::event::code_type::rotate && is_artificial) {
+  if (code == binsrv::events::code_type::rotate && is_artificial) {
     process_artificial_rotate_event(current_event, logger, storage);
   }
 
@@ -486,8 +486,8 @@ void process_binlog_event(const binsrv::event::event &current_event,
 
   // processing the very last event in the sequence - either a non-artificial
   // ROTATE event or a STOP event
-  if ((code == binsrv::event::code_type::rotate && !is_artificial) ||
-      code == binsrv::event::code_type::stop) {
+  if ((code == binsrv::events::code_type::rotate && !is_artificial) ||
+      code == binsrv::events::code_type::stop) {
     process_rotate_or_stop_event(logger, storage);
   }
 }
@@ -573,7 +573,7 @@ void receive_binlog_events(
 
   util::const_byte_span portion;
 
-  binsrv::event::reader_context context{
+  binsrv::events::reader_context context{
       connection.get_server_version(), verify_checksum,
       storage.get_replication_mode(), storage.get_current_binlog_name(),
       static_cast<std::uint32_t>(storage.get_current_position())};
@@ -594,7 +594,7 @@ void receive_binlog_events(
     //       the ROTATE and FORMAT_DESCRIPTION events only, every other one
     //       can be just considered as a data portion (unless we want to do
     //       basic integrity checks like event sizes / position and CRC)
-    const binsrv::event::event current_event{context, portion};
+    const binsrv::events::event current_event{context, portion};
     const auto &current_header{current_event.get_common_header()};
     auto readable_flags{current_header.get_readable_flags()};
     logger.log(

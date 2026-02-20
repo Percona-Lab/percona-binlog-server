@@ -35,7 +35,7 @@
 #include "binsrv/storage_config.hpp"
 #include "binsrv/storage_metadata.hpp"
 
-#include "binsrv/event/protocol_traits_fwd.hpp"
+#include "binsrv/events/protocol_traits_fwd.hpp"
 
 #include "binsrv/gtids/gtid.hpp"
 #include "binsrv/gtids/gtid_set.hpp"
@@ -181,7 +181,7 @@ storage::open_binlog(std::string_view binlog_name) {
   if (!binlog_exists) {
     // writing the magic binlog footprint only if this is a newly
     // created file
-    backend_->write_data_to_stream(event::magic_binlog_payload);
+    backend_->write_data_to_stream(events::magic_binlog_payload);
 
     gtids::optional_gtid_set previous_binlog_gtids{};
     gtids::optional_gtid_set added_binlog_gtids{};
@@ -191,7 +191,7 @@ storage::open_binlog(std::string_view binlog_name) {
     }
 
     binlog_records_.emplace_back(
-        std::string{binlog_name}, event::magic_binlog_offset,
+        std::string{binlog_name}, events::magic_binlog_offset,
         std::move(previous_binlog_gtids), std::move(added_binlog_gtids),
         ctime_timestamp_range{});
     save_binlog_metadata(get_current_binlog_record());
@@ -200,14 +200,14 @@ storage::open_binlog(std::string_view binlog_name) {
   } else {
     assert(get_current_position() == open_stream_offset);
     if (open_stream_offset == 0ULL) {
-      backend_->write_data_to_stream(event::magic_binlog_payload);
-      get_current_binlog_record().size = event::magic_binlog_offset;
+      backend_->write_data_to_stream(events::magic_binlog_payload);
+      get_current_binlog_record().size = events::magic_binlog_offset;
       result = open_binlog_status::opened_empty;
-    } else if (open_stream_offset == event::magic_binlog_offset) {
+    } else if (open_stream_offset == events::magic_binlog_offset) {
       result = open_binlog_status::opened_at_magic_paylod_offset;
     } else {
       // position is beyond magic payload offset
-      assert(open_stream_offset > event::magic_binlog_offset);
+      assert(open_stream_offset > events::magic_binlog_offset);
       result = open_binlog_status::opened_with_data_present;
     }
   }
