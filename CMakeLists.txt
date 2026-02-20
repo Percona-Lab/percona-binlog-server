@@ -86,115 +86,115 @@ set(source_files
   src/app_version.hpp
 
   # binlog event data structure files
-  src/binsrv/event/anonymous_gtid_log_body_impl_fwd.hpp
-  src/binsrv/event/anonymous_gtid_log_body_impl.hpp
+  src/binsrv/events/anonymous_gtid_log_body_impl_fwd.hpp
+  src/binsrv/events/anonymous_gtid_log_body_impl.hpp
 
-  src/binsrv/event/anonymous_gtid_log_post_header_impl_fwd.hpp
-  src/binsrv/event/anonymous_gtid_log_post_header_impl.hpp
+  src/binsrv/events/anonymous_gtid_log_post_header_impl_fwd.hpp
+  src/binsrv/events/anonymous_gtid_log_post_header_impl.hpp
 
-  src/binsrv/event/checksum_algorithm_type_fwd.hpp
-  src/binsrv/event/checksum_algorithm_type.hpp
+  src/binsrv/events/checksum_algorithm_type_fwd.hpp
+  src/binsrv/events/checksum_algorithm_type.hpp
 
-  src/binsrv/event/code_type_fwd.hpp
-  src/binsrv/event/code_type.hpp
+  src/binsrv/events/code_type_fwd.hpp
+  src/binsrv/events/code_type.hpp
 
-  src/binsrv/event/common_header_fwd.hpp
-  src/binsrv/event/common_header.hpp
-  src/binsrv/event/common_header.cpp
+  src/binsrv/events/common_header_fwd.hpp
+  src/binsrv/events/common_header.hpp
+  src/binsrv/events/common_header.cpp
 
-  src/binsrv/event/common_header_flag_type_fwd.hpp
-  src/binsrv/event/common_header_flag_type.hpp
+  src/binsrv/events/common_header_flag_type_fwd.hpp
+  src/binsrv/events/common_header_flag_type.hpp
 
-  src/binsrv/event/empty_body_fwd.hpp
-  src/binsrv/event/empty_body.hpp
-  src/binsrv/event/empty_body.cpp
+  src/binsrv/events/empty_body_fwd.hpp
+  src/binsrv/events/empty_body.hpp
+  src/binsrv/events/empty_body.cpp
 
-  src/binsrv/event/empty_post_header_fwd.hpp
-  src/binsrv/event/empty_post_header.hpp
-  src/binsrv/event/empty_post_header.cpp
+  src/binsrv/events/empty_post_header_fwd.hpp
+  src/binsrv/events/empty_post_header.hpp
+  src/binsrv/events/empty_post_header.cpp
 
-  src/binsrv/event/event_fwd.hpp
-  src/binsrv/event/event.hpp
-  src/binsrv/event/event.cpp
+  src/binsrv/events/event_fwd.hpp
+  src/binsrv/events/event.hpp
+  src/binsrv/events/event.cpp
 
-  src/binsrv/event/footer_fwd.hpp
-  src/binsrv/event/footer.hpp
-  src/binsrv/event/footer.cpp
+  src/binsrv/events/footer_fwd.hpp
+  src/binsrv/events/footer.hpp
+  src/binsrv/events/footer.cpp
 
-  src/binsrv/event/format_description_body_impl_fwd.hpp
-  src/binsrv/event/format_description_body_impl.hpp
-  src/binsrv/event/format_description_body_impl.cpp
+  src/binsrv/events/format_description_body_impl_fwd.hpp
+  src/binsrv/events/format_description_body_impl.hpp
+  src/binsrv/events/format_description_body_impl.cpp
 
-  src/binsrv/event/format_description_post_header_impl_fwd.hpp
-  src/binsrv/event/format_description_post_header_impl.hpp
-  src/binsrv/event/format_description_post_header_impl.cpp
+  src/binsrv/events/format_description_post_header_impl_fwd.hpp
+  src/binsrv/events/format_description_post_header_impl.hpp
+  src/binsrv/events/format_description_post_header_impl.cpp
 
-  src/binsrv/event/generic_body_fwd.hpp
-  src/binsrv/event/generic_body.hpp
+  src/binsrv/events/generic_body_fwd.hpp
+  src/binsrv/events/generic_body.hpp
 
-  src/binsrv/event/generic_post_header_fwd.hpp
-  src/binsrv/event/generic_post_header.hpp
+  src/binsrv/events/generic_post_header_fwd.hpp
+  src/binsrv/events/generic_post_header.hpp
 
-  src/binsrv/event/gtid_log_flag_type_fwd.hpp
-  src/binsrv/event/gtid_log_flag_type.hpp
+  src/binsrv/events/gtid_log_flag_type_fwd.hpp
+  src/binsrv/events/gtid_log_flag_type.hpp
 
-  src/binsrv/event/gtid_log_body_fwd.hpp
-  src/binsrv/event/gtid_log_body.hpp
-  src/binsrv/event/gtid_log_body.cpp
+  src/binsrv/events/gtid_log_body_fwd.hpp
+  src/binsrv/events/gtid_log_body.hpp
+  src/binsrv/events/gtid_log_body.cpp
 
-  src/binsrv/event/gtid_log_body_impl_fwd.hpp
-  src/binsrv/event/gtid_log_body_impl.hpp
+  src/binsrv/events/gtid_log_body_impl_fwd.hpp
+  src/binsrv/events/gtid_log_body_impl.hpp
 
-  src/binsrv/event/gtid_log_post_header_fwd.hpp
-  src/binsrv/event/gtid_log_post_header.hpp
-  src/binsrv/event/gtid_log_post_header.cpp
+  src/binsrv/events/gtid_log_post_header_fwd.hpp
+  src/binsrv/events/gtid_log_post_header.hpp
+  src/binsrv/events/gtid_log_post_header.cpp
 
-  src/binsrv/event/gtid_log_post_header_impl_fwd.hpp
-  src/binsrv/event/gtid_log_post_header_impl.hpp
+  src/binsrv/events/gtid_log_post_header_impl_fwd.hpp
+  src/binsrv/events/gtid_log_post_header_impl.hpp
 
-  src/binsrv/event/gtid_tagged_log_body_impl_fwd.hpp
-  src/binsrv/event/gtid_tagged_log_body_impl.hpp
-  src/binsrv/event/gtid_tagged_log_body_impl.cpp
+  src/binsrv/events/gtid_tagged_log_body_impl_fwd.hpp
+  src/binsrv/events/gtid_tagged_log_body_impl.hpp
+  src/binsrv/events/gtid_tagged_log_body_impl.cpp
 
-  src/binsrv/event/gtid_tagged_log_post_header_impl_fwd.hpp
-  src/binsrv/event/gtid_tagged_log_post_header_impl.hpp
+  src/binsrv/events/gtid_tagged_log_post_header_impl_fwd.hpp
+  src/binsrv/events/gtid_tagged_log_post_header_impl.hpp
 
-  src/binsrv/event/previous_gtids_log_body_impl_fwd.hpp
-  src/binsrv/event/previous_gtids_log_body_impl.hpp
-  src/binsrv/event/previous_gtids_log_body_impl.cpp
+  src/binsrv/events/previous_gtids_log_body_impl_fwd.hpp
+  src/binsrv/events/previous_gtids_log_body_impl.hpp
+  src/binsrv/events/previous_gtids_log_body_impl.cpp
 
-  src/binsrv/event/previous_gtids_log_post_header_impl_fwd.hpp
-  src/binsrv/event/previous_gtids_log_post_header_impl.hpp
+  src/binsrv/events/previous_gtids_log_post_header_impl_fwd.hpp
+  src/binsrv/events/previous_gtids_log_post_header_impl.hpp
 
-  src/binsrv/event/protocol_traits_fwd.hpp
-  src/binsrv/event/protocol_traits.hpp
-  src/binsrv/event/protocol_traits.cpp
+  src/binsrv/events/protocol_traits_fwd.hpp
+  src/binsrv/events/protocol_traits.hpp
+  src/binsrv/events/protocol_traits.cpp
 
-  src/binsrv/event/reader_context_fwd.hpp
-  src/binsrv/event/reader_context.hpp
-  src/binsrv/event/reader_context.cpp
+  src/binsrv/events/reader_context_fwd.hpp
+  src/binsrv/events/reader_context.hpp
+  src/binsrv/events/reader_context.cpp
 
-  src/binsrv/event/rotate_body_impl_fwd.hpp
-  src/binsrv/event/rotate_body_impl.hpp
-  src/binsrv/event/rotate_body_impl.cpp
+  src/binsrv/events/rotate_body_impl_fwd.hpp
+  src/binsrv/events/rotate_body_impl.hpp
+  src/binsrv/events/rotate_body_impl.cpp
 
-  src/binsrv/event/rotate_post_header_impl_fwd.hpp
-  src/binsrv/event/rotate_post_header_impl.hpp
-  src/binsrv/event/rotate_post_header_impl.cpp
+  src/binsrv/events/rotate_post_header_impl_fwd.hpp
+  src/binsrv/events/rotate_post_header_impl.hpp
+  src/binsrv/events/rotate_post_header_impl.cpp
 
-  src/binsrv/event/stop_body_impl_fwd.hpp
-  src/binsrv/event/stop_body_impl.hpp
+  src/binsrv/events/stop_body_impl_fwd.hpp
+  src/binsrv/events/stop_body_impl.hpp
 
-  src/binsrv/event/stop_post_header_impl_fwd.hpp
-  src/binsrv/event/stop_post_header_impl.hpp
+  src/binsrv/events/stop_post_header_impl_fwd.hpp
+  src/binsrv/events/stop_post_header_impl.hpp
 
-  src/binsrv/event/unknown_body_fwd.hpp
-  src/binsrv/event/unknown_body.hpp
-  src/binsrv/event/unknown_body.cpp
+  src/binsrv/events/unknown_body_fwd.hpp
+  src/binsrv/events/unknown_body.hpp
+  src/binsrv/events/unknown_body.cpp
 
-  src/binsrv/event/unknown_post_header_fwd.hpp
-  src/binsrv/event/unknown_post_header.hpp
-  src/binsrv/event/unknown_post_header.cpp
+  src/binsrv/events/unknown_post_header_fwd.hpp
+  src/binsrv/events/unknown_post_header.hpp
+  src/binsrv/events/unknown_post_header.cpp
 
   # gtid data structure files
   src/binsrv/gtids/common_types.hpp

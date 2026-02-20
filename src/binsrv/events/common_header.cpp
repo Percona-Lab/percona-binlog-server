@@ -1,0 +1,130 @@
+// Copyright (c) 2023-2024 Percona and/or its affiliates.
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License, version 2.0,
+// as published by the Free Software Foundation.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License, version 2.0, for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
+
+#include "binsrv/events/common_header.hpp"
+
+#include <ctime>
+#include <ostream>
+#include <stdexcept>
+#include <string>
+#include <string_view>
+
+#include <boost/align/align_up.hpp>
+
+#include "binsrv/ctime_timestamp.hpp"
+
+#include "binsrv/events/code_type.hpp"
+#include "binsrv/events/common_header_flag_type.hpp"
+
+#include "util/byte_span_extractors.hpp"
+#include "util/byte_span_fwd.hpp"
+#include "util/conversion_helpers.hpp"
+#include "util/exception_location_helpers.hpp"
+#include "util/flag_set.hpp"
+
+namespace binsrv::events {
+
+common_header::common_header(util::const_byte_span portion) {
+  // TODO: rework with direct member initialization
+
+  /*
+    https://github.com/mysql/mysql-server/blob/mysql-8.0.43/libbinlogevents/src/binlog_event.cpp#L198
+    https://github.com/mysql/mysql-server/blob/mysql-8.4.6/libs/mysql/binlog/event/binlog_event.cpp#L242
+
+    The first 19 bytes in the header is as follows:
+      +============================================+
+      | member_variable               offset : len |
+      +============================================+
+      | when.tv_sec                        0 : 4   |
+      +--------------------------------------------+
+      | type_code       EVENT_TYPE_OFFSET(4) : 1   |
+      +--------------------------------------------+
+      | server_id       SERVER_ID_OFFSET(5)  : 4   |
+      +--------------------------------------------+
+      | data_written    EVENT_LEN_OFFSET(9)  : 4   |
+      +--------------------------------------------+
+      | log_pos           LOG_POS_OFFSET(13) : 4   |
+      +--------------------------------------------+
+      | flags               FLAGS_OFFSET(17) : 2   |
+      +--------------------------------------------+
+      | extra_headers                     19 : x-19|
+      +============================================+
+   */
+
+  // TODO: initialize size_in_bytes directly based on the sum of fields
+  // widths instead of this static_assert
+  static_assert(sizeof timestamp_ + sizeof type_code_ + sizeof server_id_ +
+                        sizeof event_size_ + sizeof next_event_position_ +
+                        sizeof flags_ ==
+                    size_in_bytes,
+                "mismatch in common_header::size_in_bytes");
+  // make sure we did OK with data members reordering
+  static_assert(sizeof *this == boost::alignment::align_up(
+                                    size_in_bytes, alignof(decltype(*this))),
+                "inefficient data member reordering in common_header");
+
+  if (std::size(portion) != size_in_bytes) {
+    util::exception_location().raise<std::invalid_argument>(
+        "invalid event common header length");
+  }
+
+  auto remainder = portion;
+  util::extract_fixed_int_from_byte_span(remainder, timestamp_);
+  util::extract_fixed_int_from_byte_span(remainder, type_code_);
+  util::extract_fixed_int_from_byte_span(remainder, server_id_);
+  util::extract_fixed_int_from_byte_span(remainder, event_size_);
+  util::extract_fixed_int_from_byte_span(remainder, next_event_position_);
+  util::extract_fixed_int_from_byte_span(remainder, flags_);
+
+  if (get_type_code_raw() >= util::enum_to_index(code_type::delimiter) ||
+      to_string_view(get_type_code()).empty()) {
+    util::exception_location().raise<std::logic_error>(
+        "invalid event code in event header");
+  }
+  // TODO: check if flags are valid (all the bits have corresponding enum)
+}
+
+[[nodiscard]] ctime_timestamp common_header::get_timestamp() const noexcept {
+  return ctime_timestamp{static_cast<std::time_t>(get_timestamp_raw())};
+}
+
+[[nodiscard]] std::string common_header::get_readable_timestamp() const {
+  return get_timestamp().str();
+}
+
+[[nodiscard]] std::string_view
+common_header::get_readable_type_code() const noexcept {
+  return to_string_view(get_type_code());
+}
+
+[[nodiscard]] common_header_flag_set common_header::get_flags() const noexcept {
+  return common_header_flag_set{get_flags_raw()};
+}
+
+[[nodiscard]] std::string common_header::get_readable_flags() const {
+  return to_string(get_flags());
+}
+
+std::ostream &operator<<(std::ostream &output, const common_header &obj) {
+  return output << "ts: " << obj.get_readable_timestamp()
+                << ", type: " << obj.get_readable_type_code()
+                << ", server id: " << obj.get_server_id_raw()
+                << ", event size: " << obj.get_event_size_raw()
+                << ", next event position: "
+                << obj.get_next_event_position_raw()
+                << ", flags: " << obj.get_readable_flags();
+}
+
+} // namespace binsrv::events
