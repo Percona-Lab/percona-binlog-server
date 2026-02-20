@@ -20,6 +20,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <stdexcept>
+#include <string_view>
 #include <utility>
 
 #include "binsrv/replication_mode_type.hpp"
@@ -36,9 +37,14 @@ namespace binsrv::event {
 
 reader_context::reader_context(std::uint32_t encoded_server_version,
                                bool verify_checksum,
-                               replication_mode_type replication_mode)
+                               replication_mode_type replication_mode,
+                               std::string_view binlog_name,
+                               std::uint32_t position)
     : encoded_server_version_{encoded_server_version},
       verify_checksum_{verify_checksum}, replication_mode_{replication_mode},
+      binlog_name_{binlog_name},
+      position_{position == 0U ? static_cast<std::uint32_t>(magic_binlog_offset)
+                               : position},
       post_header_lengths_{
           get_hardcoded_post_header_lengths(encoded_server_version_)} {}
 
@@ -107,16 +113,61 @@ reader_context::process_event_in_rotate_artificial_expected_state(
         "non-zero next event position found in an artificial rotate event");
   }
 
-  // we expect an artificial rotate event to be the very first event in the
-  // newly-created binlog file
-  if (position_ != 0U) {
-    util::exception_location().raise<std::logic_error>(
-        "artificial rotate event is not the very first event in a binlog "
-        "file");
+  const auto &current_post_header{
+      current_event.get_post_header<code_type::rotate>()};
+  const auto &current_body{current_event.get_body<code_type::rotate>()};
+  if (replication_mode_ == replication_mode_type::position) {
+    if (current_body.get_binlog() == binlog_name_) {
+      // in position-based replication mode, when we continue streaming to the
+      // same binlog file, we expect the artificial rotate event to have the
+      // same position as the one supplied to the constructor
+      if (current_post_header.get_position_raw() != position_) {
+        util::exception_location().raise<std::logic_error>(
+            "unexpected position found in an artificial rotate event in "
+            "position-based replication mode");
+      }
+    } else {
+      // in position-based replication mode, when we start streaming to a new
+      // binlog file, we expect the artificial rotate event
+      // to have the position equal to "magic_offset" (4)
+      if (current_post_header.get_position_raw() != magic_binlog_offset) {
+        util::exception_location().raise<std::logic_error>(
+            "unexpected position found in an artificial rotate event in "
+            "position-based replication mode");
+      }
+    }
+  } else {
+    // in GTID-based replication mode we expect the artificial rotate event to
+    // always have position set to "magic_offset" (4)
+    if (current_post_header.get_position_raw() != magic_binlog_offset) {
+      util::exception_location().raise<std::logic_error>(
+          "unexpected position found in an artificial rotate event in "
+          "GTID-based replication mode");
+    }
+  }
+  if (current_body.get_binlog() != binlog_name_) {
+    // in the case when binlog name in the artificial rotate event does not
+    // match the one specified in the last saved one, we should update it here
+    // and reset the position to "magic_offset" (4)
+
+    // please notice that the very first time the reader_context is created
+    // 'binlog_name' is initialized with the 'storage.get_current_binlog_name()'
+    // value
+
+    // also, when the storage objects is created on an empty directory,
+    // 'storage.get_current_binlog_name()' returns an empty string which will
+    // never be equal to any real binlog name
+    binlog_name_ = current_body.get_binlog();
+    reset_position();
   }
 
-  position_ = static_cast<std::uint32_t>(
-      current_event.get_post_header<code_type::rotate>().get_position_raw());
+  // whether we should expect info-only FORMAT_DESCRIPTION and optional
+  // PREVIOUS_GTIDS_LOG events depends on whether we resumed streaming to an
+  // existing non-empty binlog file or not
+  if (current_body.get_binlog() == binlog_name_ &&
+      position_ > magic_binlog_offset) {
+    expect_ignorable_preamble_events_ = true;
+  }
 
   info_only_event_ = true;
   // transition to the next state
@@ -208,9 +259,9 @@ reader_context::process_event_in_format_description_expected_state(
   //    ...
 
   // in other words, in GTID-based mode there is no way to distinguish whether
-  // the FDE / PREVIOUS_GTIDS_LOG is pseudo and should not be written, or not -
-  // that is why we rely only on externally supplied
-  // "start_from_new_binlog_file" constructor's argument
+  // the FDE / PREVIOUS_GTIDS_LOG should be written to the binlog file or
+  // not - that is why we rely only on the value of the
+  // "expect_ignorable_preamble_events" calculated previously
   info_only_event_ = expect_ignorable_preamble_events_;
   if (replication_mode_ == replication_mode_type::position &&
       info_only_event_) {
@@ -224,10 +275,10 @@ reader_context::process_event_in_format_description_expected_state(
     validate_position_and_advance(common_header);
   }
 
-  // transition to the next state:
   // the next expected event is PREVIOUS_GTIDS_LOG, unless we are in
-  // position-based replication mode and this we resumed streaming from the
-  // middle of a binlog file
+  // position-based replication mode and we resumed streaming to an
+  // existing non-empty binlog file, in which case we expect the next event
+  // to be one of the GTID_LOG events
   if (replication_mode_ == replication_mode_type::position &&
       info_only_event_) {
     state_ = state_type::gtid_log_expected;
@@ -448,7 +499,7 @@ void reader_context::validate_position_and_advance(
   position_ = common_header.get_next_event_position_raw();
 }
 
-void reader_context::reset_position() { position_ = 0U; }
+void reader_context::reset_position() { position_ = magic_binlog_offset; }
 
 void reader_context::start_transaction(const event &current_event) {
   switch (current_event.get_common_header().get_type_code()) {
