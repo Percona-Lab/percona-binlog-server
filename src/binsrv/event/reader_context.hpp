@@ -35,7 +35,8 @@ class [[nodiscard]] reader_context {
 
 public:
   reader_context(std::uint32_t encoded_server_version, bool verify_checksum,
-                 replication_mode_type replication_mode);
+                 replication_mode_type replication_mode,
+                 std::string_view binlog_name, std::uint32_t position);
 
   [[nodiscard]] std::uint32_t
   get_current_encoded_server_version() const noexcept {
@@ -47,9 +48,6 @@ public:
 
   [[nodiscard]] std::size_t
   get_current_post_header_length(code_type code) const noexcept;
-  [[nodiscard]] std::uint32_t get_current_position() const noexcept {
-    return position_;
-  }
 
   [[nodiscard]] bool has_transaction_gtid() const noexcept {
     return !transaction_gtid_.is_empty();
@@ -65,10 +63,6 @@ public:
 
   [[nodiscard]] bool is_event_info_only() const noexcept {
     return info_only_event_;
-  }
-
-  void set_expect_ignorable_preamble_events() noexcept {
-    expect_ignorable_preamble_events_ = true;
   }
 
 private:
@@ -92,8 +86,9 @@ private:
   std::uint32_t encoded_server_version_;
   bool verify_checksum_;
   replication_mode_type replication_mode_;
+  std::string binlog_name_;
+  std::uint32_t position_;
   post_header_length_container post_header_lengths_{};
-  std::uint32_t position_{0U};
 
   gtids::gtid transaction_gtid_{};
   std::uint32_t expected_transaction_length_{0U};

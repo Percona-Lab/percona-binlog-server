@@ -21,7 +21,7 @@ eval $stmt_reset_binary_logs_and_gtids;
 --let $binsrv_read_timeout = 60
 --let $binsrv_idle_time = 10
 --let $binsrv_verify_checksum = TRUE
---let $binsrv_replication_mode = `SELECT IF(@@global.gtid_mode, 'gtid', 'position')`
+--let $binsrv_replication_mode = `SELECT IF(@@global.gtid_mode = 'ON', 'gtid', 'position')`
 --let $binsrv_checkpoint_size = 1
 --source ../include/set_up_binsrv_environment.inc
 

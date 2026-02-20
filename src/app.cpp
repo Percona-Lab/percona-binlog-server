@@ -377,7 +377,6 @@ void log_span_dump(binsrv::basic_logger &logger,
 
 void process_artificial_rotate_event(const binsrv::event::event &current_event,
                                      binsrv::basic_logger &logger,
-                                     binsrv::event::reader_context &context,
                                      binsrv::storage &storage) {
   assert(current_event.get_common_header().get_type_code() ==
          binsrv::event::code_type::rotate);
@@ -414,10 +413,6 @@ void process_artificial_rotate_event(const binsrv::event::event &current_event,
       }
 
       binlog_opening_needed = false;
-      // after reusing the existing storage binlog file, we should instruct
-      // the reader context to mark the upcoming FDE and PREVIOUS_GTIDS_LOG
-      // events as info-only
-      context.set_expect_ignorable_preamble_events();
 
       const std::string current_binlog_name{storage.get_current_binlog_name()};
       logger.log(binsrv::log_severity::info,
@@ -439,16 +434,6 @@ void process_artificial_rotate_event(const binsrv::event::event &current_event,
   if (binlog_opening_needed) {
     const auto binlog_open_result{
         storage.open_binlog(current_rotate_body.get_binlog())};
-
-    // we also need to instruct the reader context that we opened an
-    // existing file (the one that was neither empty nor just had the
-    // magic payload writtent to it), so that it would mark the upcoming FDE
-    // and PREVIOUS_GTIDS_LOG events as info-only
-
-    if (binlog_open_result ==
-        binsrv::open_binlog_status::opened_with_data_present) {
-      context.set_expect_ignorable_preamble_events();
-    }
 
     std::string message{"storage: "};
     if (binlog_open_result == binsrv::open_binlog_status::created) {
@@ -489,7 +474,7 @@ void process_binlog_event(const binsrv::event::event &current_event,
 
   // processing the very first event in the sequence - artificial ROTATE event
   if (code == binsrv::event::code_type::rotate && is_artificial) {
-    process_artificial_rotate_event(current_event, logger, context, storage);
+    process_artificial_rotate_event(current_event, logger, storage);
   }
 
   // checking if the event needs to be written to the binlog
@@ -588,9 +573,10 @@ void receive_binlog_events(
 
   util::const_byte_span portion;
 
-  binsrv::event::reader_context context{connection.get_server_version(),
-                                        verify_checksum,
-                                        storage.get_replication_mode()};
+  binsrv::event::reader_context context{
+      connection.get_server_version(), verify_checksum,
+      storage.get_replication_mode(), storage.get_current_binlog_name(),
+      static_cast<std::uint32_t>(storage.get_current_position())};
 
   bool fetch_result{};
 
