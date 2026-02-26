@@ -20,13 +20,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <ostream>
-#include <stdexcept>
-#include <string>
-#include <string_view>
 #include <utility>
 #include <variant>
 
 #include "binsrv/events/code_type.hpp"
+#include "binsrv/events/event_view.hpp"
 #include "binsrv/events/generic_body.hpp"
 #include "binsrv/events/generic_post_header.hpp"
 #include "binsrv/events/protocol_traits_fwd.hpp"
@@ -34,96 +32,26 @@
 
 #include "util/byte_span_fwd.hpp"
 #include "util/conversion_helpers.hpp"
-#include "util/crc_helpers.hpp"
-#include "util/exception_location_helpers.hpp"
 
 namespace binsrv::events {
 
-event::event(reader_context &context, util::const_byte_span portion)
-    : common_header_{
-          [](util::const_byte_span event_portion) -> util::const_byte_span {
-            if (std::size(event_portion) <
-                decltype(common_header_)::size_in_bytes) {
-              util::exception_location().raise<std::invalid_argument>(
-                  "not enough data for event common header");
-            }
-            return event_portion.subspan(
-                0, decltype(common_header_)::size_in_bytes);
-          }(portion)} {
-  // TODO: rework with direct member initialization
-
-  const auto code = common_header_.get_type_code();
-
-  std::size_t footer_size{0U};
-  if (code == code_type::format_description) {
-    // format_description events always include event footers with checksums
-    // even if their bodies contain 'checksum_algorithm' set to 'none'
-    footer_size = footer::size_in_bytes;
-  } else {
-    // we determine whether there is a footer in the event from the
-    // reader_context
-    footer_size =
-        (context.get_current_verify_checksum() ? footer::size_in_bytes : 0U);
-  }
-
-  const std::size_t event_size = std::size(portion);
-  if (event_size != common_header_.get_event_size_raw()) {
-    util::exception_location().raise<std::invalid_argument>(
-        "actual event size does not match the one specified in event common "
-        "header");
-  }
-
+event::event(reader_context &context, const event_view &view)
+    : common_header_{view.get_common_header_raw()} {
   const auto encoded_server_version{
       context.get_current_encoded_server_version()};
+  const auto code{common_header_.get_type_code()};
 
-  std::size_t post_header_size{0U};
-  post_header_size = context.get_current_post_header_length(code);
-  if (post_header_size == unspecified_post_header_length) {
-    util::exception_location().raise<std::invalid_argument>(
-        "received event of type " + std::to_string(util::enum_to_index(code)) +
-        " \"" + std::string{to_string_view(code)} +
-        "\" "
-        "is not known in server version " +
-        std::to_string(encoded_server_version));
-  }
+  emplace_post_header(encoded_server_version, code, view.get_post_header_raw());
+  emplace_body(encoded_server_version, code, view.get_body_raw());
 
-  const std::size_t group_size =
-      common_header::size_in_bytes + post_header_size + footer_size;
-  if (event_size < group_size) {
-    util::exception_location().raise<std::logic_error>(
-        "not enough data for event post-header + body + footer");
-  }
-  const std::size_t body_size = event_size - group_size;
-
-  const auto post_header_portion =
-      portion.subspan(common_header::size_in_bytes, post_header_size);
-  emplace_post_header(encoded_server_version, code, post_header_portion);
-
-  const auto body_portion = portion.subspan(
-      common_header::size_in_bytes + post_header_size, body_size);
-  emplace_body(encoded_server_version, code, body_portion);
-
-  if (footer_size != 0U) {
-    const auto size_wo_footer{common_header::size_in_bytes + post_header_size +
-                              body_size};
-    const auto footer_portion = portion.subspan(size_wo_footer, footer_size);
-    footer_.emplace(footer_portion);
-    const bool need_checksum_verification{
-        code == code_type::format_description
-            ? get_body<code_type::format_description>().has_checksum_algorithm()
-            : context.get_current_verify_checksum()};
-    if (need_checksum_verification) {
-      const auto event_wo_footer_portion = portion.subspan(0U, size_wo_footer);
-      const auto calculated_crc{util::calculate_crc32(event_wo_footer_portion)};
-      const auto expected_crc{footer_->get_crc_raw()};
-      if (calculated_crc != expected_crc) {
-        util::exception_location().raise<std::invalid_argument>(
-            "event checksum mismatch");
-      }
-    }
+  if (view.has_footer()) {
+    footer_.emplace(view.get_footer_view());
   };
   context.process_event(*this);
 }
+
+event::event(reader_context &context, util::const_byte_span portion)
+    : event{context, event_view{context, portion}} {}
 
 void event::emplace_post_header(std::uint32_t encoded_server_version,
                                 code_type code, util::const_byte_span portion) {
