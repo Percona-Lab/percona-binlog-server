@@ -102,6 +102,10 @@ set(source_files
   src/binsrv/events/common_header.hpp
   src/binsrv/events/common_header.cpp
 
+  src/binsrv/events/common_header_view_fwd.hpp
+  src/binsrv/events/common_header_view.hpp
+  src/binsrv/events/common_header_view.cpp
+
   src/binsrv/events/common_header_flag_type_fwd.hpp
   src/binsrv/events/common_header_flag_type.hpp
 
@@ -117,9 +121,17 @@ set(source_files
   src/binsrv/events/event.hpp
   src/binsrv/events/event.cpp
 
+  src/binsrv/events/event_view_fwd.hpp
+  src/binsrv/events/event_view.hpp
+  src/binsrv/events/event_view.cpp
+
   src/binsrv/events/footer_fwd.hpp
   src/binsrv/events/footer.hpp
   src/binsrv/events/footer.cpp
+
+  src/binsrv/events/footer_view_fwd.hpp
+  src/binsrv/events/footer_view.hpp
+  src/binsrv/events/footer_view.cpp
 
   src/binsrv/events/format_description_body_impl_fwd.hpp
   src/binsrv/events/format_description_body_impl.hpp

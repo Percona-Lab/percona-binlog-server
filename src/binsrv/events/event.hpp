@@ -35,6 +35,7 @@
 #include "binsrv/events/anonymous_gtid_log_post_header_impl.hpp" // IWYU pragma: export
 #include "binsrv/events/code_type.hpp"
 #include "binsrv/events/common_header.hpp"                // IWYU pragma: export
+#include "binsrv/events/event_view_fwd.hpp"
 #include "binsrv/events/footer.hpp"                       // IWYU pragma: export
 #include "binsrv/events/format_description_body_impl.hpp" // IWYU pragma: export
 #include "binsrv/events/format_description_post_header_impl.hpp" // IWYU pragma: export
@@ -105,6 +106,7 @@ public:
 
   using optional_footer = std::optional<footer>;
 
+  event(reader_context &context, const event_view &view);
   event(reader_context &context, util::const_byte_span portion);
 
   [[nodiscard]] const common_header &get_common_header() const noexcept {
@@ -131,9 +133,9 @@ public:
 
 private:
   common_header common_header_;
-  post_header_variant post_header_;
-  body_variant body_;
-  optional_footer footer_;
+  post_header_variant post_header_{};
+  body_variant body_{};
+  optional_footer footer_{};
 
   template <typename T>
   void generic_emplace_post_header(std::uint32_t encoded_server_version,

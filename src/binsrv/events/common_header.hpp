@@ -27,6 +27,7 @@
 
 #include "binsrv/events/code_type_fwd.hpp"
 #include "binsrv/events/common_header_flag_type_fwd.hpp"
+#include "binsrv/events/common_header_view.hpp"
 #include "binsrv/events/protocol_traits_fwd.hpp"
 
 #include "util/byte_span_fwd.hpp"
@@ -35,24 +36,31 @@ namespace binsrv::events {
 
 class [[nodiscard]] common_header {
 public:
-  static constexpr std::size_t size_in_bytes{default_common_header_length};
+  static constexpr std::size_t size_in_bytes{
+      common_header_view_base::size_in_bytes};
 
+  explicit common_header(const common_header_view &view);
   explicit common_header(util::const_byte_span portion);
 
   [[nodiscard]] std::uint32_t get_timestamp_raw() const noexcept {
     return timestamp_;
   }
   [[nodiscard]] ctime_timestamp get_timestamp() const noexcept;
-
-  [[nodiscard]] std::string get_readable_timestamp() const;
+  [[nodiscard]] std::string get_readable_timestamp() const {
+    return common_header_view_base::get_readable_timestamp_from_raw(
+        get_timestamp_raw());
+  }
 
   [[nodiscard]] std::uint8_t get_type_code_raw() const noexcept {
     return type_code_;
   }
   [[nodiscard]] code_type get_type_code() const noexcept {
-    return static_cast<code_type>(get_type_code_raw());
+    return common_header_view_base::get_type_code_from_raw(get_type_code_raw());
   }
-  [[nodiscard]] std::string_view get_readable_type_code() const noexcept;
+  [[nodiscard]] std::string_view get_readable_type_code() const noexcept {
+    return common_header_view_base::get_readable_type_code_from_raw(
+        get_type_code_raw());
+  }
 
   [[nodiscard]] std::uint32_t get_server_id_raw() const noexcept {
     return server_id_;
@@ -68,7 +76,10 @@ public:
 
   [[nodiscard]] std::uint16_t get_flags_raw() const noexcept { return flags_; }
   [[nodiscard]] common_header_flag_set get_flags() const noexcept;
-  [[nodiscard]] std::string get_readable_flags() const;
+  [[nodiscard]] std::string get_readable_flags() const {
+    return common_header_view_base::get_readable_flags_from_raw(
+        get_flags_raw());
+  }
 
 private:
   // the members are deliberately reordered for better packing

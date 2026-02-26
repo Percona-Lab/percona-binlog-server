@@ -34,7 +34,8 @@ class [[nodiscard]] reader_context {
   friend class event;
 
 public:
-  reader_context(std::uint32_t encoded_server_version, bool verify_checksum,
+  reader_context(std::uint32_t encoded_server_version,
+                 bool checksum_verification_enabled,
                  replication_mode_type replication_mode,
                  std::string_view binlog_name, std::uint32_t position);
 
@@ -42,8 +43,11 @@ public:
   get_current_encoded_server_version() const noexcept {
     return encoded_server_version_;
   }
-  [[nodiscard]] bool get_current_verify_checksum() const noexcept {
-    return verify_checksum_;
+  [[nodiscard]] bool is_checksum_verification_enabled() const noexcept {
+    return checksum_verification_enabled_;
+  }
+  [[nodiscard]] bool is_footer_expected() const noexcept {
+    return footer_expected_;
   }
 
   [[nodiscard]] std::size_t
@@ -84,7 +88,15 @@ private:
   };
   state_type state_{state_type::rotate_artificial_expected};
   std::uint32_t encoded_server_version_;
-  bool verify_checksum_;
+
+  // indicates whether user requested checksum verification
+  // (in the configuration file)
+  bool checksum_verification_enabled_;
+
+  // indicates whether we should expect a footer with a checksum in the
+  // upcoming event
+  bool footer_expected_;
+
   replication_mode_type replication_mode_;
   std::string binlog_name_;
   std::uint32_t position_;

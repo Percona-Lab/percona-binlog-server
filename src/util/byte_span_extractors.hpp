@@ -32,7 +32,7 @@
 namespace util {
 
 template <typename T>
-  requires std::unsigned_integral<T> || std::same_as<T, std::byte>
+  requires std::unsigned_integral<T>
 void extract_fixed_int_from_byte_span(
     const_byte_span &remainder, T &value,
     std::size_t bytes_to_extract = sizeof(T)) noexcept {
@@ -56,7 +56,7 @@ void extract_fixed_int_from_byte_span(
 }
 
 template <typename T>
-  requires std::unsigned_integral<T> || std::same_as<T, std::byte>
+  requires std::unsigned_integral<T>
 [[nodiscard]] bool extract_fixed_int_from_byte_span_checked(
     const_byte_span &remainder, T &value,
     std::size_t bytes_to_extract = sizeof(T)) noexcept {
@@ -68,7 +68,7 @@ template <typename T>
 }
 
 template <typename T>
-  requires std::signed_integral<T> || std::same_as<T, std::byte>
+  requires std::signed_integral<T>
 void extract_fixed_int_from_byte_span(
     const_byte_span &remainder, T &value,
     [[maybe_unused]] std::size_t bytes_to_extract = sizeof(T)) noexcept {
@@ -84,7 +84,7 @@ void extract_fixed_int_from_byte_span(
 }
 
 template <typename T>
-  requires std::signed_integral<T> || std::same_as<T, std::byte>
+  requires std::signed_integral<T>
 [[nodiscard]] bool extract_fixed_int_from_byte_span_checked(
     const_byte_span &remainder, T &value,
     std::size_t bytes_to_extract = sizeof(T)) noexcept {

@@ -55,6 +55,8 @@ inline constexpr std::size_t max_number_of_events{
              get_number_of_events(latest_known_protocol_server_version))};
 inline constexpr std::size_t default_common_header_length{19U};
 
+inline constexpr std::size_t default_footer_length{4U};
+
 inline constexpr std::size_t unspecified_post_header_length{
     std::numeric_limits<std::size_t>::max()};
 

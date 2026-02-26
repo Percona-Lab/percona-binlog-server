@@ -13,35 +13,18 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef BINSRV_EVENTS_FOOTER_HPP
-#define BINSRV_EVENTS_FOOTER_HPP
+#ifndef BINSRV_EVENTS_FOOTER_VIEW_FWD_HPP
+#define BINSRV_EVENTS_FOOTER_VIEW_FWD_HPP
 
-#include "binsrv/events/footer_fwd.hpp" // IWYU pragma: export
-
-#include <cstdint>
-
-#include "binsrv/events/footer_view.hpp"
-
-#include "util/byte_span_fwd.hpp"
+#include <iosfwd>
 
 namespace binsrv::events {
 
-class [[nodiscard]] footer {
-public:
-  static constexpr std::size_t size_in_bytes{footer_view_base::size_in_bytes};
+class footer_updatable_view;
+class footer_view;
 
-  explicit footer(const footer_view &view);
-  explicit footer(util::const_byte_span portion);
-
-  [[nodiscard]] std::uint32_t get_crc_raw() const noexcept { return crc_; }
-  [[nodiscard]] std::string get_readable_crc() const {
-    return footer_view_base::get_readable_crc_from_raw(get_crc_raw());
-  }
-
-private:
-  std::uint32_t crc_{};
-};
+std::ostream &operator<<(std::ostream &output, const footer_view &obj);
 
 } // namespace binsrv::events
 
-#endif // BINSRV_EVENTS_FOOTER_HPP
+#endif // BINSRV_EVENTS_FOOTER_VIEW_FWD_HPP

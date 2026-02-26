@@ -36,13 +36,14 @@
 namespace binsrv::events {
 
 reader_context::reader_context(std::uint32_t encoded_server_version,
-                               bool verify_checksum,
+                               bool checksum_verification_enabled,
                                replication_mode_type replication_mode,
                                std::string_view binlog_name,
                                std::uint32_t position)
     : encoded_server_version_{encoded_server_version},
-      verify_checksum_{verify_checksum}, replication_mode_{replication_mode},
-      binlog_name_{binlog_name},
+      checksum_verification_enabled_{checksum_verification_enabled},
+      footer_expected_{checksum_verification_enabled},
+      replication_mode_{replication_mode}, binlog_name_{binlog_name},
       position_{position == 0U ? static_cast<std::uint32_t>(magic_binlog_offset)
                                : position},
       post_header_lengths_{
@@ -227,7 +228,7 @@ reader_context::process_event_in_format_description_expected_state(
   post_header_lengths_ = post_header.get_post_header_lengths_raw();
 
   const auto &body{current_event.get_body<code_type::format_description>()};
-  verify_checksum_ = body.has_checksum_algorithm();
+  footer_expected_ = body.has_checksum_algorithm();
 
   // here we differentiate format description events that were actually
   // written to the binlog files (as the very first events) and those

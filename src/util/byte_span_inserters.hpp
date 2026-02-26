@@ -32,7 +32,7 @@
 namespace util {
 
 template <typename T>
-  requires std::unsigned_integral<T> || std::same_as<T, std::byte>
+  requires std::unsigned_integral<T>
 void insert_fixed_int_to_byte_span(
     byte_span &remainder, T value,
     std::size_t bytes_to_insert = sizeof(T)) noexcept {
@@ -55,7 +55,7 @@ void insert_fixed_int_to_byte_span(
 }
 
 template <typename T>
-  requires std::unsigned_integral<T> || std::same_as<T, std::byte>
+  requires std::unsigned_integral<T>
 [[nodiscard]] bool insert_fixed_int_to_byte_span_checked(
     byte_span &remainder, T value,
     std::size_t bytes_to_insert = sizeof(T)) noexcept {
@@ -67,7 +67,7 @@ template <typename T>
 }
 
 template <typename T>
-  requires std::signed_integral<T> || std::same_as<T, std::byte>
+  requires std::signed_integral<T>
 void insert_fixed_int_to_byte_span(
     byte_span &remainder, T value,
     [[maybe_unused]] std::size_t bytes_to_insert = sizeof(T)) noexcept {
@@ -82,7 +82,7 @@ void insert_fixed_int_to_byte_span(
 }
 
 template <typename T>
-  requires std::signed_integral<T> || std::same_as<T, std::byte>
+  requires std::signed_integral<T>
 [[nodiscard]] bool insert_fixed_int_to_byte_span_checked(
     byte_span &remainder, T value,
     std::size_t bytes_to_insert = sizeof(T)) noexcept {
