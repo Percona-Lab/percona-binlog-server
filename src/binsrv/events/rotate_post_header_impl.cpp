@@ -25,6 +25,7 @@
 
 #include "util/byte_span.hpp"
 #include "util/byte_span_extractors.hpp"
+#include "util/byte_span_inserters.hpp"
 #include "util/exception_location_helpers.hpp"
 
 namespace binsrv::events {
@@ -67,11 +68,20 @@ generic_post_header_impl<code_type::rotate>::generic_post_header_impl(
 
   if (std::size(portion) != size_in_bytes) {
     util::exception_location().raise<std::invalid_argument>(
-        "invalid rotate event post-header length");
+        "invalid rotate event post header length");
   }
 
   auto remainder = portion;
   util::extract_fixed_int_from_byte_span(remainder, position_);
+}
+
+void generic_post_header_impl<code_type::rotate>::encode_to(
+    util::byte_span &destination) const {
+  if (std::size(destination) < calculate_encoded_size()) {
+    util::exception_location().raise<std::invalid_argument>(
+        "cannot encode rotate event post header");
+  }
+  util::insert_fixed_int_to_byte_span(destination, position_);
 }
 
 std::ostream &

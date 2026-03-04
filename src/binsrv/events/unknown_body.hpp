@@ -28,6 +28,9 @@ public:
   // so it needs to be default constructible
   unknown_body() noexcept = default;
   explicit unknown_body(util::const_byte_span /*unused*/) noexcept {}
+
+  friend bool operator==(const unknown_body & /* first */,
+                         const unknown_body & /* second */) = default;
 };
 
 } // namespace binsrv::events

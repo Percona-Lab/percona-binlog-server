@@ -35,6 +35,7 @@ public:
       boost::container::small_vector<std::byte,
                                      expected_max_binlog_name_length>;
 
+  explicit generic_body_impl(std::string_view binlog_name);
   explicit generic_body_impl(util::const_byte_span portion);
 
   [[nodiscard]] const binlog_storage &get_binlog_raw() noexcept {
@@ -44,6 +45,14 @@ public:
   [[nodiscard]] std::string_view get_binlog() const noexcept {
     return util::as_string_view(binlog_);
   }
+
+  [[nodiscard]] std::size_t calculate_encoded_size() const noexcept {
+    return std::size(binlog_);
+  }
+  void encode_to(util::byte_span &destination) const;
+
+  friend bool operator==(const generic_body_impl &first,
+                         const generic_body_impl &second) = default;
 
 private:
   binlog_storage binlog_{};

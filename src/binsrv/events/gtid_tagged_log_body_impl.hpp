@@ -129,6 +129,9 @@ public:
     return commit_group_ticket_;
   }
 
+  friend bool operator==(const generic_body_impl & /* first */,
+                         const generic_body_impl & /* second */) = default;
+
 private:
   static constexpr std::uint64_t unset_commit_timestamp{
       std::numeric_limits<std::uint64_t>::max()};

@@ -35,6 +35,7 @@ class [[nodiscard]] generic_body_impl<code_type::previous_gtids_log> {
 public:
   // https://github.com/mysql/mysql-server/blob/mysql-8.4.6/libs/mysql/binlog/event/control_events.h#L1354
 
+  explicit generic_body_impl(const gtids::gtid_set &gtids);
   explicit generic_body_impl(util::const_byte_span portion);
 
   [[nodiscard]] const gtids::gtid_set_storage &get_gtids_raw() const noexcept {
@@ -42,6 +43,14 @@ public:
   }
   [[nodiscard]] gtids::gtid_set get_gtids() const;
   [[nodiscard]] std::string get_readable_gtids() const;
+
+  [[nodiscard]] std::size_t calculate_encoded_size() const noexcept {
+    return std::size(gtids_);
+  }
+  void encode_to(util::byte_span &destination) const;
+
+  friend bool operator==(const generic_body_impl &first,
+                         const generic_body_impl &second) = default;
 
 private:
   gtids::gtid_set_storage gtids_;

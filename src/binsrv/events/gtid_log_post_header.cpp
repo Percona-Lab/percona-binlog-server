@@ -96,7 +96,7 @@ gtid_log_post_header::gtid_log_post_header(util::const_byte_span portion) {
 
   if (std::size(portion) != size_in_bytes) {
     util::exception_location().raise<std::invalid_argument>(
-        "invalid gtid_log event post-header length");
+        "invalid gtid_log event post header length");
   }
 
   // https://github.com/mysql/mysql-server/blob/mysql-8.0.43/libbinlogevents/src/control_events.cpp#L428
@@ -111,7 +111,7 @@ gtid_log_post_header::gtid_log_post_header(util::const_byte_span portion) {
   util::extract_fixed_int_from_byte_span(remainder, logical_ts_code_);
   if (logical_ts_code_ != expected_logical_ts_code) {
     util::exception_location().raise<std::invalid_argument>(
-        "unsupported logical timestamp code in gtid_log post-header");
+        "unsupported logical timestamp code in gtid_log post header");
   }
   util::extract_fixed_int_from_byte_span(remainder, last_committed_);
   util::extract_fixed_int_from_byte_span(remainder, sequence_number_);

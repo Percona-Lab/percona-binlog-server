@@ -30,6 +30,8 @@ class [[nodiscard]] footer {
 public:
   static constexpr std::size_t size_in_bytes{footer_view_base::size_in_bytes};
 
+  explicit footer(std::uint32_t crc) noexcept : crc_{crc} {}
+
   explicit footer(const footer_view &view);
   explicit footer(util::const_byte_span portion);
 
@@ -37,6 +39,13 @@ public:
   [[nodiscard]] std::string get_readable_crc() const {
     return footer_view_base::get_readable_crc_from_raw(get_crc_raw());
   }
+
+  [[nodiscard]] static std::size_t calculate_encoded_size() noexcept {
+    return size_in_bytes;
+  }
+  void encode_to(util::byte_span &destination) const;
+
+  friend bool operator==(const footer &first, const footer &second) = default;
 
 private:
   std::uint32_t crc_{};

@@ -57,7 +57,7 @@ public:
   [[nodiscard]] common_header_updatable_view
   get_common_header_updatable_view() const;
 
-  // post-header section
+  // post header section
   [[nodiscard]] std::size_t get_post_header_size() const noexcept {
     return post_header_size_;
   }
@@ -130,8 +130,8 @@ public:
   // const util::const_byte_span ro_event_data_block{...};
   // const binsrv::events::event_view event_v{context, ro_event_data_block};
   // using event_buffer_type = std::vector<std::byte>;
-  // event_buffer_type event_copy(std::begin(ro_event_data_block),
-  //                              std::end(ro_event_data_block));
+  // event_buffer_type event_copy(std::cbegin(ro_event_data_block),
+  //                              std::cend(ro_event_data_block));
   // const binsrv::events::event_updatable_view event_copy_uv{context,
   //                                                          event_copy};
   // {
@@ -190,7 +190,7 @@ public:
   // common header section
   using event_view_base::get_common_header_size;
 
-  // post-header section
+  // post header section
   using event_view_base::get_post_header_size;
 
   // body section
@@ -230,7 +230,7 @@ public:
   using event_view_base::get_common_header_raw;
   using event_view_base::get_common_header_view;
 
-  // post-header section
+  // post header section
   using event_view_base::get_post_header_size;
   using event_view_base::get_post_header_raw;
 

@@ -39,8 +39,18 @@ public:
   static constexpr std::size_t size_in_bytes{
       common_header_view_base::size_in_bytes};
 
+  common_header(const ctime_timestamp &timestamp, code_type type_code,
+                std::uint32_t server_id, std::uint32_t event_size,
+                std::uint32_t next_event_position,
+                common_header_flag_set flags) noexcept;
   explicit common_header(const common_header_view &view);
   explicit common_header(util::const_byte_span portion);
+
+  [[nodiscard]] static common_header
+  create_with_offset(std::uint32_t offset, std::uint32_t event_size,
+                     const ctime_timestamp &timestamp, code_type type_code,
+                     std::uint32_t server_id,
+                     common_header_flag_set flags) noexcept;
 
   [[nodiscard]] std::uint32_t get_timestamp_raw() const noexcept {
     return timestamp_;
@@ -80,6 +90,14 @@ public:
     return common_header_view_base::get_readable_flags_from_raw(
         get_flags_raw());
   }
+
+  [[nodiscard]] static std::size_t calculate_encoded_size() noexcept {
+    return size_in_bytes;
+  }
+  void encode_to(util::byte_span &destination) const;
+
+  friend bool operator==(const common_header &first,
+                         const common_header &second) = default;
 
 private:
   // the members are deliberately reordered for better packing

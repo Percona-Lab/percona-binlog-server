@@ -62,7 +62,7 @@ uuid::uuid(const uuid_storage &data) {
 void uuid::encode_to(util::byte_span &destination) const {
   const util::const_byte_span data_span{
       // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-      reinterpret_cast<const std::byte *>(std::begin(data_)),
+      reinterpret_cast<const std::byte *>(std::cbegin(data_)),
       boost::uuids::uuid::static_size()};
   if (!util::insert_byte_span_to_byte_span_checked(destination, data_span)) {
     util::exception_location().raise<std::invalid_argument>(

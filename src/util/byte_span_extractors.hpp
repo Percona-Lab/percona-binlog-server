@@ -28,6 +28,7 @@
 
 #include "util/byte_span_fwd.hpp"
 #include "util/byte_span_packed_int_constants.hpp"
+#include "util/conversion_helpers.hpp"
 
 namespace util {
 
@@ -49,8 +50,7 @@ void extract_fixed_int_from_byte_span(
     value = boost::endian::little_to_native(value_in_network_format);
   } else {
     // TODO: in c++23 change use std::to_underlying(*std::data(remainder))
-    using underlying_type = std::underlying_type_t<std::byte>;
-    value = static_cast<T>(static_cast<underlying_type>(*std::data(remainder)));
+    value = static_cast<T>(util::to_underlying(*std::data(remainder)));
   }
   remainder = remainder.subspan(bytes_to_extract);
 }

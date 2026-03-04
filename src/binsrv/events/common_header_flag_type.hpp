@@ -70,7 +70,7 @@ inline std::string_view to_string_view(common_header_flag_type code) noexcept {
 #undef BINSRV_EVENTS_COMMON_HEADER_FLAG_TYPE_XY_MACRO
   // NOLINTNEXTLINE(llvm-qualified-auto,readability-qualified-auto)
   const auto fnd{std::ranges::find(labels, code, &nv_pair::first)};
-  return fnd == std::end(labels) ? ""sv : fnd->second;
+  return fnd == std::cend(labels) ? ""sv : fnd->second;
 }
 #undef BINSRV_EVENTS_COMMON_HEADER_FLAG_TYPE_XY_SEQUENCE
 // NOLINTEND(cppcoreguidelines-macro-usage)

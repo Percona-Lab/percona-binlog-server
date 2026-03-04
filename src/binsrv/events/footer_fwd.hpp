@@ -17,6 +17,7 @@
 #define BINSRV_EVENTS_FOOTER_FWD_HPP
 
 #include <iosfwd>
+
 namespace binsrv::events {
 
 class footer;

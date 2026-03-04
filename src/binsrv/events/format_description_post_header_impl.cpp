@@ -15,7 +15,10 @@
 
 #include "binsrv/events/format_description_post_header_impl.hpp"
 
+#include <algorithm>
+#include <cstddef>
 #include <cstdint>
+#include <ctime>
 #include <ostream>
 #include <span>
 #include <stdexcept>
@@ -24,8 +27,7 @@
 
 #include <boost/align/align_up.hpp>
 
-#include <boost/date_time/posix_time/conversion.hpp>
-#include <boost/date_time/posix_time/time_formatters.hpp>
+#include "binsrv/ctime_timestamp.hpp"
 
 #include "binsrv/events/code_type.hpp"
 #include "binsrv/events/protocol_traits.hpp"
@@ -33,10 +35,35 @@
 #include "util/bounded_string_storage.hpp"
 #include "util/byte_span.hpp"
 #include "util/byte_span_extractors.hpp"
+#include "util/byte_span_inserters.hpp"
 #include "util/exception_location_helpers.hpp"
 #include "util/semantic_version.hpp"
 
 namespace binsrv::events {
+
+generic_post_header_impl<code_type::format_description>::
+    generic_post_header_impl(
+        std::uint16_t binlog_version,
+        const util::semantic_version &server_version,
+        const ctime_timestamp &create_timestamp,
+        std::size_t common_header_length,
+        const post_header_length_container &post_header_lengths)
+    : create_timestamp_{static_cast<std::uint32_t>(
+          create_timestamp.get_value())},
+      server_version_{}, binlog_version_{binlog_version},
+      post_header_lengths_{post_header_lengths},
+      common_header_length_{static_cast<std::uint8_t>(common_header_length)} {
+  const auto readable_server_version{server_version.get_string()};
+  const auto truncated_length{
+      std::min(std::size(readable_server_version),
+               server_version_storage::static_capacity)};
+  const std::string_view readable_server_version_sv(
+      readable_server_version.c_str(), truncated_length);
+  const auto readable_server_version_span{
+      util::as_const_byte_span(readable_server_version_sv)};
+  server_version_.assign(std::cbegin(readable_server_version_span),
+                         std::cend(readable_server_version_span));
+}
 
 generic_post_header_impl<code_type::format_description>::
     generic_post_header_impl(std::uint32_t encoded_server_version,
@@ -90,12 +117,12 @@ generic_post_header_impl<code_type::format_description>::
 
   if (std::size(portion) != get_size_in_bytes(encoded_server_version)) {
     util::exception_location().raise<std::invalid_argument>(
-        "invalid format_description event post-header length");
+        "invalid format_description event post header length");
   }
 
   auto remainder = portion;
   util::extract_fixed_int_from_byte_span(remainder, binlog_version_);
-  server_version_.resize(decltype(server_version_)::capacity());
+  server_version_.resize(decltype(server_version_)::static_capacity);
   util::extract_byte_span_from_byte_span(remainder,
                                          util::byte_span{server_version_});
   util::normalize_for_c_str(server_version_);
@@ -109,32 +136,69 @@ generic_post_header_impl<code_type::format_description>::
                                          post_header_lengths_subrange);
 }
 
-[[nodiscard]] std::string_view
-generic_post_header_impl<code_type::format_description>::get_server_version()
+[[nodiscard]] std::string_view generic_post_header_impl<
+    code_type::format_description>::get_readable_server_version()
     const noexcept {
   return util::to_string_view(server_version_);
+}
+[[nodiscard]] util::semantic_version
+generic_post_header_impl<code_type::format_description>::get_server_version()
+    const {
+  return util::semantic_version{get_readable_server_version()};
 }
 
 [[nodiscard]] std::uint32_t generic_post_header_impl<
     code_type::format_description>::get_encoded_server_version()
     const noexcept {
-  return util::semantic_version{get_server_version()}.get_encoded();
+  return get_server_version().get_encoded();
+}
+
+[[nodiscard]] ctime_timestamp
+generic_post_header_impl<code_type::format_description>::get_create_timestamp()
+    const noexcept {
+  return ctime_timestamp{static_cast<std::time_t>(get_create_timestamp_raw())};
 }
 
 [[nodiscard]] std::string generic_post_header_impl<
     code_type::format_description>::get_readable_create_timestamp() const {
-  return boost::posix_time::to_simple_string(
-      boost::posix_time::from_time_t(get_create_timestamp()));
+  return get_create_timestamp().simple_str();
+}
+
+void generic_post_header_impl<code_type::format_description>::encode_to(
+    util::byte_span &destination) const {
+  if (std::size(destination) < calculate_encoded_size()) {
+    util::exception_location().raise<std::invalid_argument>(
+        "cannot encode format description event post header");
+  }
+  util::insert_fixed_int_to_byte_span(destination, get_binlog_version_raw());
+
+  const util::const_byte_span server_version_span{get_server_version_raw()};
+  util::insert_byte_span_to_byte_span(destination, server_version_span);
+  const server_version_storage zero_filled_buffer(
+      server_version_storage::static_capacity - std::size(server_version_span));
+  util::insert_byte_span_to_byte_span(
+      destination, util::const_byte_span{zero_filled_buffer});
+
+  util::insert_fixed_int_to_byte_span(destination, get_create_timestamp_raw());
+  util::insert_fixed_int_to_byte_span(destination,
+                                      get_common_header_length_raw());
+  const auto expected_subrange_length{
+      get_number_of_events(get_encoded_server_version()) - 1U};
+  const std::span<const encoded_post_header_length_type>
+      post_header_lengths_subrange{std::data(get_post_header_lengths_raw()),
+                                   expected_subrange_length};
+  util::insert_byte_span_to_byte_span(destination,
+                                      post_header_lengths_subrange);
 }
 
 std::ostream &
 operator<<(std::ostream &output,
            const generic_post_header_impl<code_type::format_description> &obj) {
   output << "binlog version: " << obj.get_binlog_version_raw()
-         << ", server version: " << obj.get_server_version()
+         << ", server version: " << obj.get_readable_server_version()
          << ", create timestamp: " << obj.get_readable_create_timestamp()
          << ", common header length: " << obj.get_common_header_length()
-         << "\npost-header lengths: {\n";
+         << "\npost header lengths: {\n";
   print_post_header_lengths(output, obj.get_encoded_server_version(),
                             obj.get_post_header_lengths_raw());
   output << "\n}";

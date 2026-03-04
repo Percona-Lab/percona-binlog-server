@@ -40,7 +40,10 @@ public:
   void reset_to_epoch() noexcept { value_ = std::time_t{}; }
 
   [[nodiscard]] std::time_t get_value() const noexcept { return value_; }
-  [[nodiscard]] std::string str() const;
+  [[nodiscard]] std::string iso_extended_str() const;
+  [[nodiscard]] std::string simple_str() const;
+
+  [[nodiscard]] static ctime_timestamp now() noexcept;
 
   friend auto operator<=>(const ctime_timestamp &first,
                           const ctime_timestamp &second) = default;

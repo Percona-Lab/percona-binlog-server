@@ -70,6 +70,9 @@ public:
     return sequence_number_;
   }
 
+  friend bool operator==(const gtid_log_post_header & /* first */,
+                         const gtid_log_post_header & /* second */) = default;
+
 private:
   // the members are deliberately reordered for better packing
   std::uint8_t flags_{};           // 0

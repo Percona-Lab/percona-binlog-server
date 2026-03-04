@@ -15,6 +15,7 @@
 
 #include "binsrv/ctime_timestamp.hpp"
 
+#include <ctime>
 #include <exception>
 #include <ios>
 #include <istream>
@@ -45,14 +46,23 @@ ctime_timestamp::try_parse(std::string_view value_sv,
   return result;
 }
 
-[[nodiscard]] std::string ctime_timestamp::str() const {
+[[nodiscard]] std::string ctime_timestamp::iso_extended_str() const {
   return boost::posix_time::to_iso_extended_string(
       boost::posix_time::from_time_t(get_value()));
 }
 
+[[nodiscard]] std::string ctime_timestamp::simple_str() const {
+  return boost::posix_time::to_simple_string(
+      boost::posix_time::from_time_t(get_value()));
+}
+
+[[nodiscard]] ctime_timestamp ctime_timestamp::now() noexcept {
+  return ctime_timestamp{std::time(nullptr)};
+}
+
 std::ostream &operator<<(std::ostream &output,
                          const ctime_timestamp &timestamp) {
-  return output << timestamp.str();
+  return output << timestamp.iso_extended_str();
 }
 
 std::istream &operator>>(std::istream &input, ctime_timestamp &timestamp) {

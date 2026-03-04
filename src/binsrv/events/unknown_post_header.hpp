@@ -34,6 +34,9 @@ public:
   // variant, so it needs to be default constructible
   unknown_post_header() noexcept = default;
   explicit unknown_post_header(util::const_byte_span /*unused*/) noexcept {}
+
+  friend bool operator==(const unknown_post_header & /* first */,
+                         const unknown_post_header & /* second */) = default;
 };
 
 } // namespace binsrv::events

@@ -29,11 +29,21 @@ template <> class [[nodiscard]] generic_post_header_impl<code_type::rotate> {
 public:
   static constexpr std::size_t size_in_bytes{8U};
 
+  explicit generic_post_header_impl(std::uint64_t position) noexcept
+      : position_{position} {}
   explicit generic_post_header_impl(util::const_byte_span portion);
 
   [[nodiscard]] std::uint64_t get_position_raw() const noexcept {
     return position_;
   }
+
+  [[nodiscard]] static std::size_t calculate_encoded_size() noexcept {
+    return size_in_bytes;
+  }
+  void encode_to(util::byte_span &destination) const;
+
+  friend bool operator==(const generic_post_header_impl &first,
+                         const generic_post_header_impl &second) = default;
 
 private:
   std::uint64_t position_{};

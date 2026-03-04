@@ -34,6 +34,8 @@ class [[nodiscard]] generic_body_impl<code_type::format_description> {
 public:
   static constexpr std::size_t size_in_bytes{1U};
 
+  explicit generic_body_impl(
+      checksum_algorithm_type checksum_algorithm) noexcept;
   explicit generic_body_impl(util::const_byte_span portion);
 
   [[nodiscard]] std::uint8_t get_checksum_algorithm_raw() const noexcept {
@@ -48,6 +50,14 @@ public:
   get_readable_checksum_algorithm() const noexcept;
 
   [[nodiscard]] bool has_checksum_algorithm() const noexcept;
+
+  [[nodiscard]] static std::size_t calculate_encoded_size() noexcept {
+    return size_in_bytes;
+  }
+  void encode_to(util::byte_span &destination) const;
+
+  friend bool operator==(const generic_body_impl &first,
+                         const generic_body_impl &second) = default;
 
 private:
   std::uint8_t checksum_algorithm_{};

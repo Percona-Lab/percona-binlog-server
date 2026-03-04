@@ -55,6 +55,65 @@ reader_context::get_current_post_header_length(code_type code) const noexcept {
                                          post_header_lengths_, code);
 }
 
+[[nodiscard]] const post_header_length_container &
+reader_context::get_hardcoded_post_header_lengths(
+    std::uint32_t encoded_server_version) noexcept {
+  // here we use a trick with a templated lambda to initialize constexpr
+  // arrays which would have expected post header lengths for all
+  // event codes based on generic_post_header<xxx>::get_size_in_bytes()
+
+  // we ignore the very first element in the code_type enum
+  // (code_type::unknown) since the post header length for this value is
+  // simply not included into FDE post header
+
+  using size_in_bytes_helper =
+      decltype([]<std::size_t Index>(
+                   std::uint32_t version) constexpr -> std::size_t {
+        constexpr auto code{util::index_to_enum<code_type>(Index + 1U)};
+        if constexpr (requires(std::uint32_t test_version) {
+                        {
+                          generic_post_header<code>::get_size_in_bytes(
+                              test_version)
+                        } -> std::same_as<std::size_t>;
+                      }) {
+          return generic_post_header<code>::get_size_in_bytes(version);
+        } else {
+          return generic_post_header<code>::size_in_bytes;
+        }
+      });
+
+  constexpr auto hardcoded_post_header_lengths_generator{
+      []<std::size_t... IndexPack>(std::uint32_t version,
+                                   std::index_sequence<IndexPack...>) constexpr
+          -> post_header_length_container {
+        return {
+          static_cast<encoded_post_header_length_type>(
+              size_in_bytes_helper{}.template operator()<IndexPack>(version))...
+        };
+      }};
+
+  // the remainder of the 'earliest_supported_post_header_lengths' container
+  // will be default-initialized
+  static constexpr post_header_length_container
+      earliest_supported_post_header_lengths{
+          hardcoded_post_header_lengths_generator(
+              earliest_supported_protocol_server_version,
+              std::make_index_sequence<
+                  get_number_of_events(
+                      earliest_supported_protocol_server_version) -
+                  1U>{})};
+  static constexpr post_header_length_container
+      latest_known_post_header_lengths{hardcoded_post_header_lengths_generator(
+          latest_known_protocol_server_version,
+          std::make_index_sequence<get_number_of_events(
+                                       latest_known_protocol_server_version) -
+                                   1U>{})};
+
+  return encoded_server_version < latest_known_protocol_server_version
+             ? earliest_supported_post_header_lengths
+             : latest_known_post_header_lengths;
+}
+
 void reader_context::process_event(const event &current_event) {
   bool processed{false};
   while (!processed) {
@@ -195,7 +254,7 @@ reader_context::process_event_in_format_description_expected_state(
       common_header_flag_type::artificial)};
   if (is_artificial) {
     util::exception_location().raise<std::logic_error>(
-        "format description event is not expected to be artificual");
+        "format description event is not expected to be artificial");
   }
 
   const auto &post_header{
@@ -581,65 +640,6 @@ void reader_context::finish_transaction() {
   transaction_gtid_ = gtids::gtid{};
   expected_transaction_length_ = 0U;
   current_transaction_length_ = 0U;
-}
-
-[[nodiscard]] const post_header_length_container &
-reader_context::get_hardcoded_post_header_lengths(
-    std::uint32_t encoded_server_version) noexcept {
-  // here we use a trick with a templated lambda to initialize constexpr
-  // arrays which would have expected post header lengths for all
-  // event codes based on generic_post_header<xxx>::get_size_in_bytes()
-
-  // we ignore the very first element in the code_type enum
-  // (code_type::unknown) since the post header length for this value is
-  // simply not included into FDE post header
-
-  using size_in_bytes_helper =
-      decltype([]<std::size_t Index>(
-                   std::uint32_t version) constexpr -> std::size_t {
-        constexpr auto code{util::index_to_enum<code_type>(Index + 1U)};
-        if constexpr (requires(std::uint32_t test_version) {
-                        {
-                          generic_post_header<code>::get_size_in_bytes(
-                              test_version)
-                        } -> std::same_as<std::size_t>;
-                      }) {
-          return generic_post_header<code>::get_size_in_bytes(version);
-        } else {
-          return generic_post_header<code>::size_in_bytes;
-        }
-      });
-
-  constexpr auto hardcoded_post_header_lengths_generator{
-      []<std::size_t... IndexPack>(std::uint32_t version,
-                                   std::index_sequence<IndexPack...>) constexpr
-          -> post_header_length_container {
-        return {
-          static_cast<encoded_post_header_length_type>(
-              size_in_bytes_helper{}.template operator()<IndexPack>(version))...
-        };
-      }};
-
-  // the remainder of the 'earliest_supported_post_header_lengths' container
-  // will be default-initialized
-  static constexpr post_header_length_container
-      earliest_supported_post_header_lengths{
-          hardcoded_post_header_lengths_generator(
-              earliest_supported_protocol_server_version,
-              std::make_index_sequence<
-                  get_number_of_events(
-                      earliest_supported_protocol_server_version) -
-                  1U>{})};
-  static constexpr post_header_length_container
-      latest_known_post_header_lengths{hardcoded_post_header_lengths_generator(
-          latest_known_protocol_server_version,
-          std::make_index_sequence<get_number_of_events(
-                                       latest_known_protocol_server_version) -
-                                   1U>{})};
-
-  return encoded_server_version < latest_known_protocol_server_version
-             ? earliest_supported_post_header_lengths
-             : latest_known_post_header_lengths;
 }
 
 } // namespace binsrv::events

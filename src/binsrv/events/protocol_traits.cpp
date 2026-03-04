@@ -102,9 +102,9 @@ void validate_post_header_lengths(
                                unspecified_post_header_length) ||
                real == expected;
       })};
-  if (length_mismatch_result.in2 != std::end(hardcoded)) {
+  if (length_mismatch_result.in2 != std::cend(hardcoded)) {
     const auto offset{static_cast<std::size_t>(
-        std::distance(std::begin(hardcoded), length_mismatch_result.in2))};
+        std::distance(std::cbegin(hardcoded), length_mismatch_result.in2))};
     const std::string label{
         to_string_view(util::index_to_enum<code_type>(offset + 1U))};
     util::exception_location().raise<std::logic_error>(

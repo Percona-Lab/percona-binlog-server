@@ -69,6 +69,10 @@ public:
     return info_only_event_;
   }
 
+  [[nodiscard]] static const post_header_length_container &
+  get_hardcoded_post_header_lengths(
+      std::uint32_t encoded_server_version) noexcept;
+
 private:
   // this class implements the logic of the following state machine
   // (
@@ -130,10 +134,6 @@ private:
   void start_transaction(const event &current_event);
   void update_transaction(const common_header &common_header);
   void finish_transaction();
-
-  [[nodiscard]] static const post_header_length_container &
-  get_hardcoded_post_header_lengths(
-      std::uint32_t encoded_server_version) noexcept;
 };
 
 } // namespace binsrv::events
