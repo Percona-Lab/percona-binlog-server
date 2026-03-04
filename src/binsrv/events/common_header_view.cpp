@@ -44,7 +44,7 @@ namespace binsrv::events {
 [[nodiscard]] std::string
 common_header_view_base::get_readable_timestamp_from_raw(
     std::uint32_t timestamp) {
-  return get_timestamp_from_raw(timestamp).str();
+  return get_timestamp_from_raw(timestamp).iso_extended_str();
 }
 
 [[nodiscard]] code_type common_header_view_base::get_type_code_from_raw(

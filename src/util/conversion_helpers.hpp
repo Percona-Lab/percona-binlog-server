@@ -30,20 +30,50 @@ template <std::integral To, std::integral From>
   }
 }
 
+// TODO: remove this function when switch to c++23 and use std::to_underlying
+//       instead
 template <typename EnumType>
-  requires(std::is_enum_v<EnumType> &&
-           std::is_unsigned_v<std::underlying_type_t<EnumType>>)
-[[nodiscard]] constexpr std::size_t enum_to_index(EnumType value) noexcept {
-  return static_cast<std::size_t>(
-      static_cast<std::underlying_type_t<EnumType>>(value));
+  requires std::is_enum_v<EnumType>
+[[nodiscard]] constexpr std::underlying_type_t<EnumType>
+to_underlying(EnumType enum_value) noexcept {
+  return static_cast<std::underlying_type_t<EnumType>>(enum_value);
+}
+
+template <typename EnumType>
+  requires std::is_enum_v<EnumType>
+[[nodiscard]] constexpr EnumType
+from_underlying(std::underlying_type_t<EnumType> value) noexcept {
+  return static_cast<EnumType>(value);
 }
 
 template <typename EnumType>
   requires(std::is_enum_v<EnumType> &&
-           std::is_unsigned_v<std::underlying_type_t<EnumType>>)
+           std::is_unsigned_v<std::underlying_type_t<EnumType>> &&
+           sizeof(std::underlying_type_t<EnumType>) <= sizeof(std::size_t))
+[[nodiscard]] constexpr std::size_t
+enum_to_index(EnumType enum_value) noexcept {
+  return static_cast<std::size_t>(to_underlying(enum_value));
+}
+
+template <typename EnumType>
+  requires(std::is_enum_v<EnumType> &&
+           std::is_unsigned_v<std::underlying_type_t<EnumType>> &&
+           sizeof(std::underlying_type_t<EnumType>) <= sizeof(std::size_t))
 [[nodiscard]] constexpr EnumType index_to_enum(std::size_t value) noexcept {
-  return static_cast<EnumType>(
+  return from_underlying<EnumType>(
       static_cast<std::underlying_type_t<EnumType>>(value));
+}
+
+template <std::integral Type>
+[[nodiscard]] constexpr std::make_unsigned_t<Type>
+to_unsigned(Type value) noexcept {
+  return static_cast<std::make_unsigned_t<Type>>(value);
+}
+
+template <std::integral Type>
+[[nodiscard]] constexpr std::make_signed_t<Type>
+to_signed(Type value) noexcept {
+  return static_cast<std::make_signed_t<Type>>(value);
 }
 
 } // namespace util

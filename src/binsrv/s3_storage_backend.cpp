@@ -614,19 +614,19 @@ void s3_storage_backend::init_with_endpoint(
   // As the result, in the provided storage URI configuration parameter we
   // consider its first path segment a buckedt name.
   const std::filesystem::path uri_path{uri.path()};
-  auto uri_path_it{std::begin(uri_path)};
-  assert(uri_path_it != std::end(uri_path));
+  auto uri_path_it{std::cbegin(uri_path)};
+  assert(uri_path_it != std::cend(uri_path));
   assert(*uri_path_it == "/");
   root_path_.assign(*uri_path_it);
   ++uri_path_it;
 
-  if (uri_path_it == std::end(uri_path)) {
+  if (uri_path_it == std::cend(uri_path)) {
     util::exception_location().raise<std::invalid_argument>(
         "endpoint s3 URI path must include at least on segment");
   }
   bucket_ = *uri_path_it;
   ++uri_path_it;
-  for (; uri_path_it != std::end(uri_path); ++uri_path_it) {
+  for (; uri_path_it != std::cend(uri_path); ++uri_path_it) {
     root_path_ /= *uri_path_it;
   }
 

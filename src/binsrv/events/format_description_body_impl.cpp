@@ -28,10 +28,15 @@
 
 #include "util/byte_span.hpp"
 #include "util/byte_span_extractors.hpp"
+#include "util/byte_span_inserters.hpp"
 #include "util/conversion_helpers.hpp"
 #include "util/exception_location_helpers.hpp"
 
 namespace binsrv::events {
+
+generic_body_impl<code_type::format_description>::generic_body_impl(
+    checksum_algorithm_type checksum_algorithm) noexcept
+    : checksum_algorithm_{util::to_underlying(checksum_algorithm)} {}
 
 generic_body_impl<code_type::format_description>::generic_body_impl(
     util::const_byte_span portion) {
@@ -75,6 +80,15 @@ generic_body_impl<code_type::format_description>::has_checksum_algorithm()
   assert(checksum_algorithm == checksum_algorithm_type::off ||
          checksum_algorithm == checksum_algorithm_type::crc32);
   return checksum_algorithm != checksum_algorithm_type::off;
+}
+
+void generic_body_impl<code_type::format_description>::encode_to(
+    util::byte_span &destination) const {
+  if (std::size(destination) < calculate_encoded_size()) {
+    util::exception_location().raise<std::invalid_argument>(
+        "cannot encode format description body");
+  }
+  util::insert_fixed_int_to_byte_span(destination, checksum_algorithm_);
 }
 
 std::ostream &

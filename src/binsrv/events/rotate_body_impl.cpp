@@ -15,14 +15,23 @@
 
 #include "binsrv/events/rotate_body_impl.hpp"
 
+#include <algorithm>
 #include <iterator>
 #include <ostream>
+#include <stdexcept>
+#include <string_view>
 
 #include "binsrv/events/code_type.hpp"
 
 #include "util/byte_span.hpp"
+#include "util/exception_location_helpers.hpp"
 
 namespace binsrv::events {
+
+generic_body_impl<code_type::rotate>::generic_body_impl(
+    std::string_view binlog_name)
+    : binlog_(std::cbegin(util::as_const_byte_span(binlog_name)),
+              std::cend(util::as_const_byte_span(binlog_name))) {}
 
 generic_body_impl<code_type::rotate>::generic_body_impl(
     util::const_byte_span portion) {
@@ -31,7 +40,17 @@ generic_body_impl<code_type::rotate>::generic_body_impl(
   // no need to check if member reordering is OK as this class has
   // only one member for holding data of varying length
 
-  binlog_.assign(std::begin(portion), std::end(portion));
+  binlog_.assign(std::cbegin(portion), std::cend(portion));
+}
+
+void generic_body_impl<code_type::rotate>::encode_to(
+    util::byte_span &destination) const {
+  if (std::size(destination) < calculate_encoded_size()) {
+    util::exception_location().raise<std::invalid_argument>(
+        "cannot encode rotate event body");
+  }
+  std::ranges::copy(binlog_, std::begin(destination));
+  destination = destination.subspan(calculate_encoded_size());
 }
 
 std::ostream &operator<<(std::ostream &output,

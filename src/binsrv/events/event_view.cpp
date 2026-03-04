@@ -77,7 +77,7 @@ event_view_base::event_view_base(const reader_context &context,
       get_common_header_size() + get_post_header_size() + get_footer_size();
   if (get_total_size() < group_size) {
     util::exception_location().raise<std::logic_error>(
-        "not enough data for event post-header + body + footer");
+        "not enough data for event post header + body + footer");
   }
 
   // optional checksum verification

@@ -18,11 +18,17 @@
 
 #include <iosfwd>
 
+#include <boost/container/container_fwd.hpp>
+
 namespace binsrv::events {
 
 class event;
 
 std::ostream &operator<<(std::ostream &output, const event &obj);
+
+inline constexpr std::size_t expected_max_event_length{256U};
+using event_storage =
+    boost::container::small_vector<std::byte, expected_max_event_length>;
 
 } // namespace binsrv::events
 

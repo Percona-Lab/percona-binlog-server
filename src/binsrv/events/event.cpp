@@ -17,9 +17,11 @@
 
 #include <array>
 #include <cassert>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <ostream>
+#include <stdexcept>
 #include <utility>
 #include <variant>
 
@@ -32,6 +34,8 @@
 
 #include "util/byte_span_fwd.hpp"
 #include "util/conversion_helpers.hpp"
+#include "util/crc_helpers.hpp"
+#include "util/exception_location_helpers.hpp"
 
 namespace binsrv::events {
 
@@ -52,6 +56,49 @@ event::event(reader_context &context, const event_view &view)
 
 event::event(reader_context &context, util::const_byte_span portion)
     : event{context, event_view{context, portion}} {}
+
+template <typename T>
+concept encodable = requires(const T &obj, util::byte_span &destination) {
+  { obj.calculate_encoded_size() } -> std::same_as<std::size_t>;
+  { obj.encode_to(destination) };
+};
+
+[[nodiscard]] std::size_t event::calculate_encoded_size() const {
+  const auto size_calculation_visitor =
+      [](const auto &component) -> std::size_t {
+    if constexpr (encodable<decltype(component)>) {
+      return component.calculate_encoded_size();
+    } else {
+      util::exception_location().raise<std::logic_error>(
+          "calculate_encoded_size() not implemented for this event post header "
+          "/ body");
+    }
+  };
+  return common_header::calculate_encoded_size() +
+         std::visit(size_calculation_visitor, post_header_) +
+         std::visit(size_calculation_visitor, body_) +
+         (footer_ ? footer::calculate_encoded_size() : 0U);
+}
+void event::encode_to(util::byte_span &destination) const {
+  if (std::size(destination) < calculate_encoded_size()) {
+    util::exception_location().raise<std::invalid_argument>(
+        "cannot encode event");
+  }
+  const auto encoding_visitor = [&destination](const auto &component) {
+    if constexpr (encodable<decltype(component)>) {
+      component.encode_to(destination);
+    } else {
+      util::exception_location().raise<std::logic_error>(
+          "encode_to() not implemented for this event post header / body");
+    }
+  };
+  common_header_.encode_to(destination);
+  std::visit(encoding_visitor, post_header_);
+  std::visit(encoding_visitor, body_);
+  if (footer_) {
+    footer_->encode_to(destination);
+  }
+}
 
 void event::emplace_post_header(std::uint32_t encoded_server_version,
                                 code_type code, util::const_byte_span portion) {
@@ -125,6 +172,25 @@ void event::emplace_body(std::uint32_t encoded_server_version, code_type code,
   (this->*emplace_functions[function_index])(encoded_server_version, portion);
 }
 
+void event::encode_and_checksum(event_storage &buffer, bool include_checksum) {
+  const auto size_with_footer{common_header_.get_event_size_raw()};
+  buffer.resize(size_with_footer);
+  util::byte_span output_span(std::data(buffer), size_with_footer);
+  // encoding event to the buffer
+  encode_to(output_span);
+  if (include_checksum) {
+    // calculating checksum
+    const auto size_wo_footer{size_with_footer -
+                              footer::calculate_encoded_size()};
+    const util::const_byte_span crc_span{std::data(buffer), size_wo_footer};
+    const auto crc{util::calculate_crc32(crc_span)};
+    footer_.emplace(crc);
+    // updating crc in the footer zone of the buffer
+    const footer_updatable_view footer_uv{output_span};
+    footer_uv.set_crc_raw(crc);
+  }
+}
+
 std::ostream &operator<<(std::ostream &output, const event &obj) {
   output << "| common header | " << obj.get_common_header() << " |";
 
@@ -136,9 +202,9 @@ std::ostream &operator<<(std::ostream &output, const event &obj) {
   output << " |\n| body          | ";
   std::visit(generic_printer, obj.get_generic_body());
   output << " |";
-  const auto &footer{obj.get_footer()};
-  if (footer) {
-    output << "\n| footer        | " << *footer << " |";
+  const auto &opt_footer{obj.get_footer()};
+  if (opt_footer.has_value()) {
+    output << "\n| footer        | " << *opt_footer << " |";
   }
   return output;
 }

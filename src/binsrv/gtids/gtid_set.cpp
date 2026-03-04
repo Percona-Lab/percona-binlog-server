@@ -30,7 +30,6 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
-#include <type_traits>
 #include <utility>
 
 #include <boost/icl/concept/interval.hpp>
@@ -46,6 +45,7 @@
 #include "util/byte_span_extractors.hpp"
 #include "util/byte_span_fwd.hpp"
 #include "util/byte_span_inserters.hpp"
+#include "util/conversion_helpers.hpp"
 #include "util/exception_location_helpers.hpp"
 
 namespace binsrv::gtids {
@@ -111,10 +111,8 @@ private:
   template <typename T>
   [[nodiscard]] static T char_to_value(char character, char base,
                                        T shift = T{}) noexcept {
-    using default_unsigned = std::make_unsigned_t<decltype(character - base)>;
-    return static_cast<T>(
-        static_cast<T>(static_cast<default_unsigned>(character - base)) +
-        shift);
+    return static_cast<T>(static_cast<T>(util::to_unsigned(character - base)) +
+                          shift);
   }
 
   // <hexadecimal> ::= [a-fA-F0-9]
@@ -145,8 +143,7 @@ private:
     std::uint8_t result{parse_hexadecimal(remainder)};
     result <<= 4U;
     result |= parse_hexadecimal(remainder);
-    using underlying_byte_type = std::underlying_type_t<std::byte>;
-    return static_cast<std::byte>(static_cast<underlying_byte_type>(result));
+    return util::from_underlying<std::byte>(result);
   }
 
   // <uuid> ::= <hexadecimal_pair>{4} '-' <hexadecimal_pair>{2} '-'
@@ -182,19 +179,17 @@ private:
 
   // <tag> ::= [a-zA-Z_][a-zA-Z0-9_]{0,31}
   [[nodiscard]] static tag parse_tag(std::string_view &remainder) {
-    using underlying_byte_type = std::underlying_type_t<std::byte>;
-
     tag_storage buffer{};
     char tag_character{util::parse_character_predicate(
         remainder, tag_first_character_predicate)};
-    buffer.push_back(static_cast<std::byte>(
-        static_cast<underlying_byte_type>(tag_character)));
+    buffer.push_back(
+        util::from_underlying<std::byte>(util::to_unsigned(tag_character)));
 
     while (std::size(buffer) < tag_max_length &&
            util::parse_character_predicate_ex(
                remainder, tag_other_characters_predicate, tag_character)) {
-      buffer.push_back(static_cast<std::byte>(
-          static_cast<underlying_byte_type>(tag_character)));
+      buffer.push_back(
+          util::from_underlying<std::byte>(util::to_unsigned(tag_character)));
     }
     assert(std::size(buffer) <= tag_max_length);
 

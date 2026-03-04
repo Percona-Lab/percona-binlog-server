@@ -25,10 +25,13 @@
 #include <string>
 #include <string_view>
 
+#include "binsrv/ctime_timestamp_fwd.hpp"
+
 #include "binsrv/events/protocol_traits.hpp"
 
 #include "util/bounded_string_storage.hpp"
 #include "util/byte_span_fwd.hpp"
+#include "util/semantic_version_fwd.hpp"
 
 namespace binsrv::events {
 
@@ -48,6 +51,11 @@ public:
   using server_version_storage =
       util::bounded_string_storage<server_version_length>;
 
+  generic_post_header_impl(
+      std::uint16_t binlog_version,
+      const util::semantic_version &server_version,
+      const ctime_timestamp &create_timestamp, std::size_t common_header_length,
+      const post_header_length_container &post_header_lengths);
   generic_post_header_impl(std::uint32_t encoded_server_version,
                            util::const_byte_span portion);
 
@@ -60,19 +68,18 @@ public:
     return server_version_;
   }
 
-  [[nodiscard]] std::string_view get_server_version() const noexcept;
+  [[nodiscard]] std::string_view get_readable_server_version() const noexcept;
+  [[nodiscard]] util::semantic_version get_server_version() const;
 
   [[nodiscard]] std::uint32_t get_encoded_server_version() const noexcept;
 
   [[nodiscard]] std::uint32_t get_create_timestamp_raw() const noexcept {
     return create_timestamp_;
   }
-  [[nodiscard]] std::time_t get_create_timestamp() const noexcept {
-    return static_cast<std::time_t>(get_create_timestamp_raw());
-  }
+  [[nodiscard]] ctime_timestamp get_create_timestamp() const noexcept;
   [[nodiscard]] std::string get_readable_create_timestamp() const;
 
-  [[nodiscard]] std::uint16_t get_common_header_length_raw() const noexcept {
+  [[nodiscard]] std::uint8_t get_common_header_length_raw() const noexcept {
     return common_header_length_;
   }
   [[nodiscard]] std::size_t get_common_header_length() const noexcept {
@@ -83,6 +90,14 @@ public:
   get_post_header_lengths_raw() const noexcept {
     return post_header_lengths_;
   }
+
+  [[nodiscard]] std::size_t calculate_encoded_size() const noexcept {
+    return get_size_in_bytes(get_encoded_server_version());
+  }
+  void encode_to(util::byte_span &destination) const;
+
+  friend bool operator==(const generic_post_header_impl &first,
+                         const generic_post_header_impl &second) = default;
 
 private:
   // the members are deliberately reordered for better packing

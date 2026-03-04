@@ -28,6 +28,7 @@
 
 #include "util/byte_span_fwd.hpp"
 #include "util/byte_span_packed_int_constants.hpp"
+#include "util/conversion_helpers.hpp"
 
 namespace util {
 
@@ -47,9 +48,7 @@ void insert_fixed_int_to_byte_span(
     std::memcpy(std::data(remainder), &value_in_network_format,
                 bytes_to_insert);
   } else {
-    using underlying_type = std::underlying_type_t<std::byte>;
-    *std::data(remainder) =
-        static_cast<std::byte>(static_cast<underlying_type>(value));
+    *std::data(remainder) = util::from_underlying<std::byte>(value);
   }
   remainder = remainder.subspan(bytes_to_insert);
 }

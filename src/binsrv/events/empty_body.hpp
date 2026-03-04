@@ -26,7 +26,16 @@ class [[nodiscard]] empty_body {
 public:
   static constexpr std::size_t size_in_bytes{0U};
 
+  empty_body() = default;
   explicit empty_body(util::const_byte_span portion);
+
+  [[nodiscard]] static std::size_t calculate_encoded_size() noexcept {
+    return size_in_bytes;
+  }
+  void encode_to(util::byte_span & /* destination */) const noexcept {}
+
+  friend bool operator==(const empty_body & /* first */,
+                         const empty_body & /* second */) = default;
 };
 
 } // namespace binsrv::events

@@ -45,6 +45,7 @@
 #include "util/bounded_string_storage.hpp"
 #include "util/byte_span.hpp"
 #include "util/byte_span_extractors.hpp"
+#include "util/conversion_helpers.hpp"
 #include "util/exception_location_helpers.hpp"
 #include "util/flag_set.hpp"
 #include "util/semantic_version.hpp"
@@ -290,7 +291,7 @@ void generic_body_impl<code_type::gtid_tagged_log>::process_field_data(
         util::exception_location().raise<std::invalid_argument>(
             "gtid_tagged_log event body is too short to extract uuid");
       }
-      uuid_byte = static_cast<std::byte>(extracted_uuid_byte);
+      uuid_byte = util::from_underlying<std::byte>(extracted_uuid_byte);
     }
   } break;
   case field_id_type::gno:

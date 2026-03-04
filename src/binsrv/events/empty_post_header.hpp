@@ -26,7 +26,16 @@ class [[nodiscard]] empty_post_header {
 public:
   static constexpr std::size_t size_in_bytes{0U};
 
+  empty_post_header() = default;
   explicit empty_post_header(util::const_byte_span portion);
+
+  [[nodiscard]] static std::size_t calculate_encoded_size() noexcept {
+    return size_in_bytes;
+  }
+  void encode_to(util::byte_span & /* destination */) const noexcept {}
+
+  friend bool operator==(const empty_post_header & /* first */,
+                         const empty_post_header & /* second */) = default;
 };
 
 } // namespace binsrv::events

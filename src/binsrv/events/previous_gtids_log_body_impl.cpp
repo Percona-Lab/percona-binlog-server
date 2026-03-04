@@ -15,10 +15,12 @@
 
 #include "binsrv/events/previous_gtids_log_body_impl.hpp"
 
+#include <algorithm>
 #include <cstddef>
 #include <iterator>
 #include <ostream>
 #include <span>
+#include <stdexcept>
 #include <string>
 
 #include <boost/lexical_cast.hpp>
@@ -30,8 +32,16 @@
 
 #include "util/byte_span.hpp"
 #include "util/byte_span_extractors.hpp"
+#include "util/exception_location_helpers.hpp"
 
 namespace binsrv::events {
+
+generic_body_impl<code_type::previous_gtids_log>::generic_body_impl(
+    const gtids::gtid_set &gtids)
+    : gtids_(gtids.calculate_encoded_size()) {
+  util::byte_span gtids_span{gtids_};
+  gtids.encode_to(gtids_span);
+}
 
 generic_body_impl<code_type::previous_gtids_log>::generic_body_impl(
     util::const_byte_span portion) {
@@ -40,8 +50,8 @@ generic_body_impl<code_type::previous_gtids_log>::generic_body_impl(
   auto remainder = portion;
   const std::size_t gtids_size{std::size(remainder)};
   gtids_.resize(gtids_size);
-  const std::span<gtids::gtid_set_storage::value_type> gtids_range{gtids_};
-  util::extract_byte_span_from_byte_span(remainder, gtids_range);
+  const util::byte_span gtids_span{gtids_};
+  util::extract_byte_span_from_byte_span(remainder, gtids_span);
 }
 
 [[nodiscard]] gtids::gtid_set
@@ -52,6 +62,16 @@ generic_body_impl<code_type::previous_gtids_log>::get_gtids() const {
 [[nodiscard]] std::string
 generic_body_impl<code_type::previous_gtids_log>::get_readable_gtids() const {
   return boost::lexical_cast<std::string>(get_gtids());
+}
+
+void generic_body_impl<code_type::previous_gtids_log>::encode_to(
+    util::byte_span &destination) const {
+  if (std::size(destination) < calculate_encoded_size()) {
+    util::exception_location().raise<std::invalid_argument>(
+        "cannot encode previous gtids log event body");
+  }
+  std::ranges::copy(gtids_, std::begin(destination));
+  destination = destination.subspan(calculate_encoded_size());
 }
 
 std::ostream &

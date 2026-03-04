@@ -47,6 +47,137 @@ set(gtid_set_source_files
   ${PROJECT_SOURCE_DIR}/src/binsrv/gtids/gtid_set.cpp
 )
 
+set(event_set_source_files
+  ${PROJECT_SOURCE_DIR}/src/binsrv/ctime_timestamp.cpp
+
+
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/anonymous_gtid_log_body_impl_fwd.hpp
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/anonymous_gtid_log_body_impl.hpp
+
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/anonymous_gtid_log_post_header_impl_fwd.hpp
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/anonymous_gtid_log_post_header_impl.hpp
+
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/checksum_algorithm_type_fwd.hpp
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/checksum_algorithm_type.hpp
+
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/code_type_fwd.hpp
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/code_type.hpp
+
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/common_header_fwd.hpp
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/common_header.hpp
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/common_header.cpp
+
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/common_header_view_fwd.hpp
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/common_header_view.hpp
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/common_header_view.cpp
+
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/common_header_flag_type_fwd.hpp
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/common_header_flag_type.hpp
+
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/empty_body_fwd.hpp
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/empty_body.hpp
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/empty_body.cpp
+
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/empty_post_header_fwd.hpp
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/empty_post_header.hpp
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/empty_post_header.cpp
+
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/event_fwd.hpp
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/event.hpp
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/event.cpp
+
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/event_view_fwd.hpp
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/event_view.hpp
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/event_view.cpp
+
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/footer_fwd.hpp
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/footer.hpp
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/footer.cpp
+
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/footer_view_fwd.hpp
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/footer_view.hpp
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/footer_view.cpp
+
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/format_description_body_impl_fwd.hpp
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/format_description_body_impl.hpp
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/format_description_body_impl.cpp
+
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/format_description_post_header_impl_fwd.hpp
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/format_description_post_header_impl.hpp
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/format_description_post_header_impl.cpp
+
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/generic_body_fwd.hpp
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/generic_body.hpp
+
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/generic_post_header_fwd.hpp
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/generic_post_header.hpp
+
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/gtid_log_flag_type_fwd.hpp
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/gtid_log_flag_type.hpp
+
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/gtid_log_body_fwd.hpp
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/gtid_log_body.hpp
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/gtid_log_body.cpp
+
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/gtid_log_body_impl_fwd.hpp
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/gtid_log_body_impl.hpp
+
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/gtid_log_post_header_fwd.hpp
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/gtid_log_post_header.hpp
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/gtid_log_post_header.cpp
+
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/gtid_log_post_header_impl_fwd.hpp
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/gtid_log_post_header_impl.hpp
+
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/gtid_tagged_log_body_impl_fwd.hpp
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/gtid_tagged_log_body_impl.hpp
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/gtid_tagged_log_body_impl.cpp
+
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/gtid_tagged_log_post_header_impl_fwd.hpp
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/gtid_tagged_log_post_header_impl.hpp
+
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/previous_gtids_log_body_impl_fwd.hpp
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/previous_gtids_log_body_impl.hpp
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/previous_gtids_log_body_impl.cpp
+
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/previous_gtids_log_post_header_impl_fwd.hpp
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/previous_gtids_log_post_header_impl.hpp
+
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/protocol_traits_fwd.hpp
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/protocol_traits.hpp
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/protocol_traits.cpp
+
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/reader_context_fwd.hpp
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/reader_context.hpp
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/reader_context.cpp
+
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/rotate_body_impl_fwd.hpp
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/rotate_body_impl.hpp
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/rotate_body_impl.cpp
+
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/rotate_post_header_impl_fwd.hpp
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/rotate_post_header_impl.hpp
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/rotate_post_header_impl.cpp
+
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/stop_body_impl_fwd.hpp
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/stop_body_impl.hpp
+
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/stop_post_header_impl_fwd.hpp
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/stop_post_header_impl.hpp
+
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/unknown_body_fwd.hpp
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/unknown_body.hpp
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/unknown_body.cpp
+
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/unknown_post_header_fwd.hpp
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/unknown_post_header.hpp
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/unknown_post_header.cpp
+
+
+  ${PROJECT_SOURCE_DIR}/src/util/semantic_version.cpp
+  ${PROJECT_SOURCE_DIR}/src/util/crc_helpers.cpp
+)
+
 add_executable(byte_span_encoding_test byte_span_encoding_test.cpp ${byte_span_encoding_source_files})
 target_include_directories(byte_span_encoding_test PRIVATE "${PROJECT_SOURCE_DIR}/src")
 target_link_libraries(byte_span_encoding_test
@@ -108,8 +239,22 @@ set_target_properties(gtid_set_test PROPERTIES
   CXX_EXTENSIONS NO
 )
 
+add_executable(event_test event_test.cpp ${uuid_source_files} ${tag_source_files} ${gtid_source_files} ${gtid_set_source_files} ${event_set_source_files})
+target_include_directories(event_test PRIVATE "${PROJECT_SOURCE_DIR}/src")
+target_link_libraries(event_test
+  PRIVATE
+    binlog_server_compiler_flags
+    Boost::unit_test_framework
+    ZLIB::ZLIB
+)
+set_target_properties(event_test PROPERTIES
+  CXX_STANDARD_REQUIRED YES
+  CXX_EXTENSIONS NO
+)
+
 add_test(NAME byte_span_encoding_test COMMAND byte_span_encoding_test)
 add_test(NAME uuid_test COMMAND uuid_test)
 add_test(NAME tag_test COMMAND tag_test)
 add_test(NAME gtid_test COMMAND gtid_test)
 add_test(NAME gtid_set_test COMMAND gtid_set_test)
+add_test(NAME event_test COMMAND event_test)

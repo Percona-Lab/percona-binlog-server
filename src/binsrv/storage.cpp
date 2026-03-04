@@ -72,8 +72,8 @@ storage::storage(const storage_config &config,
     return;
   }
 
-  const auto metadata_it{storage_objects.find(metadata_name)};
-  if (metadata_it == std::end(storage_objects)) {
+  const auto metadata_it{std::as_const(storage_objects).find(metadata_name)};
+  if (metadata_it == std::cend(storage_objects)) {
     util::exception_location().raise<std::logic_error>(
         "storage is not empty but does not contain metadata");
   }
@@ -83,7 +83,7 @@ storage::storage(const storage_config &config,
   validate_metadata(replication_mode);
 
   const auto binlog_index_it{storage_objects.find(default_binlog_index_name)};
-  if (binlog_index_it == std::end(storage_objects)) {
+  if (binlog_index_it == std::cend(storage_objects)) {
     util::exception_location().raise<std::logic_error>(
         "storage is not empty but does not contain binlog index");
   }
@@ -91,8 +91,8 @@ storage::storage(const storage_config &config,
 
   // extracting all binlog file metadata files into a separate container
   storage_object_name_container storage_metadata_objects;
-  for (auto storage_object_it{std::begin(storage_objects)};
-       storage_object_it != std::end(storage_objects);) {
+  for (auto storage_object_it{std::cbegin(storage_objects)};
+       storage_object_it != std::cend(storage_objects);) {
     const std::filesystem::path object_name{storage_object_it->first};
     if (object_name.has_extension() &&
         object_name.extension() == binlog_metadata_extension) {
@@ -157,8 +157,8 @@ storage::open_binlog(std::string_view binlog_name) {
   // "binlog_records_", or we open an existing one and append to it, in which
   // case we need to make sure that the current position is properly set
   const bool binlog_exists{
-      std::ranges::find(binlog_records_, binlog_name, &binlog_record::name) !=
-      std::end(binlog_records_)};
+      std::ranges::find(std::as_const(binlog_records_), binlog_name,
+                        &binlog_record::name) != std::cend(binlog_records_)};
 
   // in the case when binlog exists, the name must be equal to the last item in
   // "binlog_records_" list and "position_" must be set to a non-zero value
@@ -351,7 +351,7 @@ void storage::flush_event_buffer_internal() {
 
   save_binlog_metadata(get_current_binlog_record());
 
-  const auto begin_it{std::begin(event_buffer_)};
+  const auto begin_it{std::cbegin(event_buffer_)};
   const auto portion_it{std::next(
       begin_it, static_cast<std::ptrdiff_t>(
                     last_transaction_boundary_position_in_event_buffer_))};
@@ -390,8 +390,8 @@ void storage::load_binlog_index() {
           "binlog index contains a reference to a binlog with invalid "
           "name");
     }
-    if (std::ranges::find(binlog_records_, current_binlog_name,
-                          &binlog_record::name) != std::end(binlog_records_)) {
+    if (std::ranges::find(std::as_const(binlog_records_), current_binlog_name,
+                          &binlog_record::name) != std::cend(binlog_records_)) {
       util::exception_location().raise<std::logic_error>(
           "binlog index contains a duplicate entry");
     }

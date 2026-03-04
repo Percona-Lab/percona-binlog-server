@@ -15,13 +15,16 @@
 
 #include "binsrv/events/footer.hpp"
 
+#include <iterator>
 #include <ostream>
+#include <stdexcept>
 
 #include <boost/align/align_up.hpp>
 
 #include "binsrv/events/footer_view.hpp"
 
 #include "util/byte_span_fwd.hpp"
+#include "util/exception_location_helpers.hpp"
 
 namespace binsrv::events {
 
@@ -37,6 +40,17 @@ footer::footer(const footer_view &view) : crc_(view.get_crc_raw()) {
 }
 
 footer::footer(util::const_byte_span portion) : footer{footer_view{portion}} {}
+
+void footer::encode_to(util::byte_span &destination) const {
+  if (std::size(destination) < calculate_encoded_size()) {
+    util::exception_location().raise<std::invalid_argument>(
+        "cannot encode footer");
+  }
+  const footer_updatable_view footer_uv{
+      destination.subspan(0U, calculate_encoded_size())};
+  footer_uv.set_crc_raw(get_crc_raw());
+  destination = destination.subspan(calculate_encoded_size());
+}
 
 std::ostream &operator<<(std::ostream &output, const footer &obj) {
   return output << "crc: " << obj.get_readable_crc();

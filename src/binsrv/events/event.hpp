@@ -35,6 +35,7 @@
 #include "binsrv/events/anonymous_gtid_log_post_header_impl.hpp" // IWYU pragma: export
 #include "binsrv/events/code_type.hpp"
 #include "binsrv/events/common_header.hpp"                // IWYU pragma: export
+#include "binsrv/events/common_header_flag_type.hpp"
 #include "binsrv/events/event_view_fwd.hpp"
 #include "binsrv/events/footer.hpp"                       // IWYU pragma: export
 #include "binsrv/events/format_description_body_impl.hpp" // IWYU pragma: export
@@ -106,6 +107,27 @@ public:
 
   using optional_footer = std::optional<footer>;
 
+  template <code_type Code>
+  static event
+  create_event(std::uint32_t offset, const ctime_timestamp &timestamp,
+               std::uint32_t server_id, common_header_flag_set flags,
+               const generic_post_header<Code> &post_header,
+               const generic_body<Code> &body, bool include_checksum,
+               event_storage &buffer) {
+    return event{Code,        offset, timestamp,        server_id, flags,
+                 post_header, body,   include_checksum, &buffer};
+  }
+
+  template <code_type Code>
+  static event
+  create_event(std::uint32_t offset, const ctime_timestamp &timestamp,
+               std::uint32_t server_id, common_header_flag_set flags,
+               const generic_post_header<Code> &post_header,
+               const generic_body<Code> &body, bool include_checksum) {
+    return event{Code,        offset, timestamp,        server_id, flags,
+                 post_header, body,   include_checksum, nullptr};
+  }
+
   event(reader_context &context, const event_view &view);
   event(reader_context &context, util::const_byte_span portion);
 
@@ -127,15 +149,47 @@ public:
     return std::get<generic_body<Code>>(get_generic_body());
   }
 
-  [[nodiscard]] const optional_footer &get_footer() const noexcept {
-    return footer_;
-  }
+  [[nodiscard]] const optional_footer &get_footer() const { return footer_; }
+
+  [[nodiscard]] std::size_t calculate_encoded_size() const;
+  void encode_to(util::byte_span &destination) const;
+
+  friend bool operator==(const event & /* first */,
+                         const event & /* second */) = default;
 
 private:
   common_header common_header_;
   post_header_variant post_header_{};
   body_variant body_{};
   optional_footer footer_{};
+
+  template <typename PostHeaderType, typename BodyType>
+  event(code_type code, std::uint32_t offset, const ctime_timestamp &timestamp,
+        std::uint32_t server_id, common_header_flag_set flags,
+        const PostHeaderType &post_header, const BodyType &body,
+        bool include_checksum, event_storage *buffer)
+      : common_header_{common_header::create_with_offset(
+            offset,
+            static_cast<std::uint32_t>(
+                common_header::calculate_encoded_size() +
+                post_header.calculate_encoded_size() +
+                body.calculate_encoded_size() +
+                (include_checksum ? footer::calculate_encoded_size() : 0U)),
+            timestamp, code, server_id, flags)},
+        post_header_{post_header}, body_{body}, footer_{} {
+    // format description events must always include footer
+    if (code == code_type::format_description) {
+      include_checksum = true;
+    }
+    if (buffer != nullptr) {
+      encode_and_checksum(*buffer, include_checksum);
+    } else {
+      if (include_checksum) {
+        event_storage local_buffer;
+        encode_and_checksum(local_buffer, true);
+      }
+    }
+  }
 
   template <typename T>
   void generic_emplace_post_header(std::uint32_t encoded_server_version,
@@ -159,6 +213,7 @@ private:
   }
   void emplace_body(std::uint32_t encoded_server_version, code_type code,
                     util::const_byte_span portion);
+  void encode_and_checksum(event_storage &buffer, bool include_checksum);
 };
 
 } // namespace binsrv::events

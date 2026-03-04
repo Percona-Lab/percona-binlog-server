@@ -21,7 +21,7 @@
 namespace util {
 
 template <typename E>
-  requires std::is_enum_v<E>
+  requires std::is_enum_v<E> && std::is_unsigned_v<std::underlying_type_t<E>>
 class flag_set;
 
 } // namespace util
