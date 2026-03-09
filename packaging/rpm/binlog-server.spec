@@ -49,7 +49,7 @@ mkdir -p debug
   git switch -c required_release
   cd ..
   cp -v ../../percona-binlog-server-%{version}/extra/cmake_presets/boost/CMakePresets.json boost
-  
+
   cmake ./boost \
     --preset %{BUILD_PRESET_DEBUG}
   cmake --build ./boost-build-%{BUILD_PRESET_DEBUG} --parallel
