@@ -332,8 +332,8 @@ build_rpm() {
     fi
     ls -la $WORKDIR
     ls -la $CURDIR
-    ls -la $WORKDIR/srpm 
-    ls -la $CURDIR/srpm 
+    ls -la $WORKDIR/srpm
+    ls -la $CURDIR/srpm
     SRC_RPM=$(basename $(find $WORKDIR/srpm -name 'percona-binlog-server*.src.rpm' | sort | tail -n1))
     if [ -z $SRC_RPM ]; then
         SRC_RPM=$(basename $(find $CURDIR/srpm -name 'percona-binlog-server*.src.rpm' | sort | tail -n1))
