@@ -1,0 +1,12 @@
+Source: percona-binlog-server
+Maintainer: Percona Development Team <info@percona.com>
+Section: misc
+Priority: optional
+Standards-Version: 4.6.2
+
+
+Package: percona-binlog-server
+Architecture: any
+Depends: percona-server-client
+Description: Percona Binary Log Server
+ Command line utility that can be considered as an enhanced version of mysqlbinlog.
