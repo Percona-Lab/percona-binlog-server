@@ -28,7 +28,7 @@ enum class storage_construction_mode_type : std::uint8_t {
 enum class open_binlog_status : std::uint8_t {
   created,
   opened_empty,
-  opened_at_magic_paylod_offset,
+  opened_at_magic_payload_offset,
   opened_with_data_present
 };
 

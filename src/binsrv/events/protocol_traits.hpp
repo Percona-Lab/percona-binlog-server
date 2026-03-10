@@ -42,10 +42,9 @@ print_post_header_lengths(std::ostream &output,
                           std::uint32_t encoded_server_version,
                           const post_header_length_container &obj);
 
-void validate_post_header_lengths(
-    std::uint32_t encoded_server_version,
-    const post_header_length_container &runtime,
-    const post_header_length_container &hardcoded);
+void validate_post_header_lengths(std::uint32_t encoded_server_version,
+                                  const post_header_length_container &runtime,
+                                  const post_header_length_container &known);
 
 } // namespace binsrv::events
 

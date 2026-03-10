@@ -72,6 +72,9 @@ main_config::main_config(std::string_view file_name) {
   validate();
 }
 
-void main_config::validate() const { root().get<"connection">().validate(); }
+void main_config::validate() const {
+  root().get<"connection">().validate();
+  root().get<"replication">().validate();
+}
 
 } // namespace binsrv

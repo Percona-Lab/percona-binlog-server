@@ -13,30 +13,18 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef BINSRV_EVENTS_EVENT_VIEW_FWD_HPP
-#define BINSRV_EVENTS_EVENT_VIEW_FWD_HPP
+#ifndef BINSRV_COMPOSITE_BINLOG_NAME_FWD_HPP
+#define BINSRV_COMPOSITE_BINLOG_NAME_FWD_HPP
 
-#include <cstdint>
 #include <iosfwd>
 
-#include "binsrv/events/event_fwd.hpp"
+namespace binsrv {
 
-namespace binsrv::events {
+class composite_binlog_name;
 
-class event_updatable_view;
-class event_view;
+std::ostream &operator<<(std::ostream &output,
+                         const composite_binlog_name &obj);
 
-enum class materialization_type : std::uint8_t {
-  force_add_checksum,
-  force_remove_checksum,
-  leave_checksum_as_is
-};
-[[nodiscard]] event_updatable_view materialize(const event_view &event_v,
-                                               event_storage &buffer,
-                                               materialization_type mode);
+} // namespace binsrv
 
-std::ostream &operator<<(std::ostream &output, const event_view &obj);
-
-} // namespace binsrv::events
-
-#endif // BINSRV_EVENTS_EVENT_VIEW_FWD_HPP
+#endif // BINSRV_COMPOSITE_BINLOG_NAME_FWD_HPP

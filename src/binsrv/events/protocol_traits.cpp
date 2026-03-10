@@ -88,23 +88,22 @@ print_post_header_lengths(std::ostream &output,
   return output;
 }
 
-void validate_post_header_lengths(
-    std::uint32_t encoded_server_version,
-    const post_header_length_container &runtime,
-    const post_header_length_container &hardcoded) {
+void validate_post_header_lengths(std::uint32_t encoded_server_version,
+                                  const post_header_length_container &runtime,
+                                  const post_header_length_container &known) {
   const auto number_of_events{get_number_of_events(encoded_server_version)};
   const auto length_mismatch_result{std::ranges::mismatch(
       runtime | std::ranges::views::take(number_of_events),
-      hardcoded | std::ranges::views::take(number_of_events),
+      known | std::ranges::views::take(number_of_events),
       [](encoded_post_header_length_type real,
          encoded_post_header_length_type expected) {
         return expected == static_cast<encoded_post_header_length_type>(
                                unspecified_post_header_length) ||
                real == expected;
       })};
-  if (length_mismatch_result.in2 != std::cend(hardcoded)) {
+  if (length_mismatch_result.in2 != std::cend(known)) {
     const auto offset{static_cast<std::size_t>(
-        std::distance(std::cbegin(hardcoded), length_mismatch_result.in2))};
+        std::distance(std::cbegin(known), length_mismatch_result.in2))};
     const std::string label{
         to_string_view(util::index_to_enum<code_type>(offset + 1U))};
     util::exception_location().raise<std::logic_error>(

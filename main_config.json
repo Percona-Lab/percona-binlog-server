@@ -30,7 +30,11 @@
     "server_id": 42,
     "idle_time": 10,
     "verify_checksum": true,
-    "mode": "position"
+    "mode": "gtid",
+    "rewrite": {
+      "base_file_name": "binlog",
+      "file_size": "128M"
+    }
   },
   "storage": {
     "backend": "file",

@@ -13,30 +13,27 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef BINSRV_EVENTS_EVENT_VIEW_FWD_HPP
-#define BINSRV_EVENTS_EVENT_VIEW_FWD_HPP
+#include "binsrv/replication_config.hpp"
 
-#include <cstdint>
-#include <iosfwd>
+#include <stdexcept>
 
-#include "binsrv/events/event_fwd.hpp"
+#include "binsrv/replication_mode_type.hpp"
 
-namespace binsrv::events {
+#include "util/exception_location_helpers.hpp"
 
-class event_updatable_view;
-class event_view;
+namespace binsrv {
 
-enum class materialization_type : std::uint8_t {
-  force_add_checksum,
-  force_remove_checksum,
-  leave_checksum_as_is
-};
-[[nodiscard]] event_updatable_view materialize(const event_view &event_v,
-                                               event_storage &buffer,
-                                               materialization_type mode);
+void replication_config::validate() const {
+  const auto &optional_rewrite{get<"rewrite">()};
+  if (optional_rewrite.has_value()) {
+    if (get<"mode">() != replication_mode_type::gtid) {
+      util::exception_location().raise<std::invalid_argument>(
+          "error validating replication config: "
+          "rewrite can only be enabled in gtid replication mode");
+    }
 
-std::ostream &operator<<(std::ostream &output, const event_view &obj);
+    optional_rewrite->validate();
+  }
+}
 
-} // namespace binsrv::events
-
-#endif // BINSRV_EVENTS_EVENT_VIEW_FWD_HPP
+} // namespace binsrv

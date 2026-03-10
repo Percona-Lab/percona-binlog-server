@@ -21,6 +21,8 @@
 #include <stdexcept>
 #include <string_view>
 
+#include "binsrv/composite_binlog_name.hpp"
+
 #include "binsrv/events/code_type.hpp"
 
 #include "util/byte_span.hpp"
@@ -29,9 +31,13 @@
 namespace binsrv::events {
 
 generic_body_impl<code_type::rotate>::generic_body_impl(
-    std::string_view binlog_name)
-    : binlog_(std::cbegin(util::as_const_byte_span(binlog_name)),
-              std::cend(util::as_const_byte_span(binlog_name))) {}
+    const composite_binlog_name &binlog_name)
+    : binlog_{} {
+  const auto binlog_name_s{binlog_name.str()};
+  const auto binlog_name_span{util::as_const_byte_span(binlog_name_s)};
+
+  binlog_.assign(std::cbegin(binlog_name_span), std::cend(binlog_name_span));
+}
 
 generic_body_impl<code_type::rotate>::generic_body_impl(
     util::const_byte_span portion) {
@@ -41,6 +47,11 @@ generic_body_impl<code_type::rotate>::generic_body_impl(
   // only one member for holding data of varying length
 
   binlog_.assign(std::cbegin(portion), std::cend(portion));
+}
+
+[[nodiscard]] composite_binlog_name
+generic_body_impl<code_type::rotate>::get_parsed_binlog() const {
+  return composite_binlog_name::parse(get_readable_binlog());
 }
 
 void generic_body_impl<code_type::rotate>::encode_to(
@@ -55,7 +66,7 @@ void generic_body_impl<code_type::rotate>::encode_to(
 
 std::ostream &operator<<(std::ostream &output,
                          const generic_body_impl<code_type::rotate> &obj) {
-  return output << "binlog: " << obj.get_binlog();
+  return output << "binlog: " << obj.get_readable_binlog();
 }
 
 } // namespace binsrv::events

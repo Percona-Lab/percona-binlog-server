@@ -128,8 +128,8 @@ public:
                  post_header, body,   include_checksum, nullptr};
   }
 
-  event(reader_context &context, const event_view &view);
-  event(reader_context &context, util::const_byte_span portion);
+  event(const reader_context &context, const event_view &view);
+  event(const reader_context &context, util::const_byte_span portion);
 
   [[nodiscard]] const common_header &get_common_header() const noexcept {
     return common_header_;

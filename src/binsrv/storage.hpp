@@ -24,6 +24,7 @@
 #include <vector>
 
 #include "binsrv/basic_storage_backend_fwd.hpp"
+#include "binsrv/composite_binlog_name.hpp"
 #include "binsrv/ctime_timestamp_fwd.hpp"
 #include "binsrv/ctime_timestamp_range.hpp"
 #include "binsrv/replication_mode_type_fwd.hpp"
@@ -39,7 +40,7 @@ namespace binsrv {
 class [[nodiscard]] storage {
 private:
   struct binlog_record {
-    std::string name;
+    composite_binlog_name name;
     std::uint64_t size{0ULL};
     gtids::optional_gtid_set previous_gtids{};
     gtids::optional_gtid_set added_gtids{};
@@ -65,7 +66,8 @@ public:
   storage(storage &&) = delete;
   storage &operator=(storage &&) = delete;
 
-  // desctuctor is explicitly defined as default here to complete the rule of 5
+  // destructor is explicitly declared here and defined as default in .cpp
+  // file to complete the rule of 5
   ~storage();
 
   [[nodiscard]] std::string get_backend_description() const;
@@ -82,8 +84,10 @@ public:
   [[nodiscard]] bool is_empty() const noexcept {
     return binlog_records_.empty();
   }
-  [[nodiscard]] std::string_view get_current_binlog_name() const noexcept {
-    return is_empty() ? std::string_view{} : get_current_binlog_record().name;
+  [[nodiscard]] const composite_binlog_name &
+  get_current_binlog_name() const noexcept {
+    return is_empty() ? binlog_name_sentinel_
+                      : get_current_binlog_record().name;
   }
   [[nodiscard]] std::uint64_t get_current_position() const noexcept {
     return get_flushed_position() + std::size(event_buffer_);
@@ -107,12 +111,10 @@ public:
     return result;
   }
 
-  [[nodiscard]] static bool
-  check_binlog_name(std::string_view binlog_name) noexcept;
-
   [[nodiscard]] bool is_binlog_open() const noexcept;
 
-  [[nodiscard]] open_binlog_status open_binlog(std::string_view binlog_name);
+  [[nodiscard]] open_binlog_status
+  open_binlog(const composite_binlog_name &binlog_name);
   void write_event(util::const_byte_span event_data,
                    bool at_transaction_boundary,
                    const gtids::gtid &transaction_gtid,
@@ -122,13 +124,15 @@ public:
   void discard_incomplete_transaction_events();
   void flush_event_buffer();
 
-  [[nodiscard]] std::string get_binlog_uri(std::string_view binlog_name) const;
+  [[nodiscard]] std::string
+  get_binlog_uri(const composite_binlog_name &binlog_name) const;
 
 private:
   storage_construction_mode_type construction_mode_;
   basic_storage_backend_ptr backend_;
 
   replication_mode_type replication_mode_;
+  composite_binlog_name binlog_name_sentinel_{};
   binlog_record_container binlog_records_{};
 
   std::uint64_t checkpoint_size_bytes_{0ULL};
@@ -186,9 +190,9 @@ private:
   void save_metadata() const;
 
   [[nodiscard]] static std::string
-  generate_binlog_metadata_name(std::string_view binlog_name);
+  generate_binlog_metadata_name(const composite_binlog_name &binlog_name);
   [[nodiscard]] binlog_record
-  load_binlog_metadata(std::string_view binlog_name) const;
+  load_binlog_metadata(const composite_binlog_name &binlog_name) const;
   void validate_binlog_metadata(const binlog_record &record) const;
   void save_binlog_metadata(const binlog_record &record) const;
 

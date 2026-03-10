@@ -15,16 +15,23 @@
 
 #include "binsrv/events/event_view.hpp"
 
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <ostream>
 #include <stdexcept>
 #include <string>
 
+// needed for 'event_storage'
+#include <boost/container/small_vector.hpp> // IWYU pragma: keep
+
 #include "binsrv/events/code_type.hpp"
 #include "binsrv/events/common_header_view.hpp"
+#include "binsrv/events/event_fwd.hpp"
 #include "binsrv/events/footer_view.hpp"
-#include "binsrv/events/format_description_body_impl.hpp"
+// needed for extracting info from the FDE body
+#include "binsrv/events/format_description_body_impl.hpp" // IWYU pragma: keep
+#include "binsrv/events/generic_body.hpp"
 #include "binsrv/events/protocol_traits_fwd.hpp"
 #include "binsrv/events/reader_context.hpp"
 
@@ -93,7 +100,7 @@ event_view_base::event_view_base(const reader_context &context,
     // we should verify checksum for them or not is determined by the value
     // of the 'checksum_algorithm' in their bodies, not by the reader_context
     // (as for all other events)
-    const generic_body_impl<code_type::format_description> body{get_body_raw()};
+    const generic_body<code_type::format_description> body{get_body_raw()};
     if (!body.has_checksum_algorithm()) {
       return;
     }
@@ -129,14 +136,80 @@ event_view_base::get_common_header_updatable_view() const {
 event_view_base::get_footer_updatable_view() const {
   return footer_updatable_view{get_footer_updatable_raw()};
 }
-std::ostream &operator<<(std::ostream &output, const event_view &obj) {
-  output << "| common header | " << event_view::get_common_header_size()
-         << " byte(s) |\n"
-         << "| post header   | " << obj.get_post_header_size() << " byte(s) |\n"
-         << "| body          | " << obj.get_body_size() << " byte(s) |\n"
-         << "| footer        | " << obj.get_footer_size() << " byte(s) |\n";
 
-  return output;
+[[nodiscard]] event_updatable_view materialize(const event_view &event_v,
+                                               event_storage &buffer,
+                                               materialization_type mode) {
+  // mode adjustments for cases when nothing has to be changed
+  if (mode == materialization_type::force_remove_checksum &&
+      !event_v.has_footer()) {
+    mode = materialization_type::leave_checksum_as_is;
+  }
+  if (mode == materialization_type::force_add_checksum &&
+      event_v.has_footer()) {
+    mode = materialization_type::leave_checksum_as_is;
+  }
+
+  // source does not have checksum, destination should
+  if (mode == materialization_type::force_add_checksum) {
+    assert(!event_v.has_footer());
+    const auto event_size_with_footer{event_v.get_total_size() +
+                                      footer_view_base::size_in_bytes};
+    const auto source_portion{event_v.get_portion()};
+    buffer.reserve(event_size_with_footer);
+    buffer.assign(std::cbegin(source_portion), std::cend(source_portion));
+    buffer.resize(event_size_with_footer);
+    const util::byte_span destination_portion{std::begin(buffer),
+                                              std::size(buffer)};
+    event_updatable_view result{destination_portion,
+                                event_v.get_post_header_size(),
+                                footer_view_base::size_in_bytes};
+    {
+      const auto write_proxy{result.get_write_proxy()};
+      write_proxy.get_common_header_updatable_view().set_event_size_raw(
+          static_cast<std::uint32_t>(event_size_with_footer));
+    }
+    return result;
+  }
+
+  // source has checksum, destination should not
+  if (mode == materialization_type::force_remove_checksum) {
+    assert(event_v.has_footer());
+    const auto event_size_wo_footer{event_v.get_total_size() -
+                                    footer_view_base::size_in_bytes};
+    const auto source_portion{
+        event_v.get_portion().subspan(0U, event_size_wo_footer)};
+    buffer.assign(std::cbegin(source_portion), std::cend(source_portion));
+    const util::byte_span destination_portion{std::begin(buffer),
+                                              std::size(buffer)};
+    event_updatable_view result{destination_portion,
+                                event_v.get_post_header_size(), 0U};
+    {
+      const auto write_proxy{result.get_write_proxy()};
+      write_proxy.get_common_header_updatable_view().set_event_size_raw(
+          static_cast<std::uint32_t>(event_size_wo_footer));
+    }
+    return result;
+  }
+
+  // either source has checksum and destination should or
+  // source does not have checksum and destination should not
+  assert(mode == materialization_type::leave_checksum_as_is);
+
+  const auto source_portion{event_v.get_portion()};
+  buffer.assign(std::cbegin(source_portion), std::cend(source_portion));
+  const util::byte_span destination_portion{std::begin(buffer),
+                                            std::size(buffer)};
+  return event_updatable_view{destination_portion,
+                              event_v.get_post_header_size(),
+                              event_v.get_footer_size()};
+}
+
+std::ostream &operator<<(std::ostream &output, const event_view &obj) {
+  return output << "common header: " << event_view::get_common_header_size()
+                << " byte(s), post header: " << obj.get_post_header_size()
+                << " byte(s), body: " << obj.get_body_size()
+                << " byte(s), footer: " << obj.get_footer_size() << " byte(s)";
 }
 
 } // namespace binsrv::events

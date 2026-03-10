@@ -162,7 +162,7 @@ public:
             // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
             const_cast<std::byte *>(std::data(portion)), std::size(portion)}} {}
 
-  // deliberately implicit to allow seamless convertion from
+  // deliberately implicit to allow seamless conversion from
   // common_header_updatable_view to common_header_view
   // NOLINTNEXTLINE(hicpp-explicit-conversions)
   common_header_view(const common_header_updatable_view &other)

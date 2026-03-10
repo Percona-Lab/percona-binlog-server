@@ -103,7 +103,13 @@ public:
   [[nodiscard]] footer_updatable_view get_footer_updatable_view() const;
 
 protected:
+  // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+  event_view_base(util::byte_span portion, std::size_t post_header_size,
+                  std::size_t footer_size) noexcept
+      : portion_{portion}, post_header_size_{post_header_size},
+        footer_size_{footer_size} {}
   event_view_base(const reader_context &context, util::byte_span portion);
+
   event_view_base(const event_view_base &other) = default;
   event_view_base(event_view_base &&other) = default;
   event_view_base &operator=(const event_view_base &other) = default;
@@ -118,6 +124,9 @@ private:
 
 class [[nodiscard]] event_updatable_view : private event_view_base {
   friend class event_view;
+  friend event_updatable_view materialize(const event_view &event_v,
+                                          event_storage &buffer,
+                                          materialization_type mode);
 
 public:
   // an auxiliary proxy class that allows to update the content of an
@@ -129,9 +138,9 @@ public:
   // const binsrv::events::reader_context context{...};
   // const util::const_byte_span ro_event_data_block{...};
   // const binsrv::events::event_view event_v{context, ro_event_data_block};
-  // using event_buffer_type = std::vector<std::byte>;
-  // event_buffer_type event_copy(std::cbegin(ro_event_data_block),
-  //                              std::cend(ro_event_data_block));
+  //
+  // binsrv::events::event_storage event_copy(
+  //    std::cbegin(ro_event_data_block), std::cend(ro_event_data_block));
   // const binsrv::events::event_updatable_view event_copy_uv{context,
   //                                                          event_copy};
   // {
@@ -141,7 +150,7 @@ public:
   // }
   //
   // please notice a new code block with the write_proxy object: it is
-  // crucial to keep it alive when you want to perform several modyfying
+  // crucial to keep it alive when you want to perform several modifying
   // operations - the checksum will be recalculated only at the end of
   // this code block when the proxy is destroyed
   class [[nodiscard]] write_proxy {
@@ -157,6 +166,15 @@ public:
         const auto footer_v{parent_->get_footer_updatable_view()};
         footer_v.set_crc_raw(parent_->calculate_crc());
       }
+    }
+
+    [[nodiscard]] util::byte_span get_updatable_portion() const noexcept {
+      return parent_->get_updatable_portion();
+    }
+
+    [[nodiscard]] util::byte_span
+    get_common_header_updatable_raw() const noexcept {
+      return parent_->get_common_header_updatable_raw();
     }
 
     [[nodiscard]] common_header_updatable_view
@@ -184,6 +202,7 @@ public:
       : event_view_base{context, portion} {}
 
   // clang-format off
+  using event_view_base::get_portion;
   using event_view_base::get_total_size;
   using event_view_base::calculate_crc;
 
@@ -204,6 +223,9 @@ public:
   [[nodiscard]] write_proxy get_write_proxy() const {
     return write_proxy{*this};
   }
+
+private:
+  using event_view_base::event_view_base;
 };
 
 class [[nodiscard]] event_view : private event_view_base {
@@ -216,12 +238,13 @@ public:
                 const_cast<std::byte *>(std::data(portion)),
                 std::size(portion)}} {}
 
-  // deliberately implicit to allow seamless convertion from
+  // deliberately implicit to allow seamless conversion from
   // event_updatable_view to event_view
   // NOLINTNEXTLINE(hicpp-explicit-conversions)
   event_view(const event_updatable_view &other) : event_view_base{other} {}
 
   // clang-format off
+  using event_view_base::get_portion;
   using event_view_base::get_total_size;
   using event_view_base::calculate_crc;
 
@@ -244,6 +267,9 @@ public:
   using event_view_base::get_footer_raw;
   using event_view_base::get_footer_view;
   // clang-format on
+
+private:
+  using event_view_base::event_view_base;
 };
 
 } // namespace binsrv::events

@@ -29,6 +29,7 @@
 
 #include "binsrv/basic_storage_backend.hpp"
 #include "binsrv/binlog_file_metadata.hpp"
+#include "binsrv/composite_binlog_name.hpp"
 #include "binsrv/ctime_timestamp.hpp"
 #include "binsrv/replication_mode_type.hpp"
 #include "binsrv/storage_backend_factory.hpp"
@@ -127,33 +128,17 @@ storage::~storage() {
   return replication_mode_ == replication_mode_type::gtid;
 }
 
-[[nodiscard]] bool
-storage::check_binlog_name(std::string_view binlog_name) noexcept {
-  // TODO: parse binlog name into "base name" and "rotation number"
-  //       e.g. "binlog.000001" -> ("binlog", 1)
-
-  // currently checking only that the name does not include a filesystem
-  // separator
-  return binlog_name.find(std::filesystem::path::preferred_separator) ==
-         std::string_view::npos;
-}
-
 [[nodiscard]] bool storage::is_binlog_open() const noexcept {
   return backend_->is_stream_open();
 }
 
 [[nodiscard]] open_binlog_status
-storage::open_binlog(std::string_view binlog_name) {
+storage::open_binlog(const composite_binlog_name &binlog_name) {
   ensure_streaming_mode();
 
   auto result{open_binlog_status::opened_with_data_present};
 
-  if (!check_binlog_name(binlog_name)) {
-    util::exception_location().raise<std::logic_error>(
-        "cannot create a binlog with invalid name");
-  }
-
-  // here we either create a new binlog file if its name is not presen in the
+  // here we either create a new binlog file if its name is not presentin the
   // "binlog_records_", or we open an existing one and append to it, in which
   // case we need to make sure that the current position is properly set
   const bool binlog_exists{
@@ -176,7 +161,7 @@ storage::open_binlog(std::string_view binlog_name) {
 
   const auto mode{binlog_exists ? storage_backend_open_stream_mode::append
                                 : storage_backend_open_stream_mode::create};
-  const auto open_stream_offset{backend_->open_stream(binlog_name, mode)};
+  const auto open_stream_offset{backend_->open_stream(binlog_name.str(), mode)};
 
   if (!binlog_exists) {
     // writing the magic binlog footprint only if this is a newly
@@ -190,10 +175,10 @@ storage::open_binlog(std::string_view binlog_name) {
       added_binlog_gtids = gtids::gtid_set{};
     }
 
-    binlog_records_.emplace_back(
-        std::string{binlog_name}, events::magic_binlog_offset,
-        std::move(previous_binlog_gtids), std::move(added_binlog_gtids),
-        ctime_timestamp_range{});
+    binlog_records_.emplace_back(binlog_name, events::magic_binlog_offset,
+                                 std::move(previous_binlog_gtids),
+                                 std::move(added_binlog_gtids),
+                                 ctime_timestamp_range{});
     save_binlog_metadata(get_current_binlog_record());
     save_binlog_index();
     result = open_binlog_status::created;
@@ -204,7 +189,7 @@ storage::open_binlog(std::string_view binlog_name) {
       get_current_binlog_record().size = events::magic_binlog_offset;
       result = open_binlog_status::opened_empty;
     } else if (open_stream_offset == events::magic_binlog_offset) {
-      result = open_binlog_status::opened_at_magic_paylod_offset;
+      result = open_binlog_status::opened_at_magic_payload_offset;
     } else {
       // position is beyond magic payload offset
       assert(open_stream_offset > events::magic_binlog_offset);
@@ -308,8 +293,8 @@ void storage::flush_event_buffer() {
 }
 
 [[nodiscard]] std::string
-storage::get_binlog_uri(std::string_view binlog_name) const {
-  return backend_->get_object_uri(binlog_name);
+storage::get_binlog_uri(const composite_binlog_name &binlog_name) const {
+  return backend_->get_object_uri(binlog_name.str());
 }
 
 void storage::ensure_streaming_mode() const {
@@ -385,12 +370,10 @@ void storage::load_binlog_index() {
       util::exception_location().raise<std::logic_error>(
           "binlog index contains a reference to the binlog index name");
     }
-    if (!check_binlog_name(current_binlog_name)) {
-      util::exception_location().raise<std::logic_error>(
-          "binlog index contains a reference to a binlog with invalid "
-          "name");
-    }
-    if (std::ranges::find(std::as_const(binlog_records_), current_binlog_name,
+    const auto current_binlog_name_parsed{
+        composite_binlog_name::parse(current_binlog_name)};
+    if (std::ranges::find(std::as_const(binlog_records_),
+                          current_binlog_name_parsed,
                           &binlog_record::name) != std::cend(binlog_records_)) {
       util::exception_location().raise<std::logic_error>(
           "binlog index contains a duplicate entry");
@@ -402,7 +385,7 @@ void storage::load_binlog_index() {
       added_binlog_gtids = gtids::gtid_set{};
     }
     binlog_records_.emplace_back(
-        current_binlog_name, 0ULL, std::move(previous_binlog_gtids),
+        current_binlog_name_parsed, 0ULL, std::move(previous_binlog_gtids),
         std::move(added_binlog_gtids), ctime_timestamp_range{});
   }
 }
@@ -410,7 +393,7 @@ void storage::load_binlog_index() {
 void storage::validate_binlog_index(
     const storage_object_name_container &object_names) const {
   for (auto const &record : binlog_records_) {
-    if (!object_names.contains(record.name)) {
+    if (!object_names.contains(record.name.str())) {
       util::exception_location().raise<std::logic_error>(
           "binlog index contains a reference to a non-existing object");
     }
@@ -430,7 +413,7 @@ void storage::save_binlog_index() const {
   std::ostringstream oss;
   for (const auto &record : binlog_records_) {
     std::filesystem::path binlog_path{default_binlog_index_entry_path};
-    binlog_path /= record.name;
+    binlog_path /= record.name.str();
     oss << binlog_path.generic_string() << '\n';
   }
   const auto content{oss.str()};
@@ -459,20 +442,20 @@ void storage::save_metadata() const {
   backend_->put_object(metadata_name, util::as_const_byte_span(content));
 }
 
-[[nodiscard]] std::string
-storage::generate_binlog_metadata_name(std::string_view binlog_name) {
-  std::string binlog_metadata_name{binlog_name};
+[[nodiscard]] std::string storage::generate_binlog_metadata_name(
+    const composite_binlog_name &binlog_name) {
+  std::string binlog_metadata_name{binlog_name.str()};
   binlog_metadata_name += storage::binlog_metadata_extension;
   return binlog_metadata_name;
 }
 
 [[nodiscard]] storage::binlog_record
-storage::load_binlog_metadata(std::string_view binlog_name) const {
+storage::load_binlog_metadata(const composite_binlog_name &binlog_name) const {
   const auto content{
       backend_->get_object(generate_binlog_metadata_name(binlog_name))};
   binlog_file_metadata metadata{content};
 
-  return binlog_record{.name = std::string(binlog_name),
+  return binlog_record{.name = binlog_name,
                        .size = metadata.root().get<"size">(),
                        .previous_gtids =
                            metadata.root().get<"previous_gtids">(),
@@ -536,7 +519,7 @@ void storage::load_and_validate_binlog_metadata_set(
     auto loaded_binlog_metadata{load_binlog_metadata(record.name)};
     validate_binlog_metadata(loaded_binlog_metadata);
     // validating that the size stored in the metadata matches the actual size
-    if (loaded_binlog_metadata.size != object_names.at(record.name)) {
+    if (loaded_binlog_metadata.size != object_names.at(record.name.str())) {
       util::exception_location().raise<std::logic_error>(
           "size from the binlog metadata does not match the actual binlog "
           "size");

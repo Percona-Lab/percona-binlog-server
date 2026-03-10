@@ -21,6 +21,7 @@
 #include <cstdint>
 
 #include "binsrv/replication_mode_type_fwd.hpp"
+#include "binsrv/rewrite_config.hpp" // IWYU pragma: export
 
 #include "util/nv_tuple.hpp"
 
@@ -32,9 +33,12 @@ struct [[nodiscard]] replication_config
           util::nv<"server_id", std::uint32_t>,
           util::nv<"idle_time", std::uint32_t>,
           util::nv<"verify_checksum", bool>,
-          util::nv<"mode", replication_mode_type>
+          util::nv<"mode", replication_mode_type>,
+          util::nv<"rewrite", optional_rewrite_config>
           // clang-format on
-          > {};
+          > {
+  void validate() const;
+};
 
 } // namespace binsrv
 

@@ -12,8 +12,8 @@ eval $stmt_reset_binary_logs_and_gtids;
 # identifying backend storage type ('file' or 's3')
 --source ../include/identify_storage_backend.inc
 
-# identifying utility buffering mode from the conbination
---let $extracted_init_connect_variable_name = binsrv_buffering_mode
+# identifying utility buffering mode from the combination
+--let $extracted_init_connect_variable_name = binsrv_utility_mode
 --source ../include/extract_init_connect_variable_value.inc
 
 # creating data directory, configuration file, etc.
@@ -28,6 +28,16 @@ if ($extracted_init_connect_variable_value == 'buffered')
 }
 if ($extracted_init_connect_variable_value == 'unbuffered')
 {
+  --let $binsrv_checkpoint_size = 1
+}
+if ($extracted_init_connect_variable_value == 'rewrite_buffered')
+{
+  --let $binsrv_rewrite_file_size = 1K
+  --let $binsrv_checkpoint_size = 1G
+}
+if ($extracted_init_connect_variable_value == 'rewrite_unbuffered')
+{
+  --let $binsrv_rewrite_file_size = 1K
   --let $binsrv_checkpoint_size = 1
 }
 --source ../include/set_up_binsrv_environment.inc

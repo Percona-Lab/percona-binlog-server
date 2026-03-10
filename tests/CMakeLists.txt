@@ -50,6 +50,9 @@ set(gtid_set_source_files
 set(event_set_source_files
   ${PROJECT_SOURCE_DIR}/src/binsrv/ctime_timestamp.cpp
 
+  ${PROJECT_SOURCE_DIR}/src/binsrv/composite_binlog_name_fwd.hpp
+  ${PROJECT_SOURCE_DIR}/src/binsrv/composite_binlog_name.hpp
+  ${PROJECT_SOURCE_DIR}/src/binsrv/composite_binlog_name.cpp
 
   ${PROJECT_SOURCE_DIR}/src/binsrv/events/anonymous_gtid_log_body_impl_fwd.hpp
   ${PROJECT_SOURCE_DIR}/src/binsrv/events/anonymous_gtid_log_body_impl.hpp
