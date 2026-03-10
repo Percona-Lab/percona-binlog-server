@@ -59,9 +59,12 @@
 #include "binsrv/models/error_response.hpp"
 #include "binsrv/models/search_response.hpp"
 
+#include "binsrv/events/checksum_algorithm_type.hpp"
 #include "binsrv/events/code_type.hpp"
 #include "binsrv/events/common_header_flag_type.hpp"
 #include "binsrv/events/event.hpp"
+#include "binsrv/events/event_view.hpp"
+#include "binsrv/events/protocol_traits_fwd.hpp"
 #include "binsrv/events/reader_context.hpp"
 
 #include "easymysql/connection.hpp"
@@ -77,6 +80,7 @@
 #include "util/ct_string.hpp"
 #include "util/exception_location_helpers.hpp"
 #include "util/nv_tuple.hpp"
+#include "util/semantic_version.hpp"
 
 namespace {
 
@@ -215,6 +219,13 @@ void log_connection_config_info(
   }
 }
 
+void log_rewrite_config_info(binsrv::basic_logger &logger,
+                             const binsrv::rewrite_config &rewrite_config) {
+  log_config_param<"base_file_name">(logger, rewrite_config,
+                                     "rewrite base binlog file name");
+  log_config_param<"file_size">(logger, rewrite_config,
+                                "rewrite binlog file size");
+}
 void log_replication_config_info(
     binsrv::basic_logger &logger,
     const binsrv::replication_config &replication_config) {
@@ -227,6 +238,10 @@ void log_replication_config_info(
       logger, replication_config, "mysql replication checksum verification");
   log_config_param<"mode">(logger, replication_config,
                            "mysql replication mode");
+  const auto &optional_rewrite_config{replication_config.get<"rewrite">()};
+  if (optional_rewrite_config.has_value()) {
+    log_rewrite_config_info(logger, *optional_rewrite_config);
+  }
 }
 
 void log_storage_config_info(binsrv::basic_logger &logger,
@@ -261,7 +276,7 @@ void log_storage_info(binsrv::basic_logger &logger,
     msg = "binlog storage initialized on an empty directory";
   } else {
     msg = "binlog storage initialized at \"";
-    msg += storage.get_current_binlog_name();
+    msg += storage.get_current_binlog_name().str();
     msg += "\":";
     msg += std::to_string(storage.get_current_position());
   }
@@ -320,7 +335,7 @@ void log_replication_info(
     if (storage.is_empty()) {
       msg += "the very beginning";
     } else {
-      msg += storage.get_current_binlog_name();
+      msg += storage.get_current_binlog_name().str();
       msg += ":";
       msg += std::to_string(storage.get_current_position());
     }
@@ -375,16 +390,16 @@ void log_span_dump(binsrv::basic_logger &logger,
   }
 }
 
-void process_artificial_rotate_event(const binsrv::events::event &current_event,
-                                     binsrv::basic_logger &logger,
-                                     binsrv::storage &storage) {
-  assert(current_event.get_common_header().get_type_code() ==
+void process_artificial_rotate_event(
+    const binsrv::events::event_view &current_event_v,
+    binsrv::basic_logger &logger, binsrv::storage &storage) {
+  assert(current_event_v.get_common_header_view().get_type_code() ==
          binsrv::events::code_type::rotate);
-  assert(current_event.get_common_header().get_flags().has_element(
+  assert(current_event_v.get_common_header_view().get_flags().has_element(
       binsrv::events::common_header_flag_type::artificial));
 
-  const auto &current_rotate_body =
-      current_event.get_body<binsrv::events::code_type::rotate>();
+  const binsrv::events::generic_body<binsrv::events::code_type::rotate>
+      current_rotate_body{current_event_v.get_body_raw()};
 
   bool binlog_opening_needed{true};
 
@@ -401,11 +416,14 @@ void process_artificial_rotate_event(const binsrv::events::event &current_event,
     // have ROTATE or STOP event as the last one in the binlog, so here we
     // handle this case by closing the old binlog and opening a new one
 
-    if (current_rotate_body.get_binlog() == storage.get_current_binlog_name()) {
+    if (current_rotate_body.get_parsed_binlog() ==
+        storage.get_current_binlog_name()) {
       // in addition, in position-based replication mode we also need to check
       // the position
-      const auto &current_rotate_post_header =
-          current_event.get_post_header<binsrv::events::code_type::rotate>();
+      const binsrv::events::generic_post_header<
+          binsrv::events::code_type::rotate>
+          current_rotate_post_header{current_event_v.get_post_header_raw()};
+
       if (current_rotate_post_header.get_position_raw() !=
           storage.get_current_position()) {
         util::exception_location().raise<std::logic_error>(
@@ -414,7 +432,8 @@ void process_artificial_rotate_event(const binsrv::events::event &current_event,
 
       binlog_opening_needed = false;
 
-      const std::string current_binlog_name{storage.get_current_binlog_name()};
+      const std::string current_binlog_name{
+          storage.get_current_binlog_name().str()};
       logger.log(binsrv::log_severity::info,
                  "storage: reused already open binlog file: " +
                      current_binlog_name);
@@ -423,7 +442,8 @@ void process_artificial_rotate_event(const binsrv::events::event &current_event,
       // if names do not match, we need to close the currently open
       // binlog and make sure that binlog_opening_needed is set to true, so
       // that we will open a new one later
-      const std::string old_binlog_name{storage.get_current_binlog_name()};
+      const std::string old_binlog_name{
+          storage.get_current_binlog_name().str()};
       storage.close_binlog();
       logger.log(binsrv::log_severity::info,
                  "storage: closed binlog file left open: " + old_binlog_name);
@@ -433,7 +453,7 @@ void process_artificial_rotate_event(const binsrv::events::event &current_event,
   }
   if (binlog_opening_needed) {
     const auto binlog_open_result{
-        storage.open_binlog(current_rotate_body.get_binlog())};
+        storage.open_binlog(current_rotate_body.get_parsed_binlog())};
 
     std::string message{"storage: "};
     if (binlog_open_result == binsrv::open_binlog_status::created) {
@@ -443,45 +463,77 @@ void process_artificial_rotate_event(const binsrv::events::event &current_event,
       if (binlog_open_result == binsrv::open_binlog_status::opened_empty) {
         message += " (empty)";
       } else if (binlog_open_result ==
-                 binsrv::open_binlog_status::opened_at_magic_paylod_offset) {
+                 binsrv::open_binlog_status::opened_at_magic_payload_offset) {
         message += " (with magic payload only)";
       }
     }
     message += " binlog file: ";
-    message += current_rotate_body.get_binlog();
+    message += current_rotate_body.get_readable_binlog();
     logger.log(binsrv::log_severity::info, message);
   }
 }
 
 void process_rotate_or_stop_event(binsrv::basic_logger &logger,
                                   binsrv::storage &storage) {
-  const std::string old_binlog_name{storage.get_current_binlog_name()};
+  const std::string old_binlog_name{storage.get_current_binlog_name().str()};
   storage.close_binlog();
   logger.log(binsrv::log_severity::info,
              "storage: closed binlog file: " + old_binlog_name);
 }
 
-void process_binlog_event(const binsrv::events::event &current_event,
-                          util::const_byte_span portion,
+void process_binlog_event(const binsrv::events::event_view &current_event_v,
                           binsrv::basic_logger &logger,
                           binsrv::events::reader_context &context,
                           binsrv::storage &storage) {
-  const auto &current_common_header = current_event.get_common_header();
-  const auto code = current_common_header.get_type_code();
+  const auto current_common_header_v{current_event_v.get_common_header_view()};
+  const auto readable_flags{current_common_header_v.get_readable_flags()};
+  logger.log(binsrv::log_severity::info,
+             "event  : " +
+                 std::string{current_common_header_v.get_readable_type_code()} +
+                 (readable_flags.empty() ? "" : " (" + readable_flags + ")"));
+  logger.log(binsrv::log_severity::debug,
+             "event  : [parsed view] " +
+                 boost::lexical_cast<std::string>(current_event_v));
 
-  const auto is_artificial{current_common_header.get_flags().has_element(
+  const bool info_only{context.process_event_view(current_event_v)};
+
+  if (info_only) {
+    logger.log(
+        binsrv::log_severity::info,
+        "event  : [info_only] - will not be written to the binary log file");
+  }
+
+  if (context.is_at_transaction_boundary()) {
+    logger.log(
+        binsrv::log_severity::info,
+        "event  : [end_of_transaction] " +
+            boost::lexical_cast<std::string>(context.get_transaction_gtid()));
+  }
+
+  // here we additionally check for log level because event materialization
+  // is not a trivial operation
+  if (binsrv::log_severity::debug >= logger.get_min_level()) {
+    const binsrv::events::event current_event{context, current_event_v};
+    logger.log(binsrv::log_severity::debug,
+               "event  : [parsed] " +
+                   boost::lexical_cast<std::string>(current_event));
+  }
+
+  const auto code = current_common_header_v.get_type_code();
+  const auto is_artificial{current_common_header_v.get_flags().has_element(
       binsrv::events::common_header_flag_type::artificial)};
 
   // processing the very first event in the sequence - artificial ROTATE event
   if (code == binsrv::events::code_type::rotate && is_artificial) {
-    process_artificial_rotate_event(current_event, logger, storage);
+    process_artificial_rotate_event(current_event_v, logger, storage);
   }
 
   // checking if the event needs to be written to the binlog
-  if (!context.is_event_info_only()) {
-    storage.write_event(portion, context.is_at_transaction_boundary(),
+  if (!info_only) {
+    storage.write_event(current_event_v.get_portion(),
+                        context.is_at_transaction_boundary(),
                         context.get_transaction_gtid(),
-                        current_common_header.get_timestamp());
+                        current_common_header_v.get_timestamp());
   }
 
   // processing the very last event in the sequence - either a non-artificial
@@ -490,6 +542,224 @@ void process_binlog_event(const binsrv::events::event &current_event,
       code == binsrv::events::code_type::stop) {
     process_rotate_or_stop_event(logger, storage);
   }
+}
+
+[[nodiscard]] binsrv::events::event_view
+generate_rotate_event(binsrv::events::event_storage &event_buffer,
+                      const binsrv::events::reader_context &context,
+                      std::uint32_t offset, bool current_timestamp,
+                      std::uint32_t server_id, bool artificial,
+                      const binsrv::composite_binlog_name &binlog_name) {
+  const binsrv::events::generic_post_header<binsrv::events::code_type::rotate>
+      post_header{binsrv::events::magic_binlog_offset};
+  const binsrv::events::generic_body<binsrv::events::code_type::rotate> body{
+      binlog_name};
+
+  binsrv::ctime_timestamp timestamp{};
+  if (current_timestamp) {
+    timestamp = binsrv::ctime_timestamp::now();
+  }
+
+  binsrv::events::common_header_flag_set flags{};
+  if (artificial) {
+    flags |= binsrv::events::common_header_flag_type::artificial;
+  }
+
+  // the value of the 'include_checksum' parameters is taken from the
+  // 'reader_context': immediately after reconnection it will be equal to
+  // the '<replication.verify_checksum>' configuration parameter and after
+  // that will be taken from the FORMAT_DESCRIPTION events, which in the
+  // rewrite mode will be generated by us and therefore will always include
+  // 'checksum_algorithm' set to 'crc32'
+  const auto generated_event{
+      binsrv::events::event::create_event<binsrv::events::code_type::rotate>(
+          offset, timestamp, server_id, flags, post_header, body,
+          context.is_footer_expected(), event_buffer)};
+
+  return binsrv::events::event_view{context,
+                                    util::const_byte_span{event_buffer}};
+}
+
+[[nodiscard]] binsrv::events::event_view
+generate_format_description_event(binsrv::events::event_storage &event_buffer,
+                                  const binsrv::events::reader_context &context,
+                                  std::uint32_t offset,
+                                  std::uint32_t server_id) {
+  const util::semantic_version server_version{
+      context.get_current_encoded_server_version()};
+  const binsrv::events::generic_post_header<
+      binsrv::events::code_type::format_description>
+      post_header{
+          binsrv::events::default_binlog_version, server_version,
+          binsrv::ctime_timestamp::now(),
+          binsrv::events::default_common_header_length,
+          binsrv::events::reader_context::get_hardcoded_post_header_lengths(
+              server_version.get_encoded())};
+  const binsrv::events::generic_body<
+      binsrv::events::code_type::format_description>
+      body{binsrv::events::checksum_algorithm_type::crc32};
+
+  // enforcing checksums for all rewritten upcoming events
+  const auto generated_event{binsrv::events::event::create_event<
+      binsrv::events::code_type::format_description>(
+      offset, binsrv::ctime_timestamp::now(), server_id,
+      binsrv::events::common_header_flag_set{}, post_header, body,
+      true /* include_checksum */, event_buffer)};
+
+  return binsrv::events::event_view{context,
+                                    util::const_byte_span{event_buffer}};
+}
+
+[[nodiscard]] binsrv::events::event_view
+generate_previous_gtids_log_event(binsrv::events::event_storage &event_buffer,
+                                  const binsrv::events::reader_context &context,
+                                  std::uint32_t offset, std::uint32_t server_id,
+                                  const binsrv::gtids::gtid_set &gtids) {
+  const binsrv::events::generic_post_header<
+      binsrv::events::code_type::previous_gtids_log>
+      post_header{};
+  const binsrv::events::generic_body<
+      binsrv::events::code_type::previous_gtids_log>
+      body{gtids};
+  const auto generated_previous_gtids_log_event{
+      binsrv::events::event::create_event<
+          binsrv::events::code_type::previous_gtids_log>(
+          offset, binsrv::ctime_timestamp::now(), server_id,
+          binsrv::events::common_header_flag_set{}, post_header, body, true,
+          event_buffer)};
+
+  return binsrv::events::event_view{context,
+                                    util::const_byte_span{event_buffer}};
+}
+
+void rewrite_and_process_binlog_event(
+    const binsrv::events::event_view &current_event_v,
+    binsrv::basic_logger &logger, binsrv::events::reader_context &context,
+    binsrv::storage &storage, std::uint32_t server_id,
+    std::string_view base_file_name, std::uint64_t file_size) {
+  const auto current_common_header_v = current_event_v.get_common_header_view();
+  const auto code = current_common_header_v.get_type_code();
+
+  // for ROTATE (both artificial and non-artificial), FORMAT_DESCRIPTION,
+  // PREVIOUS_GTIDS_LOG, and STOP events we don't have to do anything -
+  // simply return early from this function
+  if (code == binsrv::events::code_type::format_description ||
+      code == binsrv::events::code_type::previous_gtids_log ||
+      code == binsrv::events::code_type::rotate ||
+      code == binsrv::events::code_type::stop) {
+    const auto readable_flags{current_common_header_v.get_readable_flags()};
+    logger.log(
+        binsrv::log_severity::info,
+        "rewrite: encountered " +
+            std::string{current_common_header_v.get_readable_type_code()} +
+            (readable_flags.empty() ? "" : " (" + readable_flags + ")") +
+            " event in the rewrite mode - skipping");
+    return;
+  }
+
+  // the very first step is to check if we need to close the old binary log
+  // file and open a new one in case when we reached the file size specified
+  // in the 'rewrite_config' or this is the very first event we are going to
+  // write to an empty storage
+
+  // in case of an empty storage we need to generate the following:
+  // 1. ROTATE(artificial    ) <rewrite.base_file_name>.000001:4
+  // 2. FORMAT_DESCRIPTION
+  // 3. PREVIOUS_GTIDS_LOG
+
+  // in case when the storage is not empty, we are at transaction boundary,
+  // and current binlog file reached the file size specified in the
+  // 'rewrite_config', we need to generate the following:
+  // 0. ROTATE(non-artificial) <rewrite.base_file_name>.<index + 1>:4
+  // 1. ROTATE(artificial    ) <rewrite.base_file_name>.<index + 1>:4
+  // 2. FORMAT_DESCRIPTION
+  // 3. PREVIOUS_GTIDS_LOG
+
+  if (context.is_fresh() || (context.is_at_transaction_boundary() &&
+                             storage.get_current_position() >= file_size)) {
+    binsrv::events::event_storage event_buffer;
+    std::uint32_t offset{0U};
+
+    // generating next binlog file name based on base file name from the
+    // configuration file <rewrite.base_file_name> and current binlog file
+    // sequence number from the storage
+
+    // please notice that if storage is empty, then the sequence number will be
+    // zero
+    binsrv::composite_binlog_name binlog_name{};
+    if (storage.is_empty()) {
+      // the very first time we receive an event on an empty storage
+      binlog_name = binsrv::composite_binlog_name{base_file_name, 1U};
+    } else if (context.is_fresh()) {
+      // this is the very first event we received after reconnection
+      // (the storage is not empty and we have an active binlog in it)
+      binlog_name = storage.get_current_binlog_name();
+    } else {
+      // we are at transaction boundary and reached max binlog file size
+      binlog_name = storage.get_current_binlog_name().next();
+    }
+
+    if (!context.is_fresh()) {
+      // generate and process ROTATE(non-artificial) event
+      offset = static_cast<std::uint32_t>(storage.get_current_position());
+      const auto generated_rotate_event_v{generate_rotate_event(
+          event_buffer, context, offset, true /* current timestamp */,
+          server_id, false /* non-artificial */, binlog_name)};
+      logger.log(binsrv::log_severity::info,
+                 "rewrite: generated rotate event in the rewrite mode");
+      process_binlog_event(generated_rotate_event_v, logger, context, storage);
+    }
+
+    // generate and process ROTATE(artificial) event
+    offset = 0U;
+    // artificial ROTATE event must include zero timestamp
+    const auto generated_artificial_rotate_event_v{generate_rotate_event(
+        event_buffer, context, offset, false /* zero timestamp */, server_id,
+        true /* artificial */, binlog_name)};
+    logger.log(
+        binsrv::log_severity::info,
+        "rewrite: generated artificial rotate event in the rewrite mode");
+    process_binlog_event(generated_artificial_rotate_event_v, logger, context,
+                         storage);
+
+    // generate and process FORMAT_DESCRIPTION event
+    offset = binsrv::events::magic_binlog_offset;
+    const auto generated_format_description_event_v{
+        generate_format_description_event(event_buffer, context, offset,
+                                          server_id)};
+    logger.log(
+        binsrv::log_severity::info,
+        "rewrite: generated format description event in the rewrite mode");
+    process_binlog_event(generated_format_description_event_v, logger, context,
+                         storage);
+
+    // generate and process PREVIOUS_GTIDS_LOG event
+    offset += static_cast<std::uint32_t>(
+        generated_format_description_event_v.get_total_size());
+    const auto generated_previous_gtids_log_event_v{
+        generate_previous_gtids_log_event(event_buffer, context, offset,
+                                          server_id, storage.get_gtids())};
+    logger.log(
+        binsrv::log_severity::info,
+        "rewrite: generated previous gtids log event in the rewrite mode");
+    process_binlog_event(generated_previous_gtids_log_event_v, logger, context,
+                         storage);
+  }
+
+  // in rewrite mode we need to update next_event_position (and optional
+  // checksum in the footer) in the received event data portion
+  binsrv::events::event_storage buffer{};
+  const auto event_copy_uv{binsrv::events::materialize(
+      current_event_v, buffer,
+      binsrv::events::materialization_type::force_add_checksum)};
+  {
+    // TODO: optimize redundant checksum recalculation
+    const auto proxy{event_copy_uv.get_write_proxy()};
+    proxy.get_common_header_updatable_view().set_next_event_position_raw(
+        static_cast<std::uint32_t>(storage.get_current_position() +
+                                   event_copy_uv.get_total_size()));
+  }
+  process_binlog_event(event_copy_uv, logger, context, storage);
 }
 
 bool open_connection_and_switch_to_replication(
@@ -537,7 +807,7 @@ bool open_connection_and_switch_to_replication(
                                                   blocking_mode);
       } else {
         connection.switch_to_position_replication(
-            server_id, storage.get_current_binlog_name(),
+            server_id, storage.get_current_binlog_name().str(),
             storage.get_current_position(), verify_checksum, blocking_mode);
       }
     }
@@ -559,7 +829,8 @@ void receive_binlog_events(
     const volatile std::atomic_flag &termination_flag,
     binsrv::basic_logger &logger, const easymysql::library &mysql_lib,
     const easymysql::connection_config &connection_config,
-    std::uint32_t server_id, bool verify_checksum, binsrv::storage &storage) {
+    std::uint32_t server_id, bool verify_checksum, binsrv::storage &storage,
+    const binsrv::optional_rewrite_config &optional_rewrite_config) {
   easymysql::connection connection{};
   if (!open_connection_and_switch_to_replication(
           operation_mode, logger, mysql_lib, connection_config, server_id,
@@ -575,7 +846,7 @@ void receive_binlog_events(
 
   binsrv::events::reader_context context{
       connection.get_server_version(), verify_checksum,
-      storage.get_replication_mode(), storage.get_current_binlog_name(),
+      storage.get_replication_mode(), storage.get_current_binlog_name().str(),
       static_cast<std::uint32_t>(storage.get_current_position())};
 
   bool fetch_result{};
@@ -590,29 +861,19 @@ void receive_binlog_events(
     portion = portion.subspan(1U);
     log_span_dump(logger, portion);
 
-    // TODO: just for redirection to another byte stream we need to parse
-    //       the ROTATE and FORMAT_DESCRIPTION events only, every other one
-    //       can be just considered as a data portion (unless we want to do
-    //       basic integrity checks like event sizes / position and CRC)
-    const binsrv::events::event current_event{context, portion};
-    const auto &current_header{current_event.get_common_header()};
-    auto readable_flags{current_header.get_readable_flags()};
-    logger.log(
-        binsrv::log_severity::info,
-        "event: " + std::string{current_header.get_readable_type_code()} +
-            (readable_flags.empty() ? "" : " (" + readable_flags + ")") +
-            (context.is_event_info_only() ? " [info_only]" : ""));
-    logger.log(binsrv::log_severity::debug,
-               "Parsed event:\n" +
-                   boost::lexical_cast<std::string>(current_event));
-    if (context.is_at_transaction_boundary()) {
-      logger.log(
-          binsrv::log_severity::info,
-          "encountered the end of transaction " +
-              boost::lexical_cast<std::string>(context.get_transaction_gtid()));
-    }
+    const binsrv::events::event_view current_event_v{context, portion};
 
-    process_binlog_event(current_event, portion, logger, context, storage);
+    if (optional_rewrite_config.has_value()) {
+      // in rewrite mode we need to ignore ROTATE (artificial),
+      // FORMAT_DESCRIPTION, PREVIOUS_GTIDS_LOG, ROTATE (non-artificial),
+      // and STOP events
+      rewrite_and_process_binlog_event(
+          current_event_v, logger, context, storage, server_id,
+          optional_rewrite_config->get<"base_file_name">(),
+          optional_rewrite_config->get<"file_size">().get_value());
+    } else {
+      process_binlog_event(current_event_v, logger, context, storage);
+    }
   }
   if (termination_flag.test()) {
     logger.log(binsrv::log_severity::info,
@@ -634,7 +895,7 @@ void receive_binlog_events(
   // continue operation from the transaction boundary
 
   // in position-based replication mode this is not needed as it is not a
-  // problem to resume streaming fron a position that does not correspond to
+  // problem to resume streaming from a position that does not correspond to
   // transaction boundary
   if (storage.is_in_gtid_replication_mode()) {
     storage.discard_incomplete_transaction_events();
@@ -706,7 +967,7 @@ bool handle_search_by_timestamp(std::string_view config_file_path,
       if (record.timestamps.get_min_timestamp() > timestamp) {
         break;
       }
-      response.add_record(record.name, record.size,
+      response.add_record(record.name.str(), record.size,
                           storage.get_binlog_uri(record.name),
                           record.previous_gtids, record.added_gtids,
                           record.timestamps.get_min_timestamp().get_value(),
@@ -766,7 +1027,7 @@ bool handle_search_by_gtid_set(std::string_view config_file_path,
       }
       remaining_gtids.subtract(*record.added_gtids);
 
-      response.add_record(record.name, record.size,
+      response.add_record(record.name.str(), record.size,
                           storage.get_binlog_uri(record.name),
                           record.previous_gtids, record.added_gtids,
                           record.timestamps.get_min_timestamp().get_value(),
@@ -914,6 +1175,7 @@ int main(int argc, char *argv[]) {
     const auto idle_time_seconds{replication_config.get<"idle_time">()};
     const auto verify_checksum{replication_config.get<"verify_checksum">()};
     const auto replication_mode{replication_config.get<"mode">()};
+    const auto optional_rewrite_config{replication_config.get<"rewrite">()};
 
     binsrv::storage storage{storage_config,
                             binsrv::storage_construction_mode_type::streaming,
@@ -927,7 +1189,7 @@ int main(int argc, char *argv[]) {
 
     receive_binlog_events(operation_mode, termination_flag, *logger, mysql_lib,
                           connection_config, server_id, verify_checksum,
-                          storage);
+                          storage, optional_rewrite_config);
 
     if (operation_mode == binsrv::operation_mode_type::pull) {
       std::size_t iteration_number{1U};
@@ -948,7 +1210,8 @@ int main(int argc, char *argv[]) {
 
         receive_binlog_events(operation_mode, termination_flag, *logger,
                               mysql_lib, connection_config, server_id,
-                              verify_checksum, storage);
+                              verify_checksum, storage,
+                              optional_rewrite_config);
         ++iteration_number;
       }
     }

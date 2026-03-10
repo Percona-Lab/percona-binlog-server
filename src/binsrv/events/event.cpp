@@ -39,7 +39,7 @@
 
 namespace binsrv::events {
 
-event::event(reader_context &context, const event_view &view)
+event::event(const reader_context &context, const event_view &view)
     : common_header_{view.get_common_header_raw()} {
   const auto encoded_server_version{
       context.get_current_encoded_server_version()};
@@ -51,10 +51,9 @@ event::event(reader_context &context, const event_view &view)
   if (view.has_footer()) {
     footer_.emplace(view.get_footer_view());
   };
-  context.process_event(*this);
 }
 
-event::event(reader_context &context, util::const_byte_span portion)
+event::event(const reader_context &context, util::const_byte_span portion)
     : event{context, event_view{context, portion}} {}
 
 template <typename T>

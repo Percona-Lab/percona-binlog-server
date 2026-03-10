@@ -255,6 +255,10 @@ set(source_files
   src/binsrv/binlog_file_metadata.hpp
   src/binsrv/binlog_file_metadata.cpp
 
+  src/binsrv/composite_binlog_name_fwd.hpp
+  src/binsrv/composite_binlog_name.hpp
+  src/binsrv/composite_binlog_name.cpp
+
   src/binsrv/cout_logger.hpp
   src/binsrv/cout_logger.cpp
 
@@ -293,9 +297,14 @@ set(source_files
 
   src/binsrv/replication_config_fwd.hpp
   src/binsrv/replication_config.hpp
+  src/binsrv/replication_config.cpp
 
   src/binsrv/replication_mode_type_fwd.hpp
   src/binsrv/replication_mode_type.hpp
+
+  src/binsrv/rewrite_config_fwd.hpp
+  src/binsrv/rewrite_config.hpp
+  src/binsrv/rewrite_config.cpp
 
   src/binsrv/size_unit_fwd.hpp
   src/binsrv/size_unit.hpp

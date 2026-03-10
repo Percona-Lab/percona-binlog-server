@@ -13,30 +13,29 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef BINSRV_EVENTS_EVENT_VIEW_FWD_HPP
-#define BINSRV_EVENTS_EVENT_VIEW_FWD_HPP
+#ifndef BINSRV_REWRITE_CONFIG_HPP
+#define BINSRV_REWRITE_CONFIG_HPP
 
-#include <cstdint>
-#include <iosfwd>
+#include "binsrv/rewrite_config_fwd.hpp" // IWYU pragma: export
 
-#include "binsrv/events/event_fwd.hpp"
+#include <string>
 
-namespace binsrv::events {
+#include "binsrv/size_unit.hpp"
 
-class event_updatable_view;
-class event_view;
+#include "util/nv_tuple.hpp"
 
-enum class materialization_type : std::uint8_t {
-  force_add_checksum,
-  force_remove_checksum,
-  leave_checksum_as_is
+namespace binsrv {
+
+// clang-format off
+struct [[nodiscard]] rewrite_config
+    : util::nv_tuple<
+          util::nv<"base_file_name", std::string>,
+          util::nv<"file_size", size_unit>
+      > {
+  void validate() const;
 };
-[[nodiscard]] event_updatable_view materialize(const event_view &event_v,
-                                               event_storage &buffer,
-                                               materialization_type mode);
+// clang-format on
 
-std::ostream &operator<<(std::ostream &output, const event_view &obj);
+} // namespace binsrv
 
-} // namespace binsrv::events
-
-#endif // BINSRV_EVENTS_EVENT_VIEW_FWD_HPP
+#endif // BINSRV_REWRITE_CONFIG_HPP

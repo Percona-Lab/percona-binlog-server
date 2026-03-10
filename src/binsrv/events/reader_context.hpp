@@ -24,21 +24,21 @@
 
 #include "binsrv/gtids/gtid.hpp"
 
-#include "binsrv/events/common_header_fwd.hpp"
+#include "binsrv/events/common_header_view_fwd.hpp"
 #include "binsrv/events/event_fwd.hpp"
+#include "binsrv/events/event_view_fwd.hpp"
 #include "binsrv/events/protocol_traits.hpp"
 
 namespace binsrv::events {
 
 class [[nodiscard]] reader_context {
-  friend class event;
-
 public:
   reader_context(std::uint32_t encoded_server_version,
                  bool checksum_verification_enabled,
                  replication_mode_type replication_mode,
                  std::string_view binlog_name, std::uint32_t position);
 
+  [[nodiscard]] bool is_fresh() const noexcept { return cycle_number_ == 0U; }
   [[nodiscard]] std::uint32_t
   get_current_encoded_server_version() const noexcept {
     return encoded_server_version_;
@@ -65,13 +65,14 @@ public:
            (state_ == state_type::rotate_artificial_expected);
   }
 
-  [[nodiscard]] bool is_event_info_only() const noexcept {
-    return info_only_event_;
-  }
+  [[nodiscard]] static const post_header_length_container &
+  get_known_post_header_lengths(std::uint32_t encoded_server_version) noexcept;
 
   [[nodiscard]] static const post_header_length_container &
   get_hardcoded_post_header_lengths(
       std::uint32_t encoded_server_version) noexcept;
+
+  [[nodiscard]] bool process_event_view(const event_view &current_event_v);
 
 private:
   // this class implements the logic of the following state machine
@@ -110,29 +111,31 @@ private:
   std::uint32_t expected_transaction_length_{0U};
   std::uint32_t current_transaction_length_{0U};
 
-  bool expect_ignorable_preamble_events_{false};
-  bool info_only_event_{false};
+  bool expect_info_only_preamble_events_{false};
 
-  void process_event(const event &current_event);
-  [[nodiscard]] bool
-  process_event_in_rotate_artificial_expected_state(const event &current_event);
+  std::size_t cycle_number_{0U};
+
+  [[nodiscard]] bool process_event_in_rotate_artificial_expected_state(
+      const event_view &current_event_v, bool &info_only);
   [[nodiscard]] bool process_event_in_format_description_expected_state(
-      const event &current_event);
+      const event_view &current_event_v, bool &info_only);
+  [[nodiscard]] bool process_event_in_previous_gtids_expected_state(
+      const event_view &current_event_v, bool &info_only);
   [[nodiscard]] bool
-  process_event_in_previous_gtids_expected_state(const event &current_event);
+  process_event_in_gtid_log_expected_state(const event_view &current_event_v,
+                                           bool &info_only);
   [[nodiscard]] bool
-  process_event_in_gtid_log_expected_state(const event &current_event);
-  [[nodiscard]] bool
-  process_event_in_any_other_expected_state(const event &current_event);
-  [[nodiscard]] bool
-  process_event_in_rotate_or_stop_expected_state(const event &current_event);
+  process_event_in_any_other_expected_state(const event_view &current_event_v,
+                                            bool &info_only);
+  [[nodiscard]] bool process_event_in_rotate_or_stop_expected_state(
+      const event_view &current_event_v, bool &info_only);
 
-  void validate_position(const common_header &common_header) const;
-  void validate_position_and_advance(const common_header &common_header);
+  void validate_position(const common_header_view &common_header_v) const;
+  void validate_position_and_advance(const common_header_view &common_header_v);
   void reset_position();
 
-  void start_transaction(const event &current_event);
-  void update_transaction(const common_header &common_header);
+  void start_transaction(const event_view &current_event_v);
+  void update_transaction(const common_header_view &common_header_v);
   void finish_transaction();
 };
 

@@ -74,7 +74,7 @@ public:
             // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
             const_cast<std::byte *>(std::data(portion)), std::size(portion)}} {}
 
-  // deliberately implicit to allow seamless convertion from
+  // deliberately implicit to allow seamless conversion from
   // footer_updatable_view to footer_view
   // NOLINTNEXTLINE(hicpp-explicit-conversions)
   footer_view(const footer_updatable_view &other) : footer_view_base{other} {}

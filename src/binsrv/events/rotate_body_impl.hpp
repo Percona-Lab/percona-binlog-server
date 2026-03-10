@@ -23,6 +23,8 @@
 
 #include <boost/container/small_vector.hpp>
 
+#include "binsrv/composite_binlog_name_fwd.hpp"
+
 #include "util/byte_span.hpp"
 
 namespace binsrv::events {
@@ -35,16 +37,16 @@ public:
       boost::container::small_vector<std::byte,
                                      expected_max_binlog_name_length>;
 
-  explicit generic_body_impl(std::string_view binlog_name);
+  explicit generic_body_impl(const composite_binlog_name &binlog_name);
   explicit generic_body_impl(util::const_byte_span portion);
 
   [[nodiscard]] const binlog_storage &get_binlog_raw() noexcept {
     return binlog_;
   }
-
-  [[nodiscard]] std::string_view get_binlog() const noexcept {
+  [[nodiscard]] std::string_view get_readable_binlog() const noexcept {
     return util::as_string_view(binlog_);
   }
+  [[nodiscard]] composite_binlog_name get_parsed_binlog() const;
 
   [[nodiscard]] std::size_t calculate_encoded_size() const noexcept {
     return std::size(binlog_);

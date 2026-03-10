@@ -25,6 +25,7 @@
 
 #include <boost/test/tools/old/interface.hpp>
 
+#include "binsrv/composite_binlog_name.hpp"
 #include "binsrv/ctime_timestamp.hpp"
 #include "binsrv/replication_mode_type.hpp"
 
@@ -35,6 +36,7 @@
 #include "binsrv/events/common_header.hpp"
 #include "binsrv/events/common_header_flag_type.hpp"
 #include "binsrv/events/event.hpp"
+#include "binsrv/events/event_view.hpp"
 #include "binsrv/events/protocol_traits_fwd.hpp"
 #include "binsrv/events/reader_context.hpp"
 
@@ -59,8 +61,9 @@ BOOST_AUTO_TEST_CASE(EventRoundTrip) {
 
   const binsrv::events::generic_post_header<binsrv::events::code_type::rotate>
       rotate_post_header{binsrv::events::magic_binlog_offset};
+  const binsrv::composite_binlog_name binlog_name{"binlog", 1U};
   const binsrv::events::generic_body<binsrv::events::code_type::rotate>
-      rotate_body{"binlog.000001"};
+      rotate_body{binlog_name};
 
   const auto generated_rotate_event{
       binsrv::events::event::create_event<binsrv::events::code_type::rotate>(
@@ -69,8 +72,13 @@ BOOST_AUTO_TEST_CASE(EventRoundTrip) {
           binsrv::ctime_timestamp{}, default_server_id, flags,
           rotate_post_header, rotate_body, true, event_buffer)};
 
-  const binsrv::events::event parsed_rotate_event{
+  const binsrv::events::event_view generated_rotate_event_v{
       context, util::const_byte_span{event_buffer}};
+  const binsrv::events::event parsed_rotate_event{context,
+                                                  generated_rotate_event_v};
+  bool info_only{false};
+  info_only = context.process_event_view(generated_rotate_event_v);
+  BOOST_CHECK(info_only);
 
   BOOST_CHECK_EQUAL(generated_rotate_event, parsed_rotate_event);
 
@@ -96,8 +104,12 @@ BOOST_AUTO_TEST_CASE(EventRoundTrip) {
           format_description_post_header, format_description_body, true,
           event_buffer)};
 
-  const binsrv::events::event parsed_format_description_event{
+  const binsrv::events::event_view generated_format_description_event_v{
       context, util::const_byte_span{event_buffer}};
+  const binsrv::events::event parsed_format_description_event{
+      context, generated_format_description_event_v};
+  info_only = context.process_event_view(generated_format_description_event_v);
+  BOOST_CHECK(!info_only);
 
   BOOST_CHECK_EQUAL(generated_format_description_event,
                     parsed_format_description_event);
@@ -120,9 +132,136 @@ BOOST_AUTO_TEST_CASE(EventRoundTrip) {
           previous_gtids_log_post_header, previous_gtids_log_body, true,
           event_buffer)};
 
-  const binsrv::events::event parsed_previous_gtids_log_event{
+  const binsrv::events::event_view generated_previous_gtids_log_event_v{
       context, util::const_byte_span{event_buffer}};
+  const binsrv::events::event parsed_previous_gtids_log_event{
+      context, generated_previous_gtids_log_event_v};
+  info_only = context.process_event_view(generated_previous_gtids_log_event_v);
+  BOOST_CHECK(!info_only);
 
   BOOST_CHECK_EQUAL(generated_previous_gtids_log_event,
                     parsed_previous_gtids_log_event);
+}
+
+BOOST_AUTO_TEST_CASE(EventMaterialization) {
+  const util::semantic_version server_version{"8.4.8"};
+  std::uint32_t offset{0U};
+  const binsrv::events::reader_context context_with_checksum{
+      server_version.get_encoded(), true, binsrv::replication_mode_type::gtid,
+      "", offset};
+  const binsrv::events::reader_context context_wo_checksum{
+      server_version.get_encoded(), false, binsrv::replication_mode_type::gtid,
+      "", offset};
+
+  binsrv::events::event_storage event_with_footer_buffer;
+
+  // artificial ROTATE event
+  offset = 0U;
+  const binsrv::events::common_header_flag_set flags{
+      binsrv::events::common_header_flag_type::artificial};
+
+  const binsrv::events::generic_post_header<binsrv::events::code_type::rotate>
+      post_header{binsrv::events::magic_binlog_offset};
+  const binsrv::composite_binlog_name binlog_name{"binlog", 1U};
+  const binsrv::events::generic_body<binsrv::events::code_type::rotate> body{
+      binlog_name};
+
+  const auto generated_event{
+      binsrv::events::event::create_event<binsrv::events::code_type::rotate>(
+          offset,
+          // artificial ROTATE event must include zero timestamp
+          binsrv::ctime_timestamp{}, default_server_id, flags, post_header,
+          body, true, event_with_footer_buffer)};
+
+  const binsrv::events::event_view generated_event_v{
+      context_with_checksum, util::const_byte_span{event_with_footer_buffer}};
+
+  BOOST_CHECK(generated_event_v.has_footer());
+  BOOST_CHECK(generated_event_v.get_footer_view().get_crc_raw() ==
+              generated_event_v.calculate_crc());
+  BOOST_CHECK(generated_event_v.get_common_header_view().get_event_size_raw() ==
+              generated_event_v.get_total_size());
+  BOOST_CHECK(generated_event.calculate_encoded_size() ==
+              generated_event_v.get_total_size());
+
+  binsrv::events::event_storage materialization_buffer;
+
+  // checking materialization of an event that has checksum
+  const binsrv::events::event_view checksum_as_is_generated_v{
+      binsrv::events::materialize(
+          generated_event_v, materialization_buffer,
+          binsrv::events::materialization_type::leave_checksum_as_is)};
+  BOOST_CHECK(checksum_as_is_generated_v.has_footer());
+  BOOST_CHECK(checksum_as_is_generated_v.get_footer_view().get_crc_raw() ==
+              checksum_as_is_generated_v.calculate_crc());
+  BOOST_CHECK(checksum_as_is_generated_v.get_common_header_view()
+                  .get_event_size_raw() ==
+              checksum_as_is_generated_v.get_total_size());
+  const binsrv::events::event_view checked_checksum_as_is_generated_v{
+      context_with_checksum, util::const_byte_span{materialization_buffer}};
+
+  const binsrv::events::event_view force_add_checksum_generated_v{
+      binsrv::events::materialize(
+          generated_event_v, materialization_buffer,
+          binsrv::events::materialization_type::force_add_checksum)};
+  BOOST_CHECK(force_add_checksum_generated_v.has_footer());
+  BOOST_CHECK(force_add_checksum_generated_v.get_footer_view().get_crc_raw() ==
+              force_add_checksum_generated_v.calculate_crc());
+  BOOST_CHECK(force_add_checksum_generated_v.get_common_header_view()
+                  .get_event_size_raw() ==
+              force_add_checksum_generated_v.get_total_size());
+  const binsrv::events::event_view checked_force_add_checksum_generated_v{
+      context_with_checksum, util::const_byte_span{materialization_buffer}};
+
+  const binsrv::events::event_view force_remove_checksum_generated_v{
+      binsrv::events::materialize(
+          generated_event_v, materialization_buffer,
+          binsrv::events::materialization_type::force_remove_checksum)};
+  BOOST_CHECK(!force_remove_checksum_generated_v.has_footer());
+  BOOST_CHECK(force_remove_checksum_generated_v.get_common_header_view()
+                  .get_event_size_raw() ==
+              force_remove_checksum_generated_v.get_total_size());
+  const binsrv::events::event_view checked_force_remove_checksum_generated_v{
+      context_wo_checksum, util::const_byte_span{materialization_buffer}};
+
+  // checking materialization of an event that does not have checksum
+  const binsrv::events::event_storage event_wo_footer_buffer{
+      materialization_buffer};
+  const binsrv::events::event_view copied_event_v{
+      context_wo_checksum, util::const_byte_span{event_wo_footer_buffer}};
+
+  const binsrv::events::event_view checksum_as_is_copied_v{
+      binsrv::events::materialize(
+          copied_event_v, materialization_buffer,
+          binsrv::events::materialization_type::leave_checksum_as_is)};
+  BOOST_CHECK(!checksum_as_is_copied_v.has_footer());
+  BOOST_CHECK(
+      checksum_as_is_copied_v.get_common_header_view().get_event_size_raw() ==
+      checksum_as_is_copied_v.get_total_size());
+  const binsrv::events::event_view checked_checksum_as_is_copied_v{
+      context_wo_checksum, util::const_byte_span{materialization_buffer}};
+
+  const binsrv::events::event_view force_add_checksum_copied_v{
+      binsrv::events::materialize(
+          copied_event_v, materialization_buffer,
+          binsrv::events::materialization_type::force_add_checksum)};
+  BOOST_CHECK(force_add_checksum_copied_v.has_footer());
+  BOOST_CHECK(force_add_checksum_copied_v.get_footer_view().get_crc_raw() ==
+              force_add_checksum_copied_v.calculate_crc());
+  BOOST_CHECK(force_add_checksum_copied_v.get_common_header_view()
+                  .get_event_size_raw() ==
+              force_add_checksum_copied_v.get_total_size());
+  const binsrv::events::event_view checked_force_add_checksum_copied_v{
+      context_with_checksum, util::const_byte_span{materialization_buffer}};
+
+  const binsrv::events::event_view force_remove_checksum_copied_v{
+      binsrv::events::materialize(
+          copied_event_v, materialization_buffer,
+          binsrv::events::materialization_type::force_remove_checksum)};
+  BOOST_CHECK(!force_remove_checksum_copied_v.has_footer());
+  BOOST_CHECK(force_remove_checksum_copied_v.get_common_header_view()
+                  .get_event_size_raw() ==
+              force_remove_checksum_copied_v.get_total_size());
+  const binsrv::events::event_view checked_force_remove_checksum_copied_v{
+      context_wo_checksum, util::const_byte_span{materialization_buffer}};
 }

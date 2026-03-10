@@ -17,6 +17,7 @@
 #   --let $binsrv_replication_mode = position | gtid
 #   --let $binsrv_checkpoint_size = 2M (optional)
 #   --let $binsrv_checkpoint_interval = 30s (optional)
+#   --let $binsrv_rewrite_file_size = 1K (optional)
 #   --source set_up_binsrv_environment.inc
 
 --echo
@@ -90,6 +91,12 @@ eval SET @binsrv_config_json = JSON_OBJECT(
      'uri', @storage_uri
   )
 );
+
+if ($binsrv_rewrite_file_size != "")
+{
+  eval SET @binsrv_config_json = JSON_INSERT(@binsrv_config_json, '$.replication.rewrite', JSON_OBJECT('base_file_name', 'bnlg', 'file_size', '$binsrv_rewrite_file_size'));
+}
+
 if ($storage_backend == s3)
 {
   eval SET @binsrv_config_json = JSON_INSERT(@binsrv_config_json, '$.storage.fs_buffer_directory', '$binsrv_buffer_path');

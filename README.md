@@ -226,7 +226,7 @@ The `<reason>` may be one of the following (but not limited to):
 
 #### 'search_by_gtid_set' operation mode
 
-In this mode the utility requires one additional command line parameter `<gtid_set>` and will print to the standard output the minimal set of binlog files stored in the Binary Log Server data directory required to cover the specidfied GTID set `<gtid_set>`. This operation makes sense only when the storage we are querying was created in GTID-based replication mode.
+In this mode the utility requires one additional command line parameter `<gtid_set>` and will print to the standard output the minimal set of binlog files stored in the Binary Log Server data directory required to cover the specified GTID set `<gtid_set>`. This operation makes sense only when the storage we are querying was created in GTID-based replication mode.
 Along with the file name the output will also return its current size in bytes, timestamps, URI and optional initial / added GTIDs.
 For instance,
 ```bash
@@ -339,7 +339,11 @@ The Percona Binary Log Server configuration file has the following format.
     "server_id": 42,
     "idle_time": 10,
     "verify_checksum": true,
-    "mode": "position"
+    "mode": "gtid",
+    "rewrite": {
+      "base_file_name": "binlog",
+      "file_size": "128M"
+    }
   },
   "storage": {
     "backend": "s3",
@@ -376,7 +380,7 @@ Currently we use the following mapping:
 - `<connection.read_timeout>` - the number of seconds the MySQL client library will wait to read data from a remote server (this parameter may affect the responsiveness of the program to graceful termination - see below).
 - `<connection.write_timeout>` - the number of seconds the MySQL client library will wait to write data to a remote server.
 
-Note: you should specify either `<connection.host>` / `<connection.port>` pair or single `<connnection.dns_srv_name>`.
+Note: you should specify either `<connection.host>` / `<connection.port>` pair or single `<connection.dns_srv_name>`.
 
 #### \<connection.ssl\> optional section
 - `<connection.ssl.mode>` - specifies the desired security state of the connection to the MySQL server, can be one of the `disabled` / `preferred` / `required` / `verify_ca` / `verify_identity` ([--ssl-mode](https://dev.mysql.com/doc/refman/8.4/en/connection-options.html#option_general_ssl-mode) `mysql` utility command line option).
@@ -389,7 +393,7 @@ Note: you should specify either `<connection.host>` / `<connection.port>` pair o
 - `<connection.ssl.cipher>` (optional) - specifies the list of permissible ciphers for connection encryption ([--ssl-cipher](https://dev.mysql.com/doc/refman/8.4/en/connection-options.html#option_general_ssl-cipher) `mysql` utility command line option).
 
 #### \<connection.tls\> optional section
-- `<connection.tls.ca>` (optional) - specifies the list of permissible TLSv1.3 ciphersuites for encrypted connections ([--tls-ciphersuites](https://dev.mysql.com/doc/refman/8.4/en/connection-options.html#option_general_tls-ciphersuites) `mysql` utility command line option).
+- `<connection.tls.ca>` (optional) - specifies the list of permissible TLSv1.3 cipher suites for encrypted connections ([--tls-ciphersuites](https://dev.mysql.com/doc/refman/8.4/en/connection-options.html#option_general_tls-ciphersuites) `mysql` utility command line option).
 - `<connection.tls.version>` (optional) - specifies the list of permissible TLS protocols for encrypted connections ([--tls-version](https://dev.mysql.com/doc/refman/8.4/en/connection-options.html#option_general_tls-version) `mysql` utility command line option).
 
 #### \<replication\> section
@@ -397,6 +401,11 @@ Note: you should specify either `<connection.host>` / `<connection.port>` pair o
 - `<replication.idle_time>` - the number of seconds the utility will spend in disconnected mode between reconnection attempts.
 - `<replication.verify_checksum>` - a boolean value which specifies whether the utility should verify event checksums.
 - `<replication.mode>` - the replication mode, can be either `position` for position-based replication or `gtid` for GTID-based replication.
+
+#### \<replication.rewrite\> section
+If this section is present, then the utility will not split binlog events the same way as they were on the original MySQL server. Instead, it will generate its own binlog file name sequence (based on the `<replication.rewrite.base_file_name>`) and will change to a new binary log file when the size of the previous one riches the specified value (`<replication.rewrite.file_size>`). Having this section requires `<replication.mode>` to be set to `gtid`.
+- `<replication.rewrite.base_file_name>` - the base name of the generated binlog file names in the "rewrite" mode. E.g. `rewritten_binlog` will cause `rewritten_binlog.000001`, `rewritten_binlog.000002`, etc. file names to be generated.
+- `<replication.rewrite.file_size>` - the maximum individual binlog file size after reaching which the utility will switch to a new one. The value is expected to be a string containing an integer followed by an optional suffix 'K' / 'M' / 'G' / 'T' / 'P', e.g. /\d+\[KMGTP\]?/. The minimal allowed value of this parameter is `1024` bytes.
 
 #### \<storage\> section
 - `<storage.backend>` - the type of the storage where the received binary logs should be stored:
@@ -456,7 +465,7 @@ For example:
 - `https://key_id:secret@192.168.0.100:9000/binsrv-bucket/vault` - `key_id` will be used as `AWS_ACCESS_KEY_ID`, `secret` will be used as `AWS_SECRET_ACCESS_KEY`, `binsrv-bucket` will be the name of the bucket, `/vault` will be the virtual directory, `192.168.0.100:9000` will be the custom endpoint of the `S3`-compatible server, the connection will be established via secure HTTPS protocol.
 
 ##### Checkpointing on S3
-Please note that S3 API does not provide a way to append a portion of data to an existing object. Currently, in our S3 storage backend "append" operations are implemented as complete object overwrites meaning data re-uploads. Practically, if your typical binlog file size is '1G' and you set `<storage.checkpoint_size>` to '256M', you will upload '256M + 512M + 768M + 1024M = 2560M' (about 2.5 times more then your binlog file size in this example). So, keep balance between the value of this parameter and your tipical binlog size. Similar concerns can be rised regarding enabling `<storage.checkpoint_interval>`.
+Please note that S3 API does not provide a way to append a portion of data to an existing object. Currently, in our S3 storage backend "append" operations are implemented as complete object overwrites meaning data re-uploads. Practically, if your typical binlog file size is '1G' and you set `<storage.checkpoint_size>` to '256M', you will upload '256M + 512M + 768M + 1024M = 2560M' (about 2.5 times more then your binlog file size in this example). So, keep balance between the value of this parameter and your typical binlog size. Similar concerns can be raised regarding enabling `<storage.checkpoint_interval>`.
 
 ### Resuming previous operation
 
