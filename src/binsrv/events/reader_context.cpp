@@ -36,23 +36,24 @@
 
 namespace binsrv::events {
 
-reader_context::reader_context(std::uint32_t encoded_server_version,
+reader_context::reader_context(std::uint32_t connection_encoded_server_version,
                                bool checksum_verification_enabled,
                                replication_mode_type replication_mode,
                                std::string_view binlog_name,
                                std::uint32_t position)
-    : encoded_server_version_{encoded_server_version},
+    : connection_encoded_server_version_{connection_encoded_server_version},
+      current_encoded_server_version_{connection_encoded_server_version},
       checksum_verification_enabled_{checksum_verification_enabled},
       footer_expected_{checksum_verification_enabled},
       replication_mode_{replication_mode}, binlog_name_{binlog_name},
       position_{position == 0U ? static_cast<std::uint32_t>(magic_binlog_offset)
                                : position},
-      post_header_lengths_{
-          get_known_post_header_lengths(encoded_server_version_)} {}
+      post_header_lengths_{get_known_post_header_lengths(
+          get_connection_encoded_server_version())} {}
 
 [[nodiscard]] std::size_t
 reader_context::get_current_post_header_length(code_type code) const noexcept {
-  return get_post_header_length_for_code(encoded_server_version_,
+  return get_post_header_length_for_code(get_current_encoded_server_version(),
                                          post_header_lengths_, code);
 }
 
@@ -372,10 +373,10 @@ reader_context::get_hardcoded_post_header_lengths(
 
   // to sum up, 8.4 in comparison to 8.0 has:
   // - one more event GTID_TAGGED_LOG_EVENT (code 42)
-  // - because of this the length of the FORMAT_DESCRIPTION_EVENT post-header
+  // - because of this the length of the FORMAT_DESCRIPTION_EVENT post header
   //   (code 15) also increased by 1 byte
   // - also WRITE_ROWS_V1 (code 23), UPDATE_ROWS_V1 (code 24), and
-  //   DELETE_ROWS_V1 (code 25) are lo longer supported and their post-header
+  //   DELETE_ROWS_V1 (code 25) are lo longer supported and their post header
   //   lengths changed from 8 bytes to 0
 
   // the remainder of the 'earliest' container (the gtid_tagged_log element)
@@ -626,7 +627,6 @@ reader_context::process_event_in_format_description_expected_state(
   }
 
   const auto post_header{generic_post_header<code_type::format_description>{
-      get_current_encoded_server_version(),
       current_event_v.get_post_header_raw()}};
 
   // check if FDE has expected binlog version number
@@ -641,17 +641,20 @@ reader_context::process_event_in_format_description_expected_state(
         "unexpected common header length in format description event");
   }
 
-  // check if server version in FDE is the same as the one extracted from
-  // the connection object ('mysql_get_server_version()')
-  if (post_header.get_encoded_server_version() != encoded_server_version_) {
+  // check if server version in FDE is not greater than as the one extracted
+  // from the connection object ('mysql_get_server_version()')
+  current_encoded_server_version_ = post_header.get_encoded_server_version();
+  if (get_current_encoded_server_version() >
+      get_connection_encoded_server_version()) {
     util::exception_location().raise<std::logic_error>(
         "unexpected server version in format description event");
   }
   // check if the values from the post_header_lengths array are the same as
   // generic_post_header_impl<code_type::xxx>::size_in_bytes for known events
   validate_post_header_lengths(
-      encoded_server_version_, post_header.get_post_header_lengths_raw(),
-      get_known_post_header_lengths(encoded_server_version_));
+      get_current_encoded_server_version(),
+      post_header.get_post_header_lengths_raw(),
+      get_known_post_header_lengths(get_current_encoded_server_version()));
 
   post_header_lengths_ = post_header.get_post_header_lengths_raw();
 

@@ -74,8 +74,7 @@ BOOST_AUTO_TEST_CASE(EventRoundTrip) {
 
   const binsrv::events::event_view generated_rotate_event_v{
       context, util::const_byte_span{event_buffer}};
-  const binsrv::events::event parsed_rotate_event{context,
-                                                  generated_rotate_event_v};
+  const binsrv::events::event parsed_rotate_event{generated_rotate_event_v};
   bool info_only{false};
   info_only = context.process_event_view(generated_rotate_event_v);
   BOOST_CHECK(info_only);
@@ -107,7 +106,7 @@ BOOST_AUTO_TEST_CASE(EventRoundTrip) {
   const binsrv::events::event_view generated_format_description_event_v{
       context, util::const_byte_span{event_buffer}};
   const binsrv::events::event parsed_format_description_event{
-      context, generated_format_description_event_v};
+      generated_format_description_event_v};
   info_only = context.process_event_view(generated_format_description_event_v);
   BOOST_CHECK(!info_only);
 
@@ -135,7 +134,7 @@ BOOST_AUTO_TEST_CASE(EventRoundTrip) {
   const binsrv::events::event_view generated_previous_gtids_log_event_v{
       context, util::const_byte_span{event_buffer}};
   const binsrv::events::event parsed_previous_gtids_log_event{
-      context, generated_previous_gtids_log_event_v};
+      generated_previous_gtids_log_event_v};
   info_only = context.process_event_view(generated_previous_gtids_log_event_v);
   BOOST_CHECK(!info_only);
 

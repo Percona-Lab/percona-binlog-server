@@ -33,7 +33,7 @@ INSERT INTO t1 VALUES(DEFAULT);
 # identifying backend storage type ('file' or 's3')
 --source ../include/identify_storage_backend.inc
 
-# identifying utility checksum mode from the conbination
+# identifying utility checksum mode from the combination
 --let $extracted_init_connect_variable_name = binsrv_checksum
 --source ../include/extract_init_connect_variable_value.inc
 

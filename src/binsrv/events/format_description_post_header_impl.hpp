@@ -56,8 +56,7 @@ public:
       const util::semantic_version &server_version,
       const ctime_timestamp &create_timestamp, std::size_t common_header_length,
       const post_header_length_container &post_header_lengths);
-  generic_post_header_impl(std::uint32_t encoded_server_version,
-                           util::const_byte_span portion);
+  explicit generic_post_header_impl(util::const_byte_span portion);
 
   [[nodiscard]] std::uint16_t get_binlog_version_raw() const noexcept {
     return binlog_version_;

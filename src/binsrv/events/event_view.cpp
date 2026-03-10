@@ -70,21 +70,50 @@ event_view_base::event_view_base(const reader_context &context,
         "header");
   }
 
-  post_header_size_ = context.get_current_post_header_length(code);
-  if (post_header_size_ == unspecified_post_header_length) {
-    util::exception_location().raise<std::invalid_argument>(
-        "received event of type " + std::to_string(util::enum_to_index(code)) +
-        " \"" + std::string{to_string_view(code)} +
-        "\" "
-        "is not known in server version " +
-        std::to_string(context.get_current_encoded_server_version()));
-  }
+  if (code == code_type::format_description) {
+    // special case for FORMAT_DESCRIPTION event
 
-  const std::size_t group_size =
-      get_common_header_size() + get_post_header_size() + get_footer_size();
-  if (get_total_size() < group_size) {
-    util::exception_location().raise<std::logic_error>(
-        "not enough data for event post header + body + footer");
+    // in a scenario when 8.0 MySQL Server was upgraded to 8.4, it is possible
+    // for us to receive both 8.0 FDEs (coming from binlog files created before
+    // the upgrade) and 8.4 FDEs (coming from binlog files created after the
+    // upgrade)
+
+    // as 8.0 and 8.4 FDEs have different sizes of their post header section,
+    // the standard mechanism of extracting expected post header length from
+    // the context does not work here
+
+    // instead, we rely on the fact that FDE have body of a fixed size (1 byte
+    // for 'checksum_algorithm') and we can calculate the size of the
+    // post header based on that
+    const std::size_t group_size =
+        get_common_header_size() +
+        generic_body<code_type::format_description>::size_in_bytes +
+        get_footer_size();
+    if (get_total_size() < group_size) {
+      util::exception_location().raise<std::logic_error>(
+          "not enough data for format description event common header + body + "
+          "footer");
+    }
+    post_header_size_ = get_total_size() - group_size;
+  } else {
+    // for every other event, we proceed the standard way
+    post_header_size_ = context.get_current_post_header_length(code);
+    if (post_header_size_ == unspecified_post_header_length) {
+      util::exception_location().raise<std::invalid_argument>(
+          "received event of type " +
+          std::to_string(util::enum_to_index(code)) + " \"" +
+          std::string{to_string_view(code)} +
+          "\" "
+          "is not known in server version " +
+          std::to_string(context.get_current_encoded_server_version()));
+    }
+
+    const std::size_t group_size =
+        get_common_header_size() + get_post_header_size() + get_footer_size();
+    if (get_total_size() < group_size) {
+      util::exception_location().raise<std::logic_error>(
+          "not enough data for event common header + post header + footer");
+    }
   }
 
   // optional checksum verification

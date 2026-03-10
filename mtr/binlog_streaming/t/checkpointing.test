@@ -48,7 +48,7 @@ DROP TABLE t1;
 # identifying backend storage type ('file' or 's3')
 --source ../include/identify_storage_backend.inc
 
-# identifying interval checkpointing mode from the conbination
+# identifying interval checkpointing mode from the combination
 --let $extracted_init_connect_variable_name = binsrv_checkpointing
 --source ../include/extract_init_connect_variable_value.inc
 
