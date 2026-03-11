@@ -80,7 +80,7 @@ private:
     <optionally_tagged_interval> ::= (<tag> ':')? <gno> ('-' <gno>)?
     <tag> ::= [a-zA-Z_][a-zA-Z0-9_]{0,31}
     <gno> ::= [0-9]+
-    <space> ::= [ \t\r\n\f\v]+
+    <space> ::= [ \t\r\n\f\v]*
   */
 
   gtid_set *result_gtids_;
@@ -252,10 +252,8 @@ private:
     parse_optionally_tagged_intervals(remainder);
   }
 
-  // <space> ::= [ \t\r\n\f\v]+
+  // <space> ::= [ \t\r\n\f\v]*
   static void parse_space(std::string_view &remainder) {
-    util::parse_character_predicate(remainder, space_predicate);
-
     char character{};
     while (util::parse_character_predicate_ex(remainder, space_predicate,
                                               character)) {

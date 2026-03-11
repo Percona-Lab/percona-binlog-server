@@ -665,3 +665,59 @@ BOOST_AUTO_TEST_CASE(GtidSetStreamOperatorMixed) {
       boost::lexical_cast<binsrv::gtids::gtid_set>(gtids_str)};
   BOOST_CHECK_EQUAL(gtids, restored_gtids);
 }
+
+BOOST_AUTO_TEST_CASE(GtidSetWhitespaces) {
+  const binsrv::gtids::uuid first_uuid{first_uuid_sv};
+  const binsrv::gtids::uuid second_uuid{second_uuid_sv};
+
+  const binsrv::gtids::tag first_tag{first_tag_sv};
+  const binsrv::gtids::tag second_tag{second_tag_sv};
+
+  binsrv::gtids::gtid_set gtids{};
+  // NOLINTBEGIN(cppcoreguidelines-avoid-magic-numbers,readability-magic-numbers)
+  gtids += binsrv::gtids::gtid{first_uuid, 101ULL};
+  gtids += binsrv::gtids::gtid{first_uuid, 102ULL};
+  gtids += binsrv::gtids::gtid{first_uuid, 103ULL};
+  gtids += binsrv::gtids::gtid{first_uuid, 105ULL};
+
+  gtids += binsrv::gtids::gtid{first_uuid, first_tag, 111ULL};
+  gtids += binsrv::gtids::gtid{first_uuid, first_tag, 112ULL};
+  gtids += binsrv::gtids::gtid{first_uuid, first_tag, 113ULL};
+  gtids += binsrv::gtids::gtid{first_uuid, first_tag, 115ULL};
+
+  gtids += binsrv::gtids::gtid{first_uuid, second_tag, 121ULL};
+  gtids += binsrv::gtids::gtid{first_uuid, second_tag, 122ULL};
+  gtids += binsrv::gtids::gtid{first_uuid, second_tag, 123ULL};
+  gtids += binsrv::gtids::gtid{first_uuid, second_tag, 125ULL};
+
+  gtids += binsrv::gtids::gtid{second_uuid, 201ULL};
+  gtids += binsrv::gtids::gtid{second_uuid, 202ULL};
+  gtids += binsrv::gtids::gtid{second_uuid, 203ULL};
+  gtids += binsrv::gtids::gtid{second_uuid, 205ULL};
+
+  gtids += binsrv::gtids::gtid{second_uuid, first_tag, 211ULL};
+  gtids += binsrv::gtids::gtid{second_uuid, first_tag, 212ULL};
+  gtids += binsrv::gtids::gtid{second_uuid, first_tag, 213ULL};
+  gtids += binsrv::gtids::gtid{second_uuid, first_tag, 215ULL};
+
+  gtids += binsrv::gtids::gtid{second_uuid, second_tag, 221ULL};
+  gtids += binsrv::gtids::gtid{second_uuid, second_tag, 222ULL};
+  gtids += binsrv::gtids::gtid{second_uuid, second_tag, 223ULL};
+  gtids += binsrv::gtids::gtid{second_uuid, second_tag, 225ULL};
+  // NOLINTEND(cppcoreguidelines-avoid-magic-numbers,readability-magic-numbers)
+
+  auto gtids_str{boost::lexical_cast<std::string>(gtids)};
+  // erasing all space characters from the GTIDs string
+
+  // looks like a misconfiguration in clang-tyidy-19 that doesn't know that
+  // std::erase() for std::string is located in the <string> system header
+
+  // TODO: re-check this when switching to clang-20
+
+  // NOLINTNEXTLINE(misc-include-cleaner)
+  std::erase(gtids_str, ' ');
+  BOOST_CHECK(gtids_str.find(' ') == std::string::npos);
+  const auto restored_gtids{
+      boost::lexical_cast<binsrv::gtids::gtid_set>(gtids_str)};
+  BOOST_CHECK_EQUAL(gtids, restored_gtids);
+}
