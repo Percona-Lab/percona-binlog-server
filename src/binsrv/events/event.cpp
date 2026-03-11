@@ -19,7 +19,6 @@
 #include <cassert>
 #include <concepts>
 #include <cstddef>
-#include <cstdint>
 #include <ostream>
 #include <stdexcept>
 #include <utility>
@@ -39,14 +38,12 @@
 
 namespace binsrv::events {
 
-event::event(const reader_context &context, const event_view &view)
+event::event(const event_view &view)
     : common_header_{view.get_common_header_raw()} {
-  const auto encoded_server_version{
-      context.get_current_encoded_server_version()};
   const auto code{common_header_.get_type_code()};
 
-  emplace_post_header(encoded_server_version, code, view.get_post_header_raw());
-  emplace_body(encoded_server_version, code, view.get_body_raw());
+  emplace_post_header(code, view.get_post_header_raw());
+  emplace_body(code, view.get_body_raw());
 
   if (view.has_footer()) {
     footer_.emplace(view.get_footer_view());
@@ -54,7 +51,7 @@ event::event(const reader_context &context, const event_view &view)
 }
 
 event::event(const reader_context &context, util::const_byte_span portion)
-    : event{context, event_view{context, portion}} {}
+    : event{event_view{context, portion}} {}
 
 template <typename T>
 concept encodable = requires(const T &obj, util::byte_span &destination) {
@@ -99,8 +96,7 @@ void event::encode_to(util::byte_span &destination) const {
   }
 }
 
-void event::emplace_post_header(std::uint32_t encoded_server_version,
-                                code_type code, util::const_byte_span portion) {
+void event::emplace_post_header(code_type code, util::const_byte_span portion) {
   // our goal here is to initialize (emplace) a specific class inside
   // 'post_header_' variant (determined via runtime argument 'code') with the
   // 'portion' byte range
@@ -108,8 +104,7 @@ void event::emplace_post_header(std::uint32_t encoded_server_version,
   // we start with defining an alias for a member function pointer that
   // accepts a byte range and performs some modification on an object of this
   // class (on 'post_header_' member to be precise)
-  using emplace_function =
-      void (event::*)(std::uint32_t, util::const_byte_span);
+  using emplace_function = void (event::*)(util::const_byte_span);
   // then, we define an alias for a container that can store
   // '<number_of_events>' such member function pointers
   using emplace_function_container =
@@ -148,14 +143,12 @@ void event::emplace_post_header(std::uint32_t encoded_server_version,
   // this will initialize the 'post_header_' member with expected variant
 
   // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index)
-  (this->*emplace_functions[function_index])(encoded_server_version, portion);
+  (this->*emplace_functions[function_index])(portion);
 }
 
-void event::emplace_body(std::uint32_t encoded_server_version, code_type code,
-                         util::const_byte_span portion) {
+void event::emplace_body(code_type code, util::const_byte_span portion) {
   // here we use the same technique as in 'emplace_post_header()'
-  using emplace_function =
-      void (event::*)(std::uint32_t, util::const_byte_span);
+  using emplace_function = void (event::*)(util::const_byte_span);
   using emplace_function_container =
       std::array<emplace_function, max_number_of_events>;
   static constexpr emplace_function_container emplace_functions{
@@ -168,7 +161,7 @@ void event::emplace_body(std::uint32_t encoded_server_version, code_type code,
   const auto function_index = util::enum_to_index(code);
   assert(function_index < util::enum_to_index(code_type::delimiter));
   // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index)
-  (this->*emplace_functions[function_index])(encoded_server_version, portion);
+  (this->*emplace_functions[function_index])(portion);
 }
 
 void event::encode_and_checksum(event_storage &buffer, bool include_checksum) {

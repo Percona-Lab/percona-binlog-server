@@ -128,7 +128,7 @@ public:
                  post_header, body,   include_checksum, nullptr};
   }
 
-  event(const reader_context &context, const event_view &view);
+  explicit event(const event_view &view);
   event(const reader_context &context, util::const_byte_span portion);
 
   [[nodiscard]] const common_header &get_common_header() const noexcept {
@@ -192,27 +192,15 @@ private:
   }
 
   template <typename T>
-  void generic_emplace_post_header(std::uint32_t encoded_server_version,
-                                   util::const_byte_span portion) {
-    if constexpr (std::is_constructible_v<T, util::const_byte_span>) {
-      post_header_.emplace<T>(portion);
-    } else {
-      post_header_.emplace<T>(encoded_server_version, portion);
-    }
+  void generic_emplace_post_header(util::const_byte_span portion) {
+    post_header_.emplace<T>(portion);
   }
-  void emplace_post_header(std::uint32_t encoded_server_version, code_type code,
-                           util::const_byte_span portion);
+  void emplace_post_header(code_type code, util::const_byte_span portion);
   template <typename T>
-  void generic_emplace_body(std::uint32_t encoded_server_version,
-                            util::const_byte_span portion) {
-    if constexpr (std::is_constructible_v<T, util::const_byte_span>) {
-      body_.emplace<T>(portion);
-    } else {
-      body_.emplace<T>(encoded_server_version, portion);
-    }
+  void generic_emplace_body(util::const_byte_span portion) {
+    body_.emplace<T>(portion);
   }
-  void emplace_body(std::uint32_t encoded_server_version, code_type code,
-                    util::const_byte_span portion);
+  void emplace_body(code_type code, util::const_byte_span portion);
   void encode_and_checksum(event_storage &buffer, bool include_checksum);
 };
 

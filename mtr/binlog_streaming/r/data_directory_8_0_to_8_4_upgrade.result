@@ -1,0 +1,55 @@
+
+*** Stopping current instance of 8.4 MySQL Server
+include/stop_mysqld.inc [server 1]
+
+*** Setting up the 8.0 data directory
+
+*** Running 8.4 binaries on a 8.0 data directory
+# restart
+
+*** Checking if we can access data after upgrade
+SELECT * FROM t1 ORDER BY id;
+id
+101
+102
+103
+CHECKSUM TABLE t1;
+Table	Checksum
+test.t1	1719212378
+
+*** Adding more changed from the 8.4 server
+INSERT INTO t1 VALUES(201);
+START TRANSACTION;
+INSERT INTO t1 VALUES(202);
+INSERT INTO t1 VALUES(203);
+COMMIT;
+UPDATE t1 SET id = id + 100 WHERE id > 200;
+DELETE FROM t1 WHERE id < 200;
+DROP TABLE t1;
+
+*** Setting up BINSRV environment
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+
+*** Executing the Binlog Server utility to download all binlog data
+*** from both 8.0 and 8.4 binlog files
+
+*** Stopping current instance of 8.4 MySQL Server
+include/stop_mysqld.inc [server 1]
+
+*** Cleaning up upgrade data directory
+# restart
+
+*** Cleaning up BINSRV environment
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.

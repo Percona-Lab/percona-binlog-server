@@ -42,9 +42,9 @@ inline constexpr std::uint32_t innovation83_with_tagged_gtids_number_of_events{
 
 constexpr std::size_t
 get_number_of_events(std::uint32_t encoded_server_version) noexcept {
-  // Tagged GTIDs alomng with new new tagged GTID event were introduced in
+  // Tagged GTIDs along with new new tagged GTID event were introduced in
   // MySQL Server 8.3.0 Innovation.
-  // This new event incresed the size of post header length table in FDE.
+  // This new event increased the size of post header length table in FDE.
   return encoded_server_version < latest_known_protocol_server_version
              ? lts80_number_of_events
              : innovation83_with_tagged_gtids_number_of_events;

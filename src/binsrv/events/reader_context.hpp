@@ -33,15 +33,19 @@ namespace binsrv::events {
 
 class [[nodiscard]] reader_context {
 public:
-  reader_context(std::uint32_t encoded_server_version,
+  reader_context(std::uint32_t connection_encoded_server_version,
                  bool checksum_verification_enabled,
                  replication_mode_type replication_mode,
                  std::string_view binlog_name, std::uint32_t position);
 
   [[nodiscard]] bool is_fresh() const noexcept { return cycle_number_ == 0U; }
   [[nodiscard]] std::uint32_t
+  get_connection_encoded_server_version() const noexcept {
+    return connection_encoded_server_version_;
+  }
+  [[nodiscard]] std::uint32_t
   get_current_encoded_server_version() const noexcept {
-    return encoded_server_version_;
+    return current_encoded_server_version_;
   }
   [[nodiscard]] bool is_checksum_verification_enabled() const noexcept {
     return checksum_verification_enabled_;
@@ -92,7 +96,8 @@ private:
     rotate_or_stop_expected
   };
   state_type state_{state_type::rotate_artificial_expected};
-  std::uint32_t encoded_server_version_;
+  std::uint32_t connection_encoded_server_version_;
+  std::uint32_t current_encoded_server_version_;
 
   // indicates whether user requested checksum verification
   // (in the configuration file)

@@ -1,0 +1,102 @@
+--source ../include/have_binsrv.inc
+
+--source ../include/v80_v84_compatibility_defines.inc
+if ($lts_series != v84)
+{
+  --skip This test must be run on a MySQL Server 8.4
+}
+
+--source include/mysql_upgrade_preparation.inc
+
+--let $binsrv_replication_mode = `SELECT IF(@@global.gtid_mode = 'ON', 'gtid', 'position')`
+
+--let $CUSTOM_MYSQLD_DATADIR = $MYSQL_TMP_DIR/data_80045_$binsrv_replication_mode
+--let $ZIP_FILE = $MYSQL_TEST_DIR/suite/binlog_streaming/std_data/data_80045_$binsrv_replication_mode.zip
+
+--echo
+--echo *** Stopping current instance of 8.4 MySQL Server
+--source include/stop_mysqld.inc
+
+--echo
+--echo *** Setting up the 8.0 data directory
+# Data directory was created with the following script
+# CREATE TABLE t1(id SERIAL, PRIMARY KEY(id));
+# INSERT INTO t1 VALUES();
+# INSERT INTO t1 VALUES();
+#
+# START TRANSACTION;
+# INSERT INTO t1 VALUES();
+# INSERT INTO t1 VALUES();
+# INSERT INTO t1 VALUES();
+# INSERT INTO t1 VALUES();
+# COMMIT;
+#
+# FLUSH BINARY LOGS;
+#
+# UPDATE t1 SET id = id + 100 WHERE id <= 3;
+# DELETE FROM t1 WHERE id < 100;
+
+--exec unzip -qo $ZIP_FILE -d $MYSQL_TMP_DIR
+
+--echo
+--echo *** Running 8.4 binaries on a 8.0 data directory
+--let $MYSQLD_LOG = $MYSQLTEST_VARDIR/log/upgrade.log
+--let $do_not_echo_parameters = 1
+--let $restart_parameters = restart: --datadir=$CUSTOM_MYSQLD_DATADIR --log-error=$MYSQLD_LOG
+--source include/start_mysqld.inc
+
+--echo
+--echo *** Checking if we can access data after upgrade
+SELECT * FROM t1 ORDER BY id;
+CHECKSUM TABLE t1;
+
+
+--echo
+--echo *** Adding more changed from the 8.4 server
+INSERT INTO t1 VALUES(201);
+
+START TRANSACTION;
+INSERT INTO t1 VALUES(202);
+INSERT INTO t1 VALUES(203);
+COMMIT;
+
+UPDATE t1 SET id = id + 100 WHERE id > 200;
+DELETE FROM t1 WHERE id < 200;
+
+DROP TABLE t1;
+
+--echo
+--echo *** Setting up BINSRV environment
+# identifying backend storage type ('file' or 's3')
+--source ../include/identify_storage_backend.inc
+
+# creating data directory, configuration file, etc.
+--let $binsrv_connect_timeout = 20
+--let $binsrv_read_timeout = 60
+--let $binsrv_idle_time = 10
+--let $binsrv_verify_checksum = TRUE
+# $binsrv_replication_mode already defined earlier
+--let $binsrv_checkpoint_size = 1
+--source ../include/set_up_binsrv_environment.inc
+
+--echo
+--echo *** Executing the Binlog Server utility to download all binlog data
+--echo *** from both 8.0 and 8.4 binlog files
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+--echo
+--echo *** Stopping current instance of 8.4 MySQL Server
+--source include/stop_mysqld.inc
+
+--echo
+--echo *** Cleaning up upgrade data directory
+--force-rmdir $CUSTOM_MYSQLD_DATADIR
+--remove_file $MYSQLD_LOG
+
+--let $restart_parameters =
+--source include/start_mysqld.inc
+--source include/mysql_upgrade_cleanup.inc
+
+--echo
+--echo *** Cleaning up BINSRV environment
+--source ../include/tear_down_binsrv_environment.inc

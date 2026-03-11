@@ -513,7 +513,7 @@ void process_binlog_event(const binsrv::events::event_view &current_event_v,
   // here we additionally check for log level because event materialization
   // is not a trivial operation
   if (binsrv::log_severity::debug >= logger.get_min_level()) {
-    const binsrv::events::event current_event{context, current_event_v};
+    const binsrv::events::event current_event{current_event_v};
     logger.log(binsrv::log_severity::debug,
                "event  : [parsed] " +
                    boost::lexical_cast<std::string>(current_event));

@@ -66,8 +66,7 @@ generic_post_header_impl<code_type::format_description>::
 }
 
 generic_post_header_impl<code_type::format_description>::
-    generic_post_header_impl(std::uint32_t encoded_server_version,
-                             util::const_byte_span portion) {
+    generic_post_header_impl(util::const_byte_span portion) {
   // TODO: rework with direct member initialization
 
   /*
@@ -86,7 +85,6 @@ generic_post_header_impl<code_type::format_description>::
     |        | lengths for all            |   per event type that the
     |        | event types                |   server knows about
     +=====================================+
-
   */
 
   static_assert(server_version_length ==
@@ -115,9 +113,12 @@ generic_post_header_impl<code_type::format_description>::
                 "inefficient data member reordering in "
                 "generic_post_header_impl<code_type::format_description>");
 
-  if (std::size(portion) != get_size_in_bytes(encoded_server_version)) {
+  if (std::size(portion) <
+          get_size_in_bytes(earliest_supported_protocol_server_version) ||
+      std::size(portion) >
+          get_size_in_bytes(latest_known_protocol_server_version)) {
     util::exception_location().raise<std::invalid_argument>(
-        "invalid format_description event post header length");
+        "format_description event post header length is not in allowed range");
   }
 
   auto remainder = portion;
@@ -126,6 +127,14 @@ generic_post_header_impl<code_type::format_description>::
   util::extract_byte_span_from_byte_span(remainder,
                                          util::byte_span{server_version_});
   util::normalize_for_c_str(server_version_);
+
+  const auto encoded_server_version{get_encoded_server_version()};
+  if (std::size(portion) != get_size_in_bytes(encoded_server_version)) {
+    util::exception_location().raise<std::invalid_argument>(
+        "format_description event post header length does not match the value "
+        "expected for the server version specified in its own fields");
+  }
+
   util::extract_fixed_int_from_byte_span(remainder, create_timestamp_);
   util::extract_fixed_int_from_byte_span(remainder, common_header_length_);
   const auto expected_subrange_length{
@@ -134,6 +143,13 @@ generic_post_header_impl<code_type::format_description>::
       std::data(post_header_lengths_), expected_subrange_length};
   util::extract_byte_span_from_byte_span(remainder,
                                          post_header_lengths_subrange);
+  if (std::size(portion) != get_post_header_length_for_code(
+                                encoded_server_version, post_header_lengths_,
+                                code_type::format_description)) {
+    util::exception_location().raise<std::invalid_argument>(
+        "format_description event post header length does not match the value "
+        "specified in the post header length array in its own fields");
+  }
 }
 
 [[nodiscard]] std::string_view generic_post_header_impl<
