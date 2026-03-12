@@ -16,6 +16,8 @@
         "CPP_STANDARD": "20",
         "ENABLE_UNITY_BUILD": "ON",
         "BUILD_SHARED_LIBS": "OFF",
+        "AWS_USE_CRYPTO_SHARED_LIBS": "ON",
+        "S2N_USE_CRYPTO_SHARED_LIBS": "ON",
         "FORCE_SHARED_CRT": "OFF",
         "ENABLE_TESTING": "OFF",
         "AUTORUN_UNIT_TESTS": "OFF",
