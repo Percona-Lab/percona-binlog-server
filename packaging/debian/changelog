@@ -1,0 +1,5 @@
+percona-binlog-server (0.1.0-1) unstable; urgency=low
+
+  * Packaging for 0.1.0-1
+
+ -- Vadim Yalovets <vadim.yalovets@percona.com>  Mon, 19 Jan 2026 10:40:32 +0300

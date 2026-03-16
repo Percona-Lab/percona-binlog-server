@@ -1,0 +1,118 @@
+#!/usr/bin/make -f
+
+export DH_VERBOSE=1
+export DEB_BUILD_MAINT_OPTIONS=hardening=+all
+export DEB_CMAKE_GENERATOR=Ninja
+
+export DISTRO := $(shell dpkg-vendor --query Vendor)
+export CODENAME := $(shell . /etc/os-release && echo $$VERSION_CODENAME)
+
+# Versions
+export DEB_VERSION=0.1.0
+export BOOST_VERSION=1.88.0
+export AWS_VERSION=1.11.570
+
+# CMake presets
+export BUILD_PRESET_DEBUG=debug_gcc14
+export BUILD_PRESET_RELEASE=release_gcc14
+
+# Source dir
+SRC_DIR := $(CURDIR)
+
+%:
+	dh $@ --buildsystem=cmake --parallel
+
+override_dh_auto_configure:
+	# handled manually in build
+
+override_dh_auto_build:
+	set -e; \
+	\
+	echo "Ubuntu VERSION: $(DISTRO)"; \
+	echo "Ubuntu CODENAME: $(CODENAME)"; \
+	if [ "$(CODENAME)" = "bullseye" ]; then \
+		sed -i 's:gcc-14:gcc-10:' $(SRC_DIR)/extra/cmake_presets/boost/CMakePresets.json; \
+		sed -i 's:g++-14:g++-10:' $(SRC_DIR)/extra/cmake_presets/boost/CMakePresets.json; \
+		sed -i 's:gcc-14:gcc-10:' $(SRC_DIR)/extra/cmake_presets/aws-sdk-cpp/CMakePresets.json; \
+		sed -i 's:g++-14:g++-10:' $(SRC_DIR)/extra/cmake_presets/aws-sdk-cpp/CMakePresets.json; \
+		sed -i 's:gcc-14:gcc-10:' $(SRC_DIR)/CMakePresets.json; \
+		sed -i 's:g++-14:g++-10:' $(SRC_DIR)/CMakePresets.json; \
+	elif [ "$(CODENAME)" = "jammy" ] || [ "$(CODENAME)" = "bookworm" ] || [ "$(CODENAME)" = "forky" ]; then \
+		sed -i 's:gcc-14:gcc-13:' $(SRC_DIR)/extra/cmake_presets/boost/CMakePresets.json; \
+		sed -i 's:g++-14:g++-13:' $(SRC_DIR)/extra/cmake_presets/boost/CMakePresets.json; \
+		sed -i 's:gcc-14:gcc-13:' $(SRC_DIR)/extra/cmake_presets/aws-sdk-cpp/CMakePresets.json; \
+		sed -i 's:g++-14:g++-13:' $(SRC_DIR)/extra/cmake_presets/aws-sdk-cpp/CMakePresets.json; \
+		sed -i 's:gcc-14:gcc-13:' $(SRC_DIR)/CMakePresets.json; \
+		sed -i 's:g++-14:g++-13:' $(SRC_DIR)/CMakePresets.json; \
+	elif [ "$(CODENAME)" = "trixie" ] || [ "$(CODENAME)" = "bookworm" || [ "$(CODENAME)" = "forky" ]; then \
+		sed -i '/"BUILD_TESTING"[[:space:]]*:[[:space:]]*"ON"/i\        "MYSQL_LIBRARY": "/usr/lib/x86_64-linux-gnu/libperconaserverclient.so",' $(SRC_DIR)/CMakePresets.json; \
+	fi \
+	########################
+	# DEBUG BUILD
+	########################
+	mkdir -p debug; \
+	sed -i 's:/boost-install-:/percona-binlog-server-$(DEB_VERSION)/debug/boost-install-:' CMakePresets.json; \
+	sed -i 's:/aws-sdk-cpp-install-:/percona-binlog-server-$(DEB_VERSION)/debug/aws-sdk-cpp-install-:' CMakePresets.json; \
+	sed -i 's:$${sourceParentDir}/$${sourceDirName}-:$${sourceParentDir}/$${sourceDirName}/$${sourceDirName}-:g' CMakePresets.json
+	\
+	cd debug; \
+	git clone --recurse-submodules -b boost-$(BOOST_VERSION) https://github.com/boostorg/boost.git boost; \
+	cd boost && git switch -c required_release && cd ..; \
+	cp $(SRC_DIR)/extra/cmake_presets/boost/CMakePresets.json boost; \
+	cmake ./boost --preset $(BUILD_PRESET_DEBUG); \
+	cmake --build ./boost-build-$(BUILD_PRESET_DEBUG); \
+	cmake --install ./boost-build-$(BUILD_PRESET_DEBUG); \
+	\
+	git clone --recurse-submodules https://github.com/aws/aws-sdk-cpp.git aws-sdk-cpp; \
+	cd aws-sdk-cpp && git checkout --recurse-submodules -b required_release $(AWS_VERSION) && cd ..; \
+	cp $(SRC_DIR)/extra/cmake_presets/aws-sdk-cpp/CMakePresets.json aws-sdk-cpp; \
+	cmake ./aws-sdk-cpp --preset $(BUILD_PRESET_DEBUG); \
+	cmake --build ./aws-sdk-cpp-build-$(BUILD_PRESET_DEBUG); \
+	cmake --install ./aws-sdk-cpp-build-$(BUILD_PRESET_DEBUG); \
+	\
+	cd ..; \
+	cmake . --preset $(BUILD_PRESET_DEBUG); \
+	cmake --build ./percona-binlog-server-$(DEB_VERSION)-build-$(BUILD_PRESET_DEBUG); \
+	./percona-binlog-server-$(DEB_VERSION)-build-$(BUILD_PRESET_DEBUG)/binlog_server version; \
+	\
+	########################
+	# RELEASE BUILD
+	########################
+	mkdir -p release; \
+	sed -i 's:debug/boost-install-:release/boost-install-:' CMakePresets.json; \
+	sed -i 's:debug/aws-sdk-cpp-install-:release/aws-sdk-cpp-install-:' CMakePresets.json; \
+	\
+	cd release; \
+	git clone --recurse-submodules -b boost-$(BOOST_VERSION) https://github.com/boostorg/boost.git boost; \
+	cd boost && git switch -c required_release && cd ..; \
+	cp $(SRC_DIR)/extra/cmake_presets/boost/CMakePresets.json boost; \
+	cmake ./boost --preset $(BUILD_PRESET_RELEASE); \
+	cmake --build ./boost-build-$(BUILD_PRESET_RELEASE); \
+	cmake --install ./boost-build-$(BUILD_PRESET_RELEASE); \
+	\
+	git clone --recurse-submodules https://github.com/aws/aws-sdk-cpp.git aws-sdk-cpp; \
+	cd aws-sdk-cpp && git checkout --recurse-submodules -b required_release $(AWS_VERSION) && cd ..; \
+	cp $(SRC_DIR)/extra/cmake_presets/aws-sdk-cpp/CMakePresets.json aws-sdk-cpp; \
+	cmake ./aws-sdk-cpp --preset $(BUILD_PRESET_RELEASE); \
+	cmake --build ./aws-sdk-cpp-build-$(BUILD_PRESET_RELEASE); \
+	cmake --install ./aws-sdk-cpp-build-$(BUILD_PRESET_RELEASE); \
+	\
+	cd ..; \
+	cmake . --preset $(BUILD_PRESET_RELEASE); \
+	cmake --build ./percona-binlog-server-$(DEB_VERSION)-build-$(BUILD_PRESET_RELEASE)
+	./percona-binlog-server-$(DEB_VERSION)-build-$(BUILD_PRESET_DEBUG)/binlog_server version; \
+
+override_dh_auto_install:
+	install -d debian/percona-binlog-server/usr/bin
+	install -m 0755 \
+	  percona-binlog-server-$(DEB_VERSION)-build-$(BUILD_PRESET_DEBUG)/binlog_server \
+	  debian/percona-binlog-server/usr/bin/binlog_server-debug
+	install -m 0755 \
+	  percona-binlog-server-$(DEB_VERSION)-build-$(BUILD_PRESET_RELEASE)/binlog_server \
+	  debian/percona-binlog-server/usr/bin/binlog_server
+	install -d debian/percona-binlog-server/etc/percona-binlog-server
+	install -m 0640 main_config.json \
+	  debian/percona-binlog-server/etc/percona-binlog-server/main_config.json
+
+override_dh_auto_test:
+	# no tests
