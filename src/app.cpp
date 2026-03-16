@@ -1074,7 +1074,9 @@ int main(int argc, char *argv[]) {
     std::cerr << "usage: " << executable_name
               << " (fetch|pull)) <json_config_file>\n"
               << "       " << executable_name
-              << " search_by_timestamp <json_config_file> <iso_utc_timestamp>\n"
+              << " search_by_timestamp <json_config_file> <timestamp>\n"
+              << "       " << executable_name
+              << " search_by_gtid_set <json_config_file> <gtid_set>\n"
               << "       " << executable_name << " version\n";
     return EXIT_FAILURE;
   }

@@ -2,9 +2,9 @@ name: CMake
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "0.2" ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ "0.2" ]
 
 env:
   AWS_SDK_CPP_MAJOR: 1
