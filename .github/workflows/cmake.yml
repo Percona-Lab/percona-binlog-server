@@ -42,14 +42,14 @@ jobs:
       - name: Install dependencies on ubuntu
         run: |
           sudo apt-get update
-          sudo apt-get install clang-format-19
+          sudo apt-get install clang-format-20
 
       - name: Info Clang Format
-        run: clang-format-19 --version
+        run: clang-format-20 --version
 
-      - name: Check formatting with git clang-format-19
+      - name: Check formatting with git clang-format-20
         working-directory: ${{github.workspace}}/src
-        run: git clang-format-19 --diff --binary=clang-format-19 HEAD~
+        run: git clang-format-20 --diff --binary=clang-format-20 HEAD~
 
   build:
     # The CMake configure and build commands are platform agnostic and should work equally well on Windows or Mac.
@@ -81,27 +81,23 @@ jobs:
             run_ctest: true
           }
         - {
-            name: "Clang 19 Debug",
-            label: "debug_clang19",
+            name: "Clang 20 Debug",
+            label: "debug_clang20",
             run_clang_tidy: true,
             run_ctest: true
           }
         - {
-            name: "Clang 19 RelWithDebInfo",
-            label: "release_clang19",
+            name: "Clang 20 RelWithDebInfo",
+            label: "release_clang20",
             run_clang_tidy: true,
             run_ctest: true
           }
         - {
-            name: "Clang 19 ASan",
-            label: "asan_clang19"
-            # TODO: re-enable running MTR under this "Clang XX ASan"
-            #   run_mtr: true,
-            #   mtr_options: "--sanitize",
-            #   run_ctest: true
-            # when "-stdlib=libc++ -fsanitize=address" alloc-dealloc-mismatch issue is fixed
-            # (https://github.com/llvm/llvm-project/issues/59432)
-            # or CI is upgraded to Clang 20
+            name: "Clang 20 ASan",
+            label: "asan_clang20",
+            run_mtr: true,
+            mtr_options: "--sanitize",
+            run_ctest: true
           }
 
     steps:
@@ -131,7 +127,7 @@ jobs:
     - name: Install Clang dependencies on ubuntu
       if: startsWith(matrix.config.name, 'Clang')
       run: |
-        sudo apt-get install clang-19 lld-19 clang-tidy-19 libc++-19-dev libc++abi-19-dev
+        sudo apt-get install clang-20 lld-20 clang-tidy-20 libc++-20-dev libc++abi-20-dev
 
     - name: Install GCC dependencies on ubuntu
       if: startsWith(matrix.config.name, 'GCC')
@@ -243,12 +239,12 @@ jobs:
 
     - name: Info Clang Tidy
       if: matrix.config.run_clang_tidy
-      run: clang-tidy-19 --version
+      run: clang-tidy-20 --version
 
     - name: Clang Tidy
       if: matrix.config.run_clang_tidy
       # Run Clang Tidy
-      run: run-clang-tidy-19 -header-filter=.* -j=${{steps.cpu-cores.outputs.count}} -use-color -p=${{github.workspace}}/src-build-${{matrix.config.label}}
+      run: run-clang-tidy-20 -header-filter=.* -j=${{steps.cpu-cores.outputs.count}} -use-color -p=${{github.workspace}}/src-build-${{matrix.config.label}}
 
     - name: Application version
       working-directory: ${{github.workspace}}/src-build-${{matrix.config.label}}

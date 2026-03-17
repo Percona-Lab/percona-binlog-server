@@ -297,8 +297,7 @@ void s3_storage_backend::aws_context::get_object_into_file(
 
         const auto end_position{
             static_cast<std::streamoff>(content_stream.tellg())};
-        if (!std::in_range<std::size_t>(end_position) ||
-            static_cast<std::size_t>(end_position) != content_length) {
+        if (std::cmp_not_equal(end_position, content_length)) {
           util::exception_location().raise<std::runtime_error>(
               "cannot read S3 object content into a file");
         }
