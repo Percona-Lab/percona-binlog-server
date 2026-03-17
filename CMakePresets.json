@@ -53,11 +53,11 @@
       }
     },
     {
-      "name": "clang19_hidden",
+      "name": "clang20_hidden",
       "hidden": true,
       "cacheVariables": {
-        "CMAKE_C_COMPILER": "clang-19",
-        "CMAKE_CXX_COMPILER": "clang++-19",
+        "CMAKE_C_COMPILER": "clang-20",
+        "CMAKE_CXX_COMPILER": "clang++-20",
         "WITH_STDLIB_LIBCXX": "ON"
       }
     },
@@ -91,31 +91,31 @@
     },
 
     {
-      "name": "debug_clang19",
+      "name": "debug_clang20",
       "inherits": [
         "common_hidden",
         "debug_hidden",
-        "clang19_hidden"
+        "clang20_hidden"
       ],
-      "displayName": "Clang 19 Debug"
+      "displayName": "Clang 20 Debug"
     },
     {
-      "name": "release_clang19",
+      "name": "release_clang20",
       "inherits": [
         "common_hidden",
         "release_hidden",
-        "clang19_hidden"
+        "clang20_hidden"
       ],
-      "displayName": "Clang 19 RelWithDebInfo"
+      "displayName": "Clang 20 RelWithDebInfo"
     },
     {
-      "name": "asan_clang19",
+      "name": "asan_clang20",
       "inherits": [
         "common_hidden",
         "asan_hidden",
-        "clang19_hidden"
+        "clang20_hidden"
       ],
-      "displayName": "Clang 19 ASan"
+      "displayName": "Clang 20 ASan"
     }
   ]
 }

@@ -18,9 +18,9 @@
 
 #include "binsrv/main_config_fwd.hpp" // IWYU pragma: export
 
-#include "binsrv/logger_config.hpp"  // IWYU pragma: export
+#include "binsrv/logger_config.hpp"      // IWYU pragma: export
 #include "binsrv/replication_config.hpp" // IWYU pragma: export
-#include "binsrv/storage_config.hpp" // IWYU pragma: export
+#include "binsrv/storage_config.hpp"     // IWYU pragma: export
 
 #include "easymysql/connection_config.hpp" // IWYU pragma: export
 

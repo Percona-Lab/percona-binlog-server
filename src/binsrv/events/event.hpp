@@ -34,7 +34,7 @@
 #include "binsrv/events/anonymous_gtid_log_body_impl.hpp" // IWYU pragma: export
 #include "binsrv/events/anonymous_gtid_log_post_header_impl.hpp" // IWYU pragma: export
 #include "binsrv/events/code_type.hpp"
-#include "binsrv/events/common_header.hpp"                // IWYU pragma: export
+#include "binsrv/events/common_header.hpp" // IWYU pragma: export
 #include "binsrv/events/common_header_flag_type.hpp"
 #include "binsrv/events/event_view_fwd.hpp"
 #include "binsrv/events/footer.hpp"                       // IWYU pragma: export
