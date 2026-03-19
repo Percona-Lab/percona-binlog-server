@@ -264,7 +264,7 @@ install_deps() {
             apt install -y libzstd-dev
         fi
         apt install -y zlib1g-dev libcurl4-openssl-dev libssl-dev
-        apt install -y libmysqlclient-dev
+        apt install -y libperconaserverclient24-dev
     fi
     return
 }
