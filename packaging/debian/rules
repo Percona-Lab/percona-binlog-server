@@ -5,6 +5,7 @@ export DEB_BUILD_MAINT_OPTIONS=hardening=+all
 export DEB_CMAKE_GENERATOR=Ninja
 
 export DISTRO := $(shell dpkg-vendor --query Vendor)
+export DEB_HOST_ARCH ?= $(shell dpkg-architecture -qDEB_HOST_ARCH)
 export CODENAME := $(shell . /etc/os-release && echo $$VERSION_CODENAME)
 
 # Versions
@@ -30,6 +31,7 @@ override_dh_auto_build:
 	\
 	echo "Ubuntu VERSION: $(DISTRO)"; \
 	echo "Ubuntu CODENAME: $(CODENAME)"; \
+	echo "OS ARCH: $(DEB_HOST_ARCH)"; \
 	if [ "$(CODENAME)" = "bullseye" ]; then \
 		sed -i 's:gcc-14:gcc-10:' $(SRC_DIR)/extra/cmake_presets/boost/CMakePresets.json; \
 		sed -i 's:g++-14:g++-10:' $(SRC_DIR)/extra/cmake_presets/boost/CMakePresets.json; \
@@ -44,9 +46,12 @@ override_dh_auto_build:
 		sed -i 's:g++-14:g++-13:' $(SRC_DIR)/extra/cmake_presets/aws-sdk-cpp/CMakePresets.json; \
 		sed -i 's:gcc-14:gcc-13:' $(SRC_DIR)/CMakePresets.json; \
 		sed -i 's:g++-14:g++-13:' $(SRC_DIR)/CMakePresets.json; \
-	elif [ "$(CODENAME)" = "trixie" ] || [ "$(CODENAME)" = "bookworm" || [ "$(CODENAME)" = "forky" ]; then \
+	fi; \
+	if [ "$(DEB_HOST_ARCH)" = "amd64" ]; then \
 		sed -i '/"BUILD_TESTING"[[:space:]]*:[[:space:]]*"ON"/i\        "MYSQL_LIBRARY": "/usr/lib/x86_64-linux-gnu/libperconaserverclient.so",' $(SRC_DIR)/CMakePresets.json; \
-	fi \
+	elif [ "$(DEB_HOST_ARCH)" = "arm64" ]; then \
+		sed -i '/"BUILD_TESTING"[[:space:]]*:[[:space:]]*"ON"/i\        "MYSQL_LIBRARY": "/usr/lib/aarch64-linux-gnu/libperconaserverclient.so",' $(SRC_DIR)/CMakePresets.json; \
+	fi; \
 	########################
 	# DEBUG BUILD
 	########################
