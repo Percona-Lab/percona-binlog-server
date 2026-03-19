@@ -399,7 +399,7 @@ s3_storage_backend::aws_context::list_objects(
 
   for (const auto &model_object : model_objects) {
     // if the prefix is set, the list of objects in the response will include
-    // the prefix itself (as a directory) with zero size - it neeeds to be
+    // the prefix itself (as a directory) with zero size - it needs to be
     // skipped
 
     // moreover, we need to remove the prefix itself from the object paths
@@ -611,7 +611,7 @@ void s3_storage_backend::init_with_endpoint(
   // legacy URL composing scheme (where bucket name is not a
   // part of the host name but the very first segment of the path).
   // As the result, in the provided storage URI configuration parameter we
-  // consider its first path segment a buckedt name.
+  // consider its first path segment a bucket name.
   const std::filesystem::path uri_path{uri.path()};
   auto uri_path_it{std::cbegin(uri_path)};
   assert(uri_path_it != std::cend(uri_path));
@@ -770,7 +770,7 @@ void s3_storage_backend::upload_tmp_stream_internal() {
 void s3_storage_backend::close_stream_internal() {
   tmp_fstream_.close();
   // we allow std::filesystem::remove() here to fail - worst case scenario
-  // we will have a temorary file not removed
+  // we will have a temporary file not removed
   std::error_code remove_ec;
   std::filesystem::remove(current_tmp_file_path_, remove_ec);
 }

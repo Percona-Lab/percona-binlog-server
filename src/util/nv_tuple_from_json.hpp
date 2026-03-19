@@ -35,7 +35,7 @@ namespace detail {
 // be used as a 'Context' parameter for 'tag_invoke()' functions. As these
 // functions accept Context by a const reference, we use a trick here with
 // another level of indirection via a pointer to a non-const
-// 'string_view_composite_name' and declaring all modyfying methods of this
+// 'string_view_composite_name' and declaring all modifying methods of this
 // class as const.
 // This class also serves the purpose of ADL - it is supposed to be used in
 // 'tag_invoke()' overloads in order to be able to convert instances of
@@ -103,8 +103,8 @@ T tag_invoke(boost::json::value_to_tag<T> /*unused*/,
 
 // The tag_invoke() overload for types that can be converted from
 // std::strings via boost::lexical_cast (explicitly marked as convertible
-// via util::string_convertable<...> specialization).
-template <string_convertable T>
+// via util::string_convertible<...> specialization).
+template <string_convertible T>
 T tag_invoke(boost::json::value_to_tag<T> /*unused*/,
              const boost::json::value &json_value,
              const extraction_context & /*extraction_ctx*/) {

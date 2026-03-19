@@ -32,6 +32,6 @@ std::istream &operator>>(std::istream &input, gtid_set &obj);
 } // namespace binsrv::gtids
 
 template <>
-struct util::is_string_convertable<binsrv::gtids::gtid_set> : std::true_type {};
+struct util::is_string_convertible<binsrv::gtids::gtid_set> : std::true_type {};
 
 #endif // BINSRV_GTIDS_GTID_SET_FWD_HPP

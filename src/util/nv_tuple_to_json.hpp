@@ -60,8 +60,8 @@ void tag_invoke(boost::json::value_from_tag /*unused*/,
 
 // The tag_invoke() overload for types that can be converted to
 // std::strings via boost::lexical_cast (explicitly marked as convertible
-// via util::string_convertable<...> specialization).
-template <string_convertable T>
+// via util::string_convertible<...> specialization).
+template <string_convertible T>
 void tag_invoke(boost::json::value_from_tag /*unused*/,
                 boost::json::value &json_value, const T &obj,
                 const insertion_context & /*unused*/) {

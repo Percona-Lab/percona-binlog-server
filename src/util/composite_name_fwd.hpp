@@ -13,8 +13,8 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef UTIL_COMPOSIT_NAME_FWD_HPP
-#define UTIL_COMPOSIT_NAME_FWD_HPP
+#ifndef UTIL_COMPOSITE_NAME_FWD_HPP
+#define UTIL_COMPOSITE_NAME_FWD_HPP
 
 #include <string>
 #include <string_view>
@@ -29,4 +29,4 @@ using c_str_composite_name = composite_name<const char *>;
 
 } // namespace util
 
-#endif // UTIL_COMPOSIT_NAME_FWD_HPP
+#endif // UTIL_COMPOSITE_NAME_FWD_HPP

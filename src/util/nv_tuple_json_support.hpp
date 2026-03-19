@@ -20,13 +20,13 @@
 
 namespace util {
 
-template <typename T> struct is_string_convertable : std::false_type {};
+template <typename T> struct is_string_convertible : std::false_type {};
 
 template <typename T>
-inline constexpr bool is_string_convertable_v = is_string_convertable<T>::value;
+inline constexpr bool is_string_convertible_v = is_string_convertible<T>::value;
 
 template <typename T>
-concept string_convertable = is_string_convertable_v<T>;
+concept string_convertible = is_string_convertible_v<T>;
 
 } // namespace util
 

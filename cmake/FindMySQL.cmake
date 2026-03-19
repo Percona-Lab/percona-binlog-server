@@ -14,7 +14,7 @@
 #   MYSQL_FOUND           - True if the system has the libraries
 #   MYSQL_INCLUDE_DIRS    - where to find the headers
 #   MYSQL_LIBRARIES       - where to find the libraries
-#   MYSQL_DEFINITIONS     - compile definitons
+#   MYSQL_DEFINITIONS     - compile definitions
 #
 # Hints:
 # Set ``MYSQL_ROOT_DIR`` to the root directory of an installation.
@@ -60,7 +60,7 @@ if (MSVC)
     else (CMAKE_BUILD_TYPE STREQUAL Debug)
         set(libsuffixDist opt)
         set(libsuffixBuild Release)
-        set(WIN_MYSQL_DEFINITONS " -DDBUG_OFF")
+        set(WIN_MYSQL_DEFINITIONS " -DDBUG_OFF")
     endif (CMAKE_BUILD_TYPE STREQUAL Debug)
 
     find_library(MYSQL_LIBRARY NAMES mysqlclient
@@ -117,14 +117,14 @@ find_package_handle_standard_args(MySQL
 if(MYSQL_FOUND)
     set(MYSQL_LIBRARIES ${MYSQL_LIBRARY})
     set(MYSQL_INCLUDE_DIRS ${MYSQL_INCLUDE_DIR})
-    set(MYSQL_DEFINITIONS "${PC_MYSQL_CFLAGS_OTHER}${WIN_MYSQL_DEFINITONS}")
+    set(MYSQL_DEFINITIONS "${PC_MYSQL_CFLAGS_OTHER}${WIN_MYSQL_DEFINITIONS}")
 endif()
 
 if(MYSQL_FOUND AND NOT TARGET MySQL::client)
   add_library(MySQL::client UNKNOWN IMPORTED)
   set_target_properties(MySQL::client PROPERTIES
     IMPORTED_LOCATION "${MYSQL_LIBRARY}"
-    INTERFACE_COMPILE_OPTIONS "${PC_MYSQL_CFLAGS_OTHER}${WIN_MYSQL_DEFINITONS}"
+    INTERFACE_COMPILE_OPTIONS "${PC_MYSQL_CFLAGS_OTHER}${WIN_MYSQL_DEFINITIONS}"
     INTERFACE_INCLUDE_DIRECTORIES "${MYSQL_INCLUDE_DIR}"
   )
 endif()

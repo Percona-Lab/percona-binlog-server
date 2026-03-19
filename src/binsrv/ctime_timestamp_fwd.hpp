@@ -32,6 +32,6 @@ std::istream &operator>>(std::istream &input, ctime_timestamp &timestamp);
 } // namespace binsrv
 
 template <>
-struct util::is_string_convertable<binsrv::ctime_timestamp> : std::true_type {};
+struct util::is_string_convertible<binsrv::ctime_timestamp> : std::true_type {};
 
 #endif // BINSRV_CTIME_TIMESTAMP_FWD_HPP

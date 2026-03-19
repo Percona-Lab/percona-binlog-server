@@ -4,11 +4,11 @@ following:
    tree) pointing to 'mtr/binlog_streaming' (in this source tree).
    ln -s <this_source_tree_path>/mtr/binlog_streaming \
          <mysql_source_tree_path>/mysql-test/suites/binlog_streaming
-2. Set 'BINSRV' enviroment variable pointing to the 'binlog_server' binary
+2. Set 'BINSRV' environment variable pointing to the 'binlog_server' binary
    and run MTR.
    BINSRV=<build_directory_path>/binlog_server ./mysql-test/mtr --suite=binlog_streaming
 3. In order to run the tests using AWS S3 as a storage backend also define the
-   following environemnt variables
+   following environment variables
    * MTR_BINSRV_AWS_ACCESS_KEY_ID - AWS access key ID
    * MTR_BINSRV_AWS_SECRET_ACCESS_KEY - AWS secret access key
    * MTR_BINSRV_AWS_S3_BUCKET - AWS S3 bucket name

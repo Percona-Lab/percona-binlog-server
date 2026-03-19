@@ -40,7 +40,7 @@ operator>>(std::basic_istream<Char, Traits> &input, ssl_mode_type &level);
 } // namespace easymysql
 
 template <>
-struct util::is_string_convertable<easymysql::ssl_mode_type> : std::true_type {
+struct util::is_string_convertible<easymysql::ssl_mode_type> : std::true_type {
 };
 
 #endif // EASYMYSQL_SSL_MODE_TYPE_FWD_HPP

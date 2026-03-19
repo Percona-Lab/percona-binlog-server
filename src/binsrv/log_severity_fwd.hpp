@@ -39,6 +39,6 @@ operator>>(std::basic_istream<Char, Traits> &input, log_severity &level);
 } // namespace binsrv
 
 template <>
-struct util::is_string_convertable<binsrv::log_severity> : std::true_type {};
+struct util::is_string_convertible<binsrv::log_severity> : std::true_type {};
 
 #endif // BINSRV_LOG_SEVERITY_FWD_HPP

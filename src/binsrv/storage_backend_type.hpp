@@ -13,8 +13,8 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef BINSRV_STORGATE_BACKEND_TYPE_HPP
-#define BINSRV_STORGATE_BACKEND_TYPE_HPP
+#ifndef BINSRV_STORAGE_BACKEND_TYPE_HPP
+#define BINSRV_STORAGE_BACKEND_TYPE_HPP
 
 #include "binsrv/storage_backend_type_fwd.hpp" // IWYU pragma: export
 
@@ -93,4 +93,4 @@ operator>>(std::basic_istream<Char, Traits> &input,
 
 } // namespace binsrv
 
-#endif // BINSRV_STORGATE_BACKEND_TYPE_HPP
+#endif // BINSRV_STORAGE_BACKEND_TYPE_HPP

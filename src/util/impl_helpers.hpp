@@ -31,7 +31,7 @@ template <typename T> struct deimpl {
     return static_cast<const T *>(impl.get());
   }
   // get_const_casted() is supposed to be used to fix broken
-  // legacy C interfaces without const quilifiers for read-only
+  // legacy C interfaces without const qualifiers for read-only
   // parameters
   template <typename Deleter>
   [[nodiscard]] static T *

@@ -62,8 +62,8 @@ time_unit::time_unit(std::string_view value_sv)
   // deliberately skipping the very first element
   const auto *const multipliers_it{
       std::find_if(multipliers_bg, multipliers_en,
-                   [symbol = *parse_ptr](const auto &maltiplier_pair) {
-                     return maltiplier_pair.first == symbol;
+                   [symbol = *parse_ptr](const auto &multiplier_pair) {
+                     return multiplier_pair.first == symbol;
                    })};
   if (multipliers_it == multipliers_en) {
     util::exception_location().raise<std::invalid_argument>(
@@ -71,7 +71,7 @@ time_unit::time_unit(std::string_view value_sv)
   }
 
   if (base_value_ == 0ULL) {
-    // Zero with any multipliyer is still zero, leaving multiplier_index_ as
+    // Zero with any multiplier is still zero, leaving multiplier_index_ as
     // zero as well.
     return;
   }

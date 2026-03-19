@@ -41,7 +41,7 @@ operator>>(std::basic_istream<Char, Traits> &input,
 } // namespace binsrv
 
 template <>
-struct util::is_string_convertable<binsrv::storage_backend_type>
+struct util::is_string_convertible<binsrv::storage_backend_type>
     : std::true_type {};
 
 #endif // BINSRV_STORAGE_BACKEND_TYPE_FWD_HPP
