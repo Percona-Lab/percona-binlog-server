@@ -146,7 +146,7 @@ BOOST_FIXTURE_TEST_CASE_TEMPLATE(VarlenIntEncoding, ValueType,
 
   const ValueType delta{16ULL};
 
-  // each iteration represents a new 7-bit gtoup that adds one more byte to the
+  // each iteration represents a new 7-bit group that adds one more byte to the
   // encoding deliberately adding one more iteration for the last (shorter than
   // 7-bit) group
   for (std::size_t iteration{0U}; iteration <= number_of_iterations<ValueType>;

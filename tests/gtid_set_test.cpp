@@ -709,7 +709,7 @@ BOOST_AUTO_TEST_CASE(GtidSetWhitespaces) {
   auto gtids_str{boost::lexical_cast<std::string>(gtids)};
   // erasing all space characters from the GTIDs string
 
-  // looks like a misconfiguration in clang-tyidy-19 that doesn't know that
+  // looks like a misconfiguration in clang-tidy-19 that doesn't know that
   // std::erase() for std::string is located in the <string> system header
 
   // TODO: re-check this when switching to clang-20

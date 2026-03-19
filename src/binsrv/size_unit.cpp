@@ -69,9 +69,8 @@ size_unit::size_unit(std::string_view value_sv)
     util::exception_location().raise<std::invalid_argument>(
         "unknown unit prefix in the size unit");
   }
-
   if (base_value_ == 0ULL) {
-    // Zero with any multipliyer is still zero, leaving shift_index_ as zero as
+    // Zero with any multiplier is still zero, leaving shift_index_ as zero as
     // well.
     return;
   }

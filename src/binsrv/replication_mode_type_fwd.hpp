@@ -41,7 +41,7 @@ operator>>(std::basic_istream<Char, Traits> &input,
 } // namespace binsrv
 
 template <>
-struct util::is_string_convertable<binsrv::replication_mode_type>
+struct util::is_string_convertible<binsrv::replication_mode_type>
     : std::true_type {};
 
 #endif // BINSRV_REPLICATION_MODE_TYPE_FWD_HPP

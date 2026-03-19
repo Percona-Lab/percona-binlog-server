@@ -450,7 +450,7 @@ void connection::switch_to_position_replication(
   assert(!is_empty());
   if (is_in_replication_mode()) {
     util::exception_location().raise<std::logic_error>(
-        "connection has already been swithed to replication");
+        "connection has already been switched to replication");
   }
 
   set_binlog_checksum(verify_checksum);
@@ -472,7 +472,7 @@ void connection::switch_to_gtid_replication(
   assert(!is_empty());
   if (is_in_replication_mode()) {
     util::exception_location().raise<std::logic_error>(
-        "connection has already been swithed to replication");
+        "connection has already been switched to replication");
   }
 
   set_binlog_checksum(verify_checksum);

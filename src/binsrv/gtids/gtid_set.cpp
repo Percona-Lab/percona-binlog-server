@@ -473,7 +473,7 @@ gtid_set::gtid_set(util::const_byte_span portion) {
 
 [[nodiscard]] std::size_t gtid_set::calculate_encoded_size() const noexcept {
   const auto tagged_flag{contains_tags()};
-  // 8 bytes for the header (for both tahgged and untagged versions)
+  // 8 bytes for the header (for both tagged and untagged versions)
   std::size_t result{sizeof(std::uint64_t)};
   for (const auto &[current_uuid, current_tagged_gnos] : data_) {
     for (const auto &[current_tag, current_gnos] : current_tagged_gnos) {

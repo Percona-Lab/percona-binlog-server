@@ -23,7 +23,7 @@ jobs:
     runs-on: ubuntu-24.04
     name: Formatting checks
     steps:
-      - name: Cheking out source tree
+      - name: Checking out source tree
         uses: actions/checkout@v4
         with:
           path: src
@@ -33,7 +33,9 @@ jobs:
       - name: Check for new lines at the end of files
         # https://medium.com/@alexey.inkin/how-to-force-newline-at-end-of-files-and-why-you-should-do-it-fdf76d1d090e
         working-directory: ${{github.workspace}}/src
-        run: find . -not -path "./.git/*" -type f | xargs -L1 bash -c 'test -z "$(tail -c1 "$0")" || (echo "No newline at the end of $0" ; false)'
+        run: |
+          find . -path "./.git" -prune -or -type f -not -name "*.zip" -print | wc -l
+          find . -path "./.git" -prune -or -type f -not -name "*.zip" -print | xargs -L1 bash -c 'test -z "$(tail -c1 "$0")" || (echo "No newline at the end of $0" ; false)'
 
       - name: Check formatting with git diff --check
         working-directory: ${{github.workspace}}/src
@@ -317,7 +319,7 @@ jobs:
       # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
       run: ctest --parallel
 
-    - name: Info Build artefacts
+    - name: Info Build artifacts
       run: |
         ls -la ${{github.workspace}}
         ls -la ${{runner.temp}}

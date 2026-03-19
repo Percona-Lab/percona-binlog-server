@@ -34,6 +34,6 @@ std::istream &operator>>(std::istream &input, time_unit &unit);
 } // namespace binsrv
 
 template <>
-struct util::is_string_convertable<binsrv::time_unit> : std::true_type {};
+struct util::is_string_convertible<binsrv::time_unit> : std::true_type {};
 
 #endif // BINSRV_TIME_UNIT_FWD_HPP

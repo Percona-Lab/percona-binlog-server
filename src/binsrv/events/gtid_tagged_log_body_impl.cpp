@@ -181,7 +181,7 @@ generic_body_impl<code_type::gtid_tagged_log>::get_gtid() const {
 
 [[nodiscard]] std::string generic_body_impl<code_type::gtid_tagged_log>::
     get_readable_immediate_commit_timestamp() const {
-  // threre is still no way to get string representationof the
+  // there is still no way to get string representation of the
   // std::chrono::high_resolution_clock::time_point using standard stdlib means,
   // so using boost::posix_time::ptime here
   boost::posix_time::ptime timestamp{
@@ -299,7 +299,7 @@ void generic_body_impl<code_type::gtid_tagged_log>::process_field_data(
     varlen_int_extractor(remainder, gno_, "gno");
     break;
   case field_id_type::tag: {
-    // Extracting tag (length encoded as varlent int and raw character array)
+    // Extracting tag (length encoded as varlen int and raw character array)
     std::size_t extracted_tag_length{};
     varlen_int_extractor(remainder, extracted_tag_length, "tag length");
     tag_.resize(extracted_tag_length);

@@ -39,7 +39,7 @@ template <ct_string CTS, typename T> struct nv {
 };
 
 template <named_value... NVPack> struct nv_tuple : NVPack... {
-  // TODO: add constraint to make sure that we have only uniqie names in the
+  // TODO: add constraint to make sure that we have only unique names in the
   //       NVPack
   using this_type = nv_tuple<NVPack...>;
 

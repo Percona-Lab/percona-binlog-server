@@ -15,7 +15,7 @@
 #   --let $storage_object = /vault/second
 #   --source diff_with_storage_object.inc
 #
-# $storage_backend - determines stortage backend type (either 'file' or 'fs')
+# $storage_backend - determines storage backend type (either 'file' or 'fs')
 # $aws_cli         - path to AWS command line interface (cli) tools with AWS_ACCESS_KEY_ID /
 #                    AWS_SECRET_ACCESS_KEY environment variables set appropriately
 #                    (needed only if $storage_backend is 's3')

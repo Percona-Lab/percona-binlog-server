@@ -16,7 +16,7 @@
 # $extracted_init_connect_variable_value - the MTR variable which will hold
 #                                          the result value
 
-# Because, "--init-connect" statemenmt is executed only for non-privileged
+# Because, "--init-connect" statement is executed only for non-privileged
 # users, we need to create one here and read the value of the variable from a new
 # connection established with this user's credentials.
 --disable_query_log

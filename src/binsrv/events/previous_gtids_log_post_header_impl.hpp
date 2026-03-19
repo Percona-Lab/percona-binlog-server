@@ -13,8 +13,8 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef BINSRV_EVENTS_PRESIOUS_GTIDS_LOG_POST_HEADER_IMPL_HPP
-#define BINSRV_EVENTS_PRESIOUS_GTIDS_LOG_POST_HEADER_IMPL_HPP
+#ifndef BINSRV_EVENTS_PREVIOUS_GTIDS_LOG_POST_HEADER_IMPL_HPP
+#define BINSRV_EVENTS_PREVIOUS_GTIDS_LOG_POST_HEADER_IMPL_HPP
 
 #include "binsrv/events/previous_gtids_log_post_header_impl_fwd.hpp" // IWYU pragma: export
 
@@ -30,4 +30,4 @@ public:
 
 } // namespace binsrv::events
 
-#endif // BINSRV_EVENTS_PRESIOUS_GTIDS_LOG_POST_HEADER_IMPL_HPP
+#endif // BINSRV_EVENTS_PREVIOUS_GTIDS_LOG_POST_HEADER_IMPL_HPP

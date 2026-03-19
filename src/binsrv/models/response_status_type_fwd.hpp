@@ -41,7 +41,7 @@ operator>>(std::basic_istream<Char, Traits> &input,
 } // namespace binsrv::models
 
 template <>
-struct util::is_string_convertable<binsrv::models::response_status_type>
+struct util::is_string_convertible<binsrv::models::response_status_type>
     : std::true_type {};
 
 #endif // BINSRV_MODELS_RESPONSE_STATUS_TYPE_FWD_HPP

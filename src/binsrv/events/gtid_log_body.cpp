@@ -104,7 +104,7 @@ gtid_log_body::gtid_log_body(util::const_byte_span portion) {
 }
 [[nodiscard]] std::string
 gtid_log_body::get_readable_immediate_commit_timestamp() const {
-  // threre is still no way to get string representationof the
+  // there is still no way to get string representation of the
   // std::chrono::high_resolution_clock::time_point using standard stdlib means,
   // so using boost::posix_time::ptime here
   boost::posix_time::ptime timestamp{

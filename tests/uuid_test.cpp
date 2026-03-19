@@ -17,7 +17,7 @@
 #include <string>
 #include <string_view>
 
-#define BOOST_TEST_MODULE UuisTests
+#define BOOST_TEST_MODULE UuidTests
 // this include is needed as it provides the 'main()' function
 // NOLINTNEXTLINE(misc-include-cleaner)
 #include <boost/test/unit_test.hpp>

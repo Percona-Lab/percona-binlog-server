@@ -39,14 +39,14 @@ semantic_version::semantic_version(std::string_view version_string)
   const auto version_en{std::ranges::end(split_result)};
 
   const auto component_extractor{
-      [version_en](auto &cuttent_it, const std::string &name) -> std::uint8_t {
-        if (cuttent_it == version_en) {
+      [version_en](auto &current_it, const std::string &name) -> std::uint8_t {
+        if (current_it == version_en) {
           exception_location().raise<std::invalid_argument>(
               "server_version does not have the \"" + name + "\" component");
         }
         std::uint8_t result{};
-        const auto component_it{std::ranges::cbegin(*cuttent_it)};
-        const auto component_en{std::ranges::cend(*cuttent_it)};
+        const auto component_it{std::ranges::cbegin(*current_it)};
+        const auto component_en{std::ranges::cend(*current_it)};
         const auto [conversion_ptr, conversion_ec]{
             std::from_chars(component_it, component_en, result)};
         if (conversion_ec != std::errc{} || conversion_ptr != component_en) {
@@ -54,7 +54,7 @@ semantic_version::semantic_version(std::string_view version_string)
               "server_version \"" + name +
               "\" component is not a numeric value");
         }
-        ++cuttent_it;
+        ++current_it;
         return result;
       }};
   major_ = component_extractor(version_it, "major");

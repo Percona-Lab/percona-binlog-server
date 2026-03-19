@@ -14,7 +14,7 @@ Usage: $0 [OPTIONS]
         --build_src_deb     If it is set - source deb package will be built
         --build_rpm         If it is set - rpm will be built
         --build_deb         If it is set - deb will be built
-        --install_deps      Install build dependencies(root privilages are required)
+        --install_deps      Install build dependencies(root privileges are required)
         --branch            Branch for build
         --repo              Repo for build
         --version           Version to build
