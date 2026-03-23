@@ -77,7 +77,7 @@ find_package(Boost 1.90.0 EXACT REQUIRED COMPONENTS url json)
 find_package(MySQL REQUIRED)
 
 find_package(ZLIB REQUIRED)
-find_package(AWSSDK 1.11.570 EXACT REQUIRED COMPONENTS s3-crt)
+find_package(AWSSDK 1.11.774 EXACT REQUIRED COMPONENTS s3-crt)
 
 set(source_files
   # main application files

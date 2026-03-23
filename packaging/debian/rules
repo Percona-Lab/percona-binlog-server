@@ -10,7 +10,7 @@ export CODENAME := $(shell . /etc/os-release && echo $$VERSION_CODENAME)
 # Versions
 export DEB_VERSION=0.1.0
 export BOOST_VERSION=1.90.0
-export AWS_VERSION=1.11.570
+export AWS_VERSION=1.11.774
 
 # CMake presets
 export BUILD_PRESET_DEBUG=debug_gcc14
