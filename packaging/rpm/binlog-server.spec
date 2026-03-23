@@ -3,7 +3,7 @@
 %global BUILD_PRESET_DEBUG debug_gcc14
 %global BUILD_PRESET_RELEASE release_gcc14
 %global BOOST_VERSION 1.90.0
-%global AWS_VERSION 1.11.570
+%global AWS_VERSION 1.11.774
 %global release %{rpm_release}%{?dist}
 %global optflags %(echo %{optflags} | sed 's/-specs=[^ ]*annobin[^ ]*//g')
 
