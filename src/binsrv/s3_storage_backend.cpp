@@ -738,8 +738,11 @@ s3_storage_backend::do_get_object_uri(std::string_view name) const {
   if (impl_->has_endpoint()) {
     result.set_scheme(impl_->get_scheme_label());
     result.set_encoded_authority(impl_->get_endpoint());
-    std::filesystem::path result_path{result.path()};
-    result_path /= get_object_path(name);
+    std::filesystem::path result_path{"/"};
+    result_path /= get_bucket();
+    // according to the standard if the rhs of the operator /= is an
+    // absolute path, it must overwrite parts of the lhs
+    result_path /= get_object_path(name).relative_path();
     result.set_path(result_path.generic_string());
   } else {
     result.set_scheme(original_uri_schema);
