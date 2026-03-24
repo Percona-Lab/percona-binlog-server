@@ -13,7 +13,7 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#include "binsrv/ctime_timestamp.hpp"
+#include "util/ctime_timestamp.hpp"
 
 #include <ctime>
 #include <exception>
@@ -27,7 +27,7 @@
 #include <boost/date_time/posix_time/time_formatters.hpp>
 #include <boost/date_time/posix_time/time_parsers.hpp>
 
-namespace binsrv {
+namespace util {
 
 ctime_timestamp::ctime_timestamp(std::string_view value_sv)
     : value_{boost::posix_time::to_time_t(
@@ -79,4 +79,4 @@ std::istream &operator>>(std::istream &input, ctime_timestamp &timestamp) {
   return input;
 }
 
-} // namespace binsrv
+} // namespace util

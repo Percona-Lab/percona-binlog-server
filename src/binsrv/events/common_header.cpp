@@ -22,20 +22,19 @@
 
 #include <boost/align/align_up.hpp>
 
-#include "binsrv/ctime_timestamp.hpp"
-
 #include "binsrv/events/code_type.hpp"
 #include "binsrv/events/common_header_flag_type.hpp"
 #include "binsrv/events/common_header_view.hpp"
 
 #include "util/byte_span_fwd.hpp"
 #include "util/conversion_helpers.hpp"
+#include "util/ctime_timestamp.hpp"
 #include "util/exception_location_helpers.hpp"
 
 namespace binsrv::events {
 
 common_header::common_header(
-    const ctime_timestamp &timestamp, code_type type_code,
+    const util::ctime_timestamp &timestamp, code_type type_code,
     // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
     std::uint32_t server_id, std::uint32_t event_size,
     std::uint32_t next_event_position, common_header_flag_set flags) noexcept
@@ -68,7 +67,7 @@ common_header::common_header(util::const_byte_span portion)
 
 [[nodiscard]] common_header common_header::create_with_offset(
     std::uint32_t offset, std::uint32_t event_size,
-    const ctime_timestamp &timestamp, code_type type_code,
+    const util::ctime_timestamp &timestamp, code_type type_code,
     std::uint32_t server_id, common_header_flag_set flags) noexcept {
   // artificial ROTATE event must have next_event_position set to zero
   const std::uint32_t next_event_position{
@@ -80,7 +79,8 @@ common_header::common_header(util::const_byte_span portion)
                        event_size, next_event_position, flags};
 }
 
-[[nodiscard]] ctime_timestamp common_header::get_timestamp() const noexcept {
+[[nodiscard]] util::ctime_timestamp
+common_header::get_timestamp() const noexcept {
   return common_header_view_base::get_timestamp_from_raw(get_timestamp_raw());
 }
 

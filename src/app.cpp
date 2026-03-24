@@ -40,7 +40,6 @@
 #include "app_version.hpp"
 
 #include "binsrv/basic_logger.hpp"
-#include "binsrv/ctime_timestamp.hpp"
 #include "binsrv/exception_handling_helpers.hpp"
 #include "binsrv/log_severity.hpp"
 #include "binsrv/logger_factory.hpp"
@@ -78,6 +77,7 @@
 #include "util/command_line_helpers.hpp"
 #include "util/common_optional_types.hpp"
 #include "util/ct_string.hpp"
+#include "util/ctime_timestamp.hpp"
 #include "util/exception_location_helpers.hpp"
 #include "util/nv_tuple.hpp"
 #include "util/semantic_version.hpp"
@@ -544,20 +544,19 @@ void process_binlog_event(const binsrv::events::event_view &current_event_v,
   }
 }
 
-[[nodiscard]] binsrv::events::event_view
-generate_rotate_event(binsrv::events::event_storage &event_buffer,
-                      const binsrv::events::reader_context &context,
-                      std::uint32_t offset, bool current_timestamp,
-                      std::uint32_t server_id, bool artificial,
-                      const binsrv::composite_binlog_name &binlog_name) {
+[[nodiscard]] binsrv::events::event_view generate_rotate_event(
+    binsrv::events::event_storage &event_buffer,
+    const binsrv::events::reader_context &context, std::uint32_t offset,
+    bool current_timestamp, std::uint32_t server_id, bool artificial,
+    const binsrv::events::composite_binlog_name &binlog_name) {
   const binsrv::events::generic_post_header<binsrv::events::code_type::rotate>
       post_header{binsrv::events::magic_binlog_offset};
   const binsrv::events::generic_body<binsrv::events::code_type::rotate> body{
       binlog_name};
 
-  binsrv::ctime_timestamp timestamp{};
+  util::ctime_timestamp timestamp{};
   if (current_timestamp) {
-    timestamp = binsrv::ctime_timestamp::now();
+    timestamp = util::ctime_timestamp::now();
   }
 
   binsrv::events::common_header_flag_set flags{};
@@ -591,7 +590,7 @@ generate_format_description_event(binsrv::events::event_storage &event_buffer,
       binsrv::events::code_type::format_description>
       post_header{
           binsrv::events::default_binlog_version, server_version,
-          binsrv::ctime_timestamp::now(),
+          util::ctime_timestamp::now(),
           binsrv::events::default_common_header_length,
           binsrv::events::reader_context::get_hardcoded_post_header_lengths(
               server_version.get_encoded())};
@@ -602,7 +601,7 @@ generate_format_description_event(binsrv::events::event_storage &event_buffer,
   // enforcing checksums for all rewritten upcoming events
   const auto generated_event{binsrv::events::event::create_event<
       binsrv::events::code_type::format_description>(
-      offset, binsrv::ctime_timestamp::now(), server_id,
+      offset, util::ctime_timestamp::now(), server_id,
       binsrv::events::common_header_flag_set{}, post_header, body,
       true /* include_checksum */, event_buffer)};
 
@@ -624,7 +623,7 @@ generate_previous_gtids_log_event(binsrv::events::event_storage &event_buffer,
   const auto generated_previous_gtids_log_event{
       binsrv::events::event::create_event<
           binsrv::events::code_type::previous_gtids_log>(
-          offset, binsrv::ctime_timestamp::now(), server_id,
+          offset, util::ctime_timestamp::now(), server_id,
           binsrv::events::common_header_flag_set{}, post_header, body, true,
           event_buffer)};
 
@@ -686,10 +685,10 @@ void rewrite_and_process_binlog_event(
 
     // please notice that if storage is empty, then the sequence number will be
     // zero
-    binsrv::composite_binlog_name binlog_name{};
+    binsrv::events::composite_binlog_name binlog_name{};
     if (storage.is_empty()) {
       // the very first time we receive an event on an empty storage
-      binlog_name = binsrv::composite_binlog_name{base_file_name, 1U};
+      binlog_name = binsrv::events::composite_binlog_name{base_file_name, 1U};
     } else if (context.is_fresh()) {
       // this is the very first event we received after reconnection
       // (the storage is not empty and we have an active binlog in it)
@@ -942,8 +941,8 @@ bool handle_search_by_timestamp(std::string_view config_file_path,
   std::string result;
 
   try {
-    binsrv::ctime_timestamp timestamp;
-    if (!binsrv::ctime_timestamp::try_parse(subcommand_value, timestamp)) {
+    util::ctime_timestamp timestamp;
+    if (!util::ctime_timestamp::try_parse(subcommand_value, timestamp)) {
       throw std::runtime_error("Invalid timestamp format");
     }
 

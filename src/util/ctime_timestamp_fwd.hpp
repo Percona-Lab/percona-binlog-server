@@ -13,13 +13,25 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef BINSRV_CTIME_TIMESTAMP_RANGE_FWD_HPP
-#define BINSRV_CTIME_TIMESTAMP_RANGE_FWD_HPP
+#ifndef UTIL_CTIME_TIMESTAMP_FWD_HPP
+#define UTIL_CTIME_TIMESTAMP_FWD_HPP
 
-namespace binsrv {
+#include <iosfwd>
 
-class ctime_timestamp_range;
+#include "util/nv_tuple_json_support.hpp"
 
-} // namespace binsrv
+namespace util {
 
-#endif // BINSRV_CTIME_TIMESTAMP_RANGE_FWD_HPP
+class ctime_timestamp;
+
+std::ostream &operator<<(std::ostream &output,
+                         const ctime_timestamp &timestamp);
+
+std::istream &operator>>(std::istream &input, ctime_timestamp &timestamp);
+
+} // namespace util
+
+template <>
+struct util::is_string_convertible<util::ctime_timestamp> : std::true_type {};
+
+#endif // UTIL_CTIME_TIMESTAMP_FWD_HPP

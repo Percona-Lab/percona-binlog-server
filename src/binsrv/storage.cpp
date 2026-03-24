@@ -29,19 +29,19 @@
 
 #include "binsrv/basic_storage_backend.hpp"
 #include "binsrv/binlog_file_metadata.hpp"
-#include "binsrv/composite_binlog_name.hpp"
-#include "binsrv/ctime_timestamp.hpp"
 #include "binsrv/replication_mode_type.hpp"
 #include "binsrv/storage_backend_factory.hpp"
 #include "binsrv/storage_config.hpp"
 #include "binsrv/storage_metadata.hpp"
 
+#include "binsrv/events/composite_binlog_name.hpp"
 #include "binsrv/events/protocol_traits_fwd.hpp"
 
 #include "binsrv/gtids/gtid.hpp"
 #include "binsrv/gtids/gtid_set.hpp"
 
 #include "util/byte_span.hpp"
+#include "util/ctime_timestamp.hpp"
 #include "util/exception_location_helpers.hpp"
 
 namespace binsrv {
@@ -133,7 +133,7 @@ storage::~storage() {
 }
 
 [[nodiscard]] open_binlog_status
-storage::open_binlog(const composite_binlog_name &binlog_name) {
+storage::open_binlog(const events::composite_binlog_name &binlog_name) {
   ensure_streaming_mode();
 
   auto result{open_binlog_status::opened_with_data_present};
@@ -178,7 +178,7 @@ storage::open_binlog(const composite_binlog_name &binlog_name) {
     binlog_records_.emplace_back(binlog_name, events::magic_binlog_offset,
                                  std::move(previous_binlog_gtids),
                                  std::move(added_binlog_gtids),
-                                 ctime_timestamp_range{});
+                                 util::ctime_timestamp_range{});
     save_binlog_metadata(get_current_binlog_record());
     save_binlog_index();
     result = open_binlog_status::created;
@@ -211,7 +211,7 @@ storage::open_binlog(const composite_binlog_name &binlog_name) {
 void storage::write_event(util::const_byte_span event_data,
                           bool at_transaction_boundary,
                           const gtids::gtid &transaction_gtid,
-                          const ctime_timestamp &event_timestamp) {
+                          const util::ctime_timestamp &event_timestamp) {
   ensure_streaming_mode();
 
   event_buffer_.insert(std::end(event_buffer_), std::cbegin(event_data),
@@ -292,8 +292,8 @@ void storage::flush_event_buffer() {
   }
 }
 
-[[nodiscard]] std::string
-storage::get_binlog_uri(const composite_binlog_name &binlog_name) const {
+[[nodiscard]] std::string storage::get_binlog_uri(
+    const events::composite_binlog_name &binlog_name) const {
   return backend_->get_object_uri(binlog_name.str());
 }
 
@@ -371,7 +371,7 @@ void storage::load_binlog_index() {
           "binlog index contains a reference to the binlog index name");
     }
     const auto current_binlog_name_parsed{
-        composite_binlog_name::parse(current_binlog_name)};
+        events::composite_binlog_name::parse(current_binlog_name)};
     if (std::ranges::find(std::as_const(binlog_records_),
                           current_binlog_name_parsed,
                           &binlog_record::name) != std::cend(binlog_records_)) {
@@ -386,7 +386,7 @@ void storage::load_binlog_index() {
     }
     binlog_records_.emplace_back(
         current_binlog_name_parsed, 0ULL, std::move(previous_binlog_gtids),
-        std::move(added_binlog_gtids), ctime_timestamp_range{});
+        std::move(added_binlog_gtids), util::ctime_timestamp_range{});
   }
 }
 
@@ -443,14 +443,14 @@ void storage::save_metadata() const {
 }
 
 [[nodiscard]] std::string storage::generate_binlog_metadata_name(
-    const composite_binlog_name &binlog_name) {
+    const events::composite_binlog_name &binlog_name) {
   std::string binlog_metadata_name{binlog_name.str()};
   binlog_metadata_name += storage::binlog_metadata_extension;
   return binlog_metadata_name;
 }
 
-[[nodiscard]] storage::binlog_record
-storage::load_binlog_metadata(const composite_binlog_name &binlog_name) const {
+[[nodiscard]] storage::binlog_record storage::load_binlog_metadata(
+    const events::composite_binlog_name &binlog_name) const {
   const auto content{
       backend_->get_object(generate_binlog_metadata_name(binlog_name))};
   binlog_file_metadata metadata{content};
@@ -498,9 +498,9 @@ void storage::save_binlog_metadata(const binlog_record &record) const {
   metadata.root().get<"previous_gtids">() = record.previous_gtids;
   metadata.root().get<"added_gtids">() = record.added_gtids;
   metadata.root().get<"min_timestamp">() =
-      ctime_timestamp{record.timestamps.get_min_timestamp()};
+      util::ctime_timestamp{record.timestamps.get_min_timestamp()};
   metadata.root().get<"max_timestamp">() =
-      ctime_timestamp{record.timestamps.get_max_timestamp()};
+      util::ctime_timestamp{record.timestamps.get_max_timestamp()};
   const auto content{metadata.str()};
   backend_->put_object(generate_binlog_metadata_name(record.name),
                        util::as_const_byte_span(content));

@@ -27,8 +27,6 @@
 
 #include <boost/align/align_up.hpp>
 
-#include "binsrv/ctime_timestamp.hpp"
-
 #include "binsrv/events/code_type.hpp"
 #include "binsrv/events/protocol_traits.hpp"
 
@@ -36,6 +34,7 @@
 #include "util/byte_span.hpp"
 #include "util/byte_span_extractors.hpp"
 #include "util/byte_span_inserters.hpp"
+#include "util/ctime_timestamp.hpp"
 #include "util/exception_location_helpers.hpp"
 #include "util/semantic_version.hpp"
 
@@ -45,7 +44,7 @@ generic_post_header_impl<code_type::format_description>::
     generic_post_header_impl(
         std::uint16_t binlog_version,
         const util::semantic_version &server_version,
-        const ctime_timestamp &create_timestamp,
+        const util::ctime_timestamp &create_timestamp,
         std::size_t common_header_length,
         const post_header_length_container &post_header_lengths)
     : create_timestamp_{static_cast<std::uint32_t>(
@@ -169,10 +168,11 @@ generic_post_header_impl<code_type::format_description>::get_server_version()
   return get_server_version().get_encoded();
 }
 
-[[nodiscard]] ctime_timestamp
+[[nodiscard]] util::ctime_timestamp
 generic_post_header_impl<code_type::format_description>::get_create_timestamp()
     const noexcept {
-  return ctime_timestamp{static_cast<std::time_t>(get_create_timestamp_raw())};
+  return util::ctime_timestamp{
+      static_cast<std::time_t>(get_create_timestamp_raw())};
 }
 
 [[nodiscard]] std::string generic_post_header_impl<

@@ -23,14 +23,13 @@
 #include <string>
 #include <string_view>
 
-#include "binsrv/ctime_timestamp_fwd.hpp"
-
 #include "binsrv/events/code_type_fwd.hpp"
 #include "binsrv/events/common_header_flag_type_fwd.hpp"
 #include "binsrv/events/common_header_view.hpp"
 #include "binsrv/events/protocol_traits_fwd.hpp"
 
 #include "util/byte_span_fwd.hpp"
+#include "util/ctime_timestamp_fwd.hpp"
 
 namespace binsrv::events {
 
@@ -39,7 +38,7 @@ public:
   static constexpr std::size_t size_in_bytes{
       common_header_view_base::size_in_bytes};
 
-  common_header(const ctime_timestamp &timestamp, code_type type_code,
+  common_header(const util::ctime_timestamp &timestamp, code_type type_code,
                 std::uint32_t server_id, std::uint32_t event_size,
                 std::uint32_t next_event_position,
                 common_header_flag_set flags) noexcept;
@@ -48,14 +47,14 @@ public:
 
   [[nodiscard]] static common_header
   create_with_offset(std::uint32_t offset, std::uint32_t event_size,
-                     const ctime_timestamp &timestamp, code_type type_code,
-                     std::uint32_t server_id,
+                     const util::ctime_timestamp &timestamp,
+                     code_type type_code, std::uint32_t server_id,
                      common_header_flag_set flags) noexcept;
 
   [[nodiscard]] std::uint32_t get_timestamp_raw() const noexcept {
     return timestamp_;
   }
-  [[nodiscard]] ctime_timestamp get_timestamp() const noexcept;
+  [[nodiscard]] util::ctime_timestamp get_timestamp() const noexcept;
   [[nodiscard]] std::string get_readable_timestamp() const {
     return common_header_view_base::get_readable_timestamp_from_raw(
         get_timestamp_raw());

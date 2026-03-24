@@ -24,27 +24,28 @@
 #include <vector>
 
 #include "binsrv/basic_storage_backend_fwd.hpp"
-#include "binsrv/composite_binlog_name.hpp"
-#include "binsrv/ctime_timestamp_fwd.hpp"
-#include "binsrv/ctime_timestamp_range.hpp"
 #include "binsrv/replication_mode_type_fwd.hpp"
 #include "binsrv/storage_config_fwd.hpp"
+
+#include "binsrv/events/composite_binlog_name.hpp"
 
 #include "binsrv/gtids/gtid_fwd.hpp"
 #include "binsrv/gtids/gtid_set.hpp"
 
 #include "util/byte_span_fwd.hpp"
+#include "util/ctime_timestamp_fwd.hpp"
+#include "util/ctime_timestamp_range.hpp"
 
 namespace binsrv {
 
 class [[nodiscard]] storage {
 private:
   struct binlog_record {
-    composite_binlog_name name;
+    events::composite_binlog_name name;
     std::uint64_t size{0ULL};
     gtids::optional_gtid_set previous_gtids{};
     gtids::optional_gtid_set added_gtids{};
-    ctime_timestamp_range timestamps{};
+    util::ctime_timestamp_range timestamps{};
   };
   using binlog_record_container = std::vector<binlog_record>;
 
@@ -84,7 +85,7 @@ public:
   [[nodiscard]] bool is_empty() const noexcept {
     return binlog_records_.empty();
   }
-  [[nodiscard]] const composite_binlog_name &
+  [[nodiscard]] const events::composite_binlog_name &
   get_current_binlog_name() const noexcept {
     return is_empty() ? binlog_name_sentinel_
                       : get_current_binlog_record().name;
@@ -114,25 +115,25 @@ public:
   [[nodiscard]] bool is_binlog_open() const noexcept;
 
   [[nodiscard]] open_binlog_status
-  open_binlog(const composite_binlog_name &binlog_name);
+  open_binlog(const events::composite_binlog_name &binlog_name);
   void write_event(util::const_byte_span event_data,
                    bool at_transaction_boundary,
                    const gtids::gtid &transaction_gtid,
-                   const ctime_timestamp &event_timestamp);
+                   const util::ctime_timestamp &event_timestamp);
   void close_binlog();
 
   void discard_incomplete_transaction_events();
   void flush_event_buffer();
 
   [[nodiscard]] std::string
-  get_binlog_uri(const composite_binlog_name &binlog_name) const;
+  get_binlog_uri(const events::composite_binlog_name &binlog_name) const;
 
 private:
   storage_construction_mode_type construction_mode_;
   basic_storage_backend_ptr backend_;
 
   replication_mode_type replication_mode_;
-  composite_binlog_name binlog_name_sentinel_{};
+  events::composite_binlog_name binlog_name_sentinel_{};
   binlog_record_container binlog_records_{};
 
   std::uint64_t checkpoint_size_bytes_{0ULL};
@@ -145,8 +146,8 @@ private:
   event_buffer_type event_buffer_{};
   std::size_t last_transaction_boundary_position_in_event_buffer_{};
   gtids::gtid_set gtids_in_event_buffer_{};
-  ctime_timestamp_range ready_to_flush_timestamps_{};
-  ctime_timestamp_range incomplete_transaction_timestamps_{};
+  util::ctime_timestamp_range ready_to_flush_timestamps_{};
+  util::ctime_timestamp_range incomplete_transaction_timestamps_{};
 
   void ensure_streaming_mode() const;
 
@@ -189,10 +190,10 @@ private:
   void validate_metadata(replication_mode_type replication_mode) const;
   void save_metadata() const;
 
-  [[nodiscard]] static std::string
-  generate_binlog_metadata_name(const composite_binlog_name &binlog_name);
+  [[nodiscard]] static std::string generate_binlog_metadata_name(
+      const events::composite_binlog_name &binlog_name);
   [[nodiscard]] binlog_record
-  load_binlog_metadata(const composite_binlog_name &binlog_name) const;
+  load_binlog_metadata(const events::composite_binlog_name &binlog_name) const;
   void validate_binlog_metadata(const binlog_record &record) const;
   void save_binlog_metadata(const binlog_record &record) const;
 

@@ -109,7 +109,7 @@ public:
 
   template <code_type Code>
   static event
-  create_event(std::uint32_t offset, const ctime_timestamp &timestamp,
+  create_event(std::uint32_t offset, const util::ctime_timestamp &timestamp,
                std::uint32_t server_id, common_header_flag_set flags,
                const generic_post_header<Code> &post_header,
                const generic_body<Code> &body, bool include_checksum,
@@ -120,7 +120,7 @@ public:
 
   template <code_type Code>
   static event
-  create_event(std::uint32_t offset, const ctime_timestamp &timestamp,
+  create_event(std::uint32_t offset, const util::ctime_timestamp &timestamp,
                std::uint32_t server_id, common_header_flag_set flags,
                const generic_post_header<Code> &post_header,
                const generic_body<Code> &body, bool include_checksum) {
@@ -164,10 +164,10 @@ private:
   optional_footer footer_{};
 
   template <typename PostHeaderType, typename BodyType>
-  event(code_type code, std::uint32_t offset, const ctime_timestamp &timestamp,
-        std::uint32_t server_id, common_header_flag_set flags,
-        const PostHeaderType &post_header, const BodyType &body,
-        bool include_checksum, event_storage *buffer)
+  event(code_type code, std::uint32_t offset,
+        const util::ctime_timestamp &timestamp, std::uint32_t server_id,
+        common_header_flag_set flags, const PostHeaderType &post_header,
+        const BodyType &body, bool include_checksum, event_storage *buffer)
       : common_header_{common_header::create_with_offset(
             offset,
             static_cast<std::uint32_t>(

@@ -13,16 +13,16 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef BINSRV_COMPOSITE_BINLOG_NAME_HPP
-#define BINSRV_COMPOSITE_BINLOG_NAME_HPP
+#ifndef BINSRV_EVENTS_COMPOSITE_BINLOG_NAME_HPP
+#define BINSRV_EVENTS_COMPOSITE_BINLOG_NAME_HPP
 
-#include "binsrv/composite_binlog_name_fwd.hpp" // IWYU pragma: export
+#include "binsrv/events/composite_binlog_name_fwd.hpp" // IWYU pragma: export
 
 #include <cstdint>
 #include <string>
 #include <string_view>
 
-namespace binsrv {
+namespace binsrv::events {
 
 class [[nodiscard]] composite_binlog_name {
 public:
@@ -60,6 +60,6 @@ private:
   std::uint32_t sequence_number_{0U};
 };
 
-} // namespace binsrv
+} // namespace binsrv::events
 
-#endif // BINSRV_COMPOSITE_BINLOG_NAME_HPP
+#endif // BINSRV_EVENTS_COMPOSITE_BINLOG_NAME_HPP

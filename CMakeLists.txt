@@ -79,12 +79,162 @@ find_package(MySQL REQUIRED)
 find_package(ZLIB REQUIRED)
 find_package(AWSSDK 1.11.774 EXACT REQUIRED COMPONENTS s3-crt)
 
-set(source_files
-  # main application files
-  src/app.cpp
+# various utility files
+set(util_source_files
+  src/util/bnf_parser_helpers.hpp
 
-  src/app_version.hpp
+  src/util/bounded_string_storage_fwd.hpp
+  src/util/bounded_string_storage.hpp
 
+  src/util/byte_span_fwd.hpp
+  src/util/byte_span.hpp
+  src/util/byte_span_extractors.hpp
+  src/util/byte_span_inserters.hpp
+  src/util/byte_span_packed_int_constants.hpp
+
+  src/util/command_line_helpers_fwd.hpp
+  src/util/command_line_helpers.hpp
+  src/util/command_line_helpers.cpp
+
+  src/util/common_optional_types.hpp
+
+  src/util/conversion_helpers.hpp
+
+  src/util/composite_name_fwd.hpp
+  src/util/composite_name.hpp
+
+  src/util/ctime_timestamp_fwd.hpp
+  src/util/ctime_timestamp.hpp
+  src/util/ctime_timestamp.cpp
+
+  src/util/ctime_timestamp_range_fwd.hpp
+  src/util/ctime_timestamp_range.hpp
+  src/util/ctime_timestamp_range.cpp
+
+  src/util/crc_helpers.hpp
+  src/util/crc_helpers.cpp
+
+  src/util/ct_string.hpp
+
+  src/util/exception_location_helpers.hpp
+
+  src/util/flag_set_fwd.hpp
+  src/util/flag_set.hpp
+
+  src/util/impl_helpers.hpp
+
+  src/util/mixin_exception_adapter.hpp
+
+  src/util/nv_tuple_fwd.hpp
+  src/util/nv_tuple.hpp
+  src/util/nv_tuple_json_support.hpp
+  src/util/nv_tuple_from_json.hpp
+  src/util/nv_tuple_to_json.hpp
+
+  src/util/redirectable.hpp
+
+  src/util/semantic_version_fwd.hpp
+  src/util/semantic_version.hpp
+  src/util/semantic_version.cpp
+)
+add_library(lib_util STATIC ${util_source_files})
+target_link_libraries(lib_util
+  PUBLIC
+    Boost::headers Boost::json
+  PRIVATE
+    binlog_server_compiler_flags
+    ZLIB::ZLIB
+)
+# it is not possible to propagate CXX_EXTENSIONS and CXX_STANDARD_REQUIRED
+# via interface library (binlog_server_compiler_flags)
+set_target_properties(lib_util PROPERTIES
+  CXX_STANDARD_REQUIRED YES
+  CXX_EXTENSIONS NO
+)
+add_library(binsrv::lib_util ALIAS lib_util)
+
+# mysql wrapper library files
+set(easymysql_source_files
+  src/easymysql/core_error_helpers_private.hpp
+  src/easymysql/core_error_helpers_private.cpp
+  src/easymysql/core_error.hpp
+  src/easymysql/core_error.cpp
+
+  src/easymysql/connection_deimpl_private.hpp
+  src/easymysql/connection_fwd.hpp
+  src/easymysql/connection.hpp
+  src/easymysql/connection.cpp
+
+  src/easymysql/connection_config_fwd.hpp
+  src/easymysql/connection_config.hpp
+  src/easymysql/connection_config.cpp
+
+  src/easymysql/library_fwd.hpp
+  src/easymysql/library.hpp
+  src/easymysql/library.cpp
+
+  src/easymysql/ssl_config_fwd.hpp
+  src/easymysql/ssl_config.hpp
+
+  src/easymysql/ssl_mode_type_fwd.hpp
+  src/easymysql/ssl_mode_type.hpp
+
+  src/easymysql/tls_config_fwd.hpp
+  src/easymysql/tls_config.hpp
+)
+add_library(lib_easymysql STATIC ${easymysql_source_files})
+target_link_libraries(lib_easymysql
+  PUBLIC
+    binsrv::lib_util
+  PRIVATE
+    binlog_server_compiler_flags
+    MySQL::client
+)
+# it is not possible to propagate CXX_EXTENSIONS and CXX_STANDARD_REQUIRED
+# via interface library (binlog_server_compiler_flags)
+set_target_properties(lib_easymysql PROPERTIES
+  CXX_STANDARD_REQUIRED YES
+  CXX_EXTENSIONS NO
+)
+add_library(binsrv::lib_easymysql ALIAS lib_easymysql)
+
+# gtid data structure files
+set(gtids_source_files
+  src/binsrv/gtids/common_types.hpp
+
+  src/binsrv/gtids/gtid_fwd.hpp
+  src/binsrv/gtids/gtid.hpp
+  src/binsrv/gtids/gtid.cpp
+
+  src/binsrv/gtids/gtid_set_fwd.hpp
+  src/binsrv/gtids/gtid_set.hpp
+  src/binsrv/gtids/gtid_set.cpp
+
+  src/binsrv/gtids/tag_fwd.hpp
+  src/binsrv/gtids/tag.hpp
+  src/binsrv/gtids/tag.cpp
+
+  src/binsrv/gtids/uuid_fwd.hpp
+  src/binsrv/gtids/uuid.hpp
+  src/binsrv/gtids/uuid.cpp
+)
+add_library(lib_gtids STATIC ${gtids_source_files})
+target_link_libraries(lib_gtids
+  PUBLIC
+    binsrv::lib_util
+    Boost::headers
+  PRIVATE
+    binlog_server_compiler_flags
+)
+# it is not possible to propagate CXX_EXTENSIONS and CXX_STANDARD_REQUIRED
+# via interface library (binlog_server_compiler_flags)
+set_target_properties(lib_gtids PROPERTIES
+  CXX_STANDARD_REQUIRED YES
+  CXX_EXTENSIONS NO
+)
+add_library(binsrv::lib_gtids ALIAS lib_gtids)
+
+set(events_source_files
   # binlog event data structure files
   src/binsrv/events/anonymous_gtid_log_body_impl_fwd.hpp
   src/binsrv/events/anonymous_gtid_log_body_impl.hpp
@@ -108,6 +258,10 @@ set(source_files
 
   src/binsrv/events/common_header_flag_type_fwd.hpp
   src/binsrv/events/common_header_flag_type.hpp
+
+  src/binsrv/events/composite_binlog_name_fwd.hpp
+  src/binsrv/events/composite_binlog_name.hpp
+  src/binsrv/events/composite_binlog_name.cpp
 
   src/binsrv/events/empty_body_fwd.hpp
   src/binsrv/events/empty_body.hpp
@@ -207,26 +361,25 @@ set(source_files
   src/binsrv/events/unknown_post_header_fwd.hpp
   src/binsrv/events/unknown_post_header.hpp
   src/binsrv/events/unknown_post_header.cpp
+)
+add_library(lib_events STATIC ${events_source_files})
+target_link_libraries(lib_events
+  PUBLIC
+    binsrv::lib_util
+    binsrv::lib_gtids
+    Boost::headers
+  PRIVATE
+    binlog_server_compiler_flags
+)
+# it is not possible to propagate CXX_EXTENSIONS and CXX_STANDARD_REQUIRED
+# via interface library (binlog_server_compiler_flags)
+set_target_properties(lib_events PROPERTIES
+  CXX_STANDARD_REQUIRED YES
+  CXX_EXTENSIONS NO
+)
+add_library(binsrv::lib_events ALIAS lib_events)
 
-  # gtid data structure files
-  src/binsrv/gtids/common_types.hpp
-
-  src/binsrv/gtids/gtid_fwd.hpp
-  src/binsrv/gtids/gtid.hpp
-  src/binsrv/gtids/gtid.cpp
-
-  src/binsrv/gtids/gtid_set_fwd.hpp
-  src/binsrv/gtids/gtid_set.hpp
-  src/binsrv/gtids/gtid_set.cpp
-
-  src/binsrv/gtids/tag_fwd.hpp
-  src/binsrv/gtids/tag.hpp
-  src/binsrv/gtids/tag.cpp
-
-  src/binsrv/gtids/uuid_fwd.hpp
-  src/binsrv/gtids/uuid.hpp
-  src/binsrv/gtids/uuid.cpp
-
+set(models_source_files
   # models files
   src/binsrv/models/binlog_file_record_fwd.hpp
   src/binsrv/models/binlog_file_record.hpp
@@ -241,6 +394,29 @@ set(source_files
   src/binsrv/models/search_response_fwd.hpp
   src/binsrv/models/search_response.hpp
   src/binsrv/models/search_response.cpp
+)
+add_library(lib_models STATIC ${models_source_files})
+target_link_libraries(lib_models
+  PUBLIC
+    binsrv::lib_util
+    binsrv::lib_gtids
+  PRIVATE
+    binlog_server_compiler_flags
+    Boost::json
+)
+# it is not possible to propagate CXX_EXTENSIONS and CXX_STANDARD_REQUIRED
+# via interface library (binlog_server_compiler_flags)
+set_target_properties(lib_models PROPERTIES
+  CXX_STANDARD_REQUIRED YES
+  CXX_EXTENSIONS NO
+)
+add_library(binsrv::lib_models ALIAS lib_models)
+
+set(binsrv_source_files
+  # main application files
+  src/app.cpp
+
+  src/app_version.hpp
 
   # binlog files
   src/binsrv/basic_logger_fwd.hpp
@@ -255,20 +431,8 @@ set(source_files
   src/binsrv/binlog_file_metadata.hpp
   src/binsrv/binlog_file_metadata.cpp
 
-  src/binsrv/composite_binlog_name_fwd.hpp
-  src/binsrv/composite_binlog_name.hpp
-  src/binsrv/composite_binlog_name.cpp
-
   src/binsrv/cout_logger.hpp
   src/binsrv/cout_logger.cpp
-
-  src/binsrv/ctime_timestamp_fwd.hpp
-  src/binsrv/ctime_timestamp.hpp
-  src/binsrv/ctime_timestamp.cpp
-
-  src/binsrv/ctime_timestamp_range_fwd.hpp
-  src/binsrv/ctime_timestamp_range.hpp
-  src/binsrv/ctime_timestamp_range.cpp
 
   src/binsrv/exception_handling_helpers.hpp
   src/binsrv/exception_handling_helpers.cpp
@@ -338,96 +502,22 @@ set(source_files
   src/binsrv/time_unit_fwd.hpp
   src/binsrv/time_unit.hpp
   src/binsrv/time_unit.cpp
-
-  # various utility files
-  src/util/bnf_parser_helpers.hpp
-
-  src/util/bounded_string_storage_fwd.hpp
-  src/util/bounded_string_storage.hpp
-
-  src/util/byte_span_fwd.hpp
-  src/util/byte_span.hpp
-  src/util/byte_span_extractors.hpp
-  src/util/byte_span_inserters.hpp
-  src/util/byte_span_packed_int_constants.hpp
-
-  src/util/command_line_helpers_fwd.hpp
-  src/util/command_line_helpers.hpp
-  src/util/command_line_helpers.cpp
-
-  src/util/common_optional_types.hpp
-
-  src/util/conversion_helpers.hpp
-
-  src/util/composite_name_fwd.hpp
-  src/util/composite_name.hpp
-
-  src/util/crc_helpers.hpp
-  src/util/crc_helpers.cpp
-
-  src/util/ct_string.hpp
-
-  src/util/exception_location_helpers.hpp
-
-  src/util/flag_set_fwd.hpp
-  src/util/flag_set.hpp
-
-  src/util/impl_helpers.hpp
-
-  src/util/mixin_exception_adapter.hpp
-
-  src/util/nv_tuple_fwd.hpp
-  src/util/nv_tuple.hpp
-  src/util/nv_tuple_json_support.hpp
-  src/util/nv_tuple_from_json.hpp
-  src/util/nv_tuple_to_json.hpp
-
-  src/util/redirectable.hpp
-
-  src/util/semantic_version_fwd.hpp
-  src/util/semantic_version.hpp
-  src/util/semantic_version.cpp
-
-  # mysql wrapper library files
-  src/easymysql/core_error_helpers_private.hpp
-  src/easymysql/core_error_helpers_private.cpp
-  src/easymysql/core_error.hpp
-  src/easymysql/core_error.cpp
-
-  src/easymysql/connection_deimpl_private.hpp
-  src/easymysql/connection_fwd.hpp
-  src/easymysql/connection.hpp
-  src/easymysql/connection.cpp
-
-  src/easymysql/connection_config_fwd.hpp
-  src/easymysql/connection_config.hpp
-  src/easymysql/connection_config.cpp
-
-  src/easymysql/library_fwd.hpp
-  src/easymysql/library.hpp
-  src/easymysql/library.cpp
-
-  src/easymysql/ssl_config_fwd.hpp
-  src/easymysql/ssl_config.hpp
-
-  src/easymysql/ssl_mode_type_fwd.hpp
-  src/easymysql/ssl_mode_type.hpp
-
-  src/easymysql/tls_config_fwd.hpp
-  src/easymysql/tls_config.hpp
 )
 
-add_executable(binlog_server ${source_files})
+add_executable(binlog_server ${binsrv_source_files})
 target_link_libraries(binlog_server
   PRIVATE
     binlog_server_compiler_flags
+    binsrv::lib_util
+    binsrv::lib_easymysql
+    binsrv::lib_gtids
+    binsrv::lib_events
+    binsrv::lib_models
     Boost::headers Boost::json Boost::url
-    ZLIB::ZLIB
-    MySQL::client
     aws-cpp-sdk-s3-crt
 )
-# for some reason it is not possible to propagate CXX_EXTENSIONS and
-# CXX_STANDARD_REQUIRED via interface library (binlog_server_compiler_flags)
+# it is not possible to propagate CXX_EXTENSIONS and CXX_STANDARD_REQUIRED
+# via interface library (binlog_server_compiler_flags)
 set_target_properties(binlog_server PROPERTIES
   CXX_STANDARD_REQUIRED YES
   CXX_EXTENSIONS NO

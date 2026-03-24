@@ -25,12 +25,11 @@
 #include <string>
 #include <string_view>
 
-#include "binsrv/ctime_timestamp_fwd.hpp"
-
 #include "binsrv/events/protocol_traits.hpp"
 
 #include "util/bounded_string_storage.hpp"
 #include "util/byte_span_fwd.hpp"
+#include "util/ctime_timestamp_fwd.hpp"
 #include "util/semantic_version_fwd.hpp"
 
 namespace binsrv::events {
@@ -54,7 +53,8 @@ public:
   generic_post_header_impl(
       std::uint16_t binlog_version,
       const util::semantic_version &server_version,
-      const ctime_timestamp &create_timestamp, std::size_t common_header_length,
+      const util::ctime_timestamp &create_timestamp,
+      std::size_t common_header_length,
       const post_header_length_container &post_header_lengths);
   explicit generic_post_header_impl(util::const_byte_span portion);
 
@@ -75,7 +75,7 @@ public:
   [[nodiscard]] std::uint32_t get_create_timestamp_raw() const noexcept {
     return create_timestamp_;
   }
-  [[nodiscard]] ctime_timestamp get_create_timestamp() const noexcept;
+  [[nodiscard]] util::ctime_timestamp get_create_timestamp() const noexcept;
   [[nodiscard]] std::string get_readable_create_timestamp() const;
 
   [[nodiscard]] std::uint8_t get_common_header_length_raw() const noexcept {
