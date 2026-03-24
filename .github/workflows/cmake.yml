@@ -14,8 +14,8 @@ env:
   BOOST_MINOR: 90
   BOOST_PATCH: 0
   MYSQL_DOWNLOADS_URL: https://dev.mysql.com/get/Downloads
-  MYSQL_80_VERSION: 8.0.44
-  MYSQL_84_VERSION: 8.4.7
+  MYSQL_80_VERSION: 8.0.45
+  MYSQL_84_VERSION: 8.4.8
   MYSQL_GLIBC_SUFFIX: linux-glibc2.28-x86_64
 
 jobs:
@@ -260,13 +260,13 @@ jobs:
       if: matrix.config.run_mtr
       working-directory: ${{github.workspace}}/dist
       run: |
-        # https://dev.mysql.com/get/Downloads/MySQL-8.0/mysql-8.0.44-linux-glibc2.28-x86_64.tar.xz
+        # https://dev.mysql.com/get/Downloads/MySQL-8.0/mysql-8.0.45-linux-glibc2.28-x86_64.tar.xz
         DIST_BASE_NAME=${{format('mysql-{0}-{1}', env.MYSQL_80_VERSION, env.MYSQL_GLIBC_SUFFIX)}}
         DIST_TARBALL_FILE_NAME=${DIST_BASE_NAME}.tar.xz
         wget -q ${{env.MYSQL_DOWNLOADS_URL}}/MySQL-8.0/${DIST_TARBALL_FILE_NAME}
         tar xf ${DIST_TARBALL_FILE_NAME}
         rm -f ${DIST_TARBALL_FILE_NAME}
-        # https://dev.mysql.com/get/Downloads/MySQL-8.0/mysql-test-8.0.44-linux-glibc2.28-x86_64.tar.xz
+        # https://dev.mysql.com/get/Downloads/MySQL-8.0/mysql-test-8.0.45-linux-glibc2.28-x86_64.tar.xz
         TEST_TARBALL_FILE_NAME=${{format('mysql-test-{0}-{1}.tar.xz', env.MYSQL_80_VERSION, env.MYSQL_GLIBC_SUFFIX)}}
         wget -q ${{env.MYSQL_DOWNLOADS_URL}}/MySQL-8.0/${TEST_TARBALL_FILE_NAME}
         tar xf ${TEST_TARBALL_FILE_NAME}
@@ -279,13 +279,13 @@ jobs:
       if: matrix.config.run_mtr
       working-directory: ${{github.workspace}}/dist
       run: |
-        # https://dev.mysql.com/get/Downloads/MySQL-8.4/mysql-8.4.7-linux-glibc2.28-x86_64-minimal.tar.xz
+        # https://dev.mysql.com/get/Downloads/MySQL-8.4/mysql-8.4.8-linux-glibc2.28-x86_64-minimal.tar.xz
         DIST_BASE_NAME=${{format('mysql-{0}-{1}-minimal', env.MYSQL_84_VERSION, env.MYSQL_GLIBC_SUFFIX)}}
         DIST_TARBALL_FILE_NAME=${DIST_BASE_NAME}.tar.xz
         wget -q ${{env.MYSQL_DOWNLOADS_URL}}/MySQL-8.4/${DIST_TARBALL_FILE_NAME}
         tar xf ${DIST_TARBALL_FILE_NAME}
         rm -f ${DIST_TARBALL_FILE_NAME}
-        # https://dev.mysql.com/get/Downloads/MySQL-8.4/mysql-test-8.4.7-linux-glibc2.28-x86_64-minimal.tar.xz
+        # https://dev.mysql.com/get/Downloads/MySQL-8.4/mysql-test-8.4.8-linux-glibc2.28-x86_64-minimal.tar.xz
         TEST_TARBALL_FILE_NAME=${{format('mysql-test-{0}-{1}-minimal.tar.xz', env.MYSQL_84_VERSION, env.MYSQL_GLIBC_SUFFIX)}}
         wget -q ${{env.MYSQL_DOWNLOADS_URL}}/MySQL-8.4/${TEST_TARBALL_FILE_NAME}
         tar xf ${TEST_TARBALL_FILE_NAME}
