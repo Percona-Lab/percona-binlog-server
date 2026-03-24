@@ -13,7 +13,7 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#include "binsrv/composite_binlog_name.hpp"
+#include "binsrv/events/composite_binlog_name.hpp"
 
 #include <charconv>
 #include <cstdint>
@@ -31,7 +31,7 @@
 
 #include "util/exception_location_helpers.hpp"
 
-namespace binsrv {
+namespace binsrv::events {
 
 composite_binlog_name::composite_binlog_name(std::string_view base_name,
                                              std::uint32_t sequence_number)
@@ -104,4 +104,4 @@ std::ostream &operator<<(std::ostream &output,
          << obj.get_sequence_number();
 }
 
-} // namespace binsrv
+} // namespace binsrv::events

@@ -13,16 +13,16 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef BINSRV_CTIME_TIMESTAMP_RANGE_HPP
-#define BINSRV_CTIME_TIMESTAMP_RANGE_HPP
+#ifndef UTIL_CTIME_TIMESTAMP_RANGE_HPP
+#define UTIL_CTIME_TIMESTAMP_RANGE_HPP
 
-#include "binsrv/ctime_timestamp_range_fwd.hpp" // IWYU pragma: export
+#include "util/ctime_timestamp_range_fwd.hpp" // IWYU pragma: export
 
 #include <ctime>
 
-#include "binsrv/ctime_timestamp.hpp"
+#include "util/ctime_timestamp.hpp"
 
-namespace binsrv {
+namespace util {
 
 class [[nodiscard]] ctime_timestamp_range {
 public:
@@ -55,6 +55,6 @@ private:
   ctime_timestamp max_timestamp_{};
 };
 
-} // namespace binsrv
+} // namespace util
 
-#endif // BINSRV_CTIME_TIMESTAMP_RANGE_HPP
+#endif // UTIL_CTIME_TIMESTAMP_RANGE_HPP

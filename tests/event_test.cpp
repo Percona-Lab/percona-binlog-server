@@ -25,8 +25,6 @@
 
 #include <boost/test/tools/old/interface.hpp>
 
-#include "binsrv/composite_binlog_name.hpp"
-#include "binsrv/ctime_timestamp.hpp"
 #include "binsrv/replication_mode_type.hpp"
 
 #include "binsrv/gtids/gtid_set.hpp"
@@ -35,12 +33,14 @@
 #include "binsrv/events/code_type.hpp"
 #include "binsrv/events/common_header.hpp"
 #include "binsrv/events/common_header_flag_type.hpp"
+#include "binsrv/events/composite_binlog_name.hpp"
 #include "binsrv/events/event.hpp"
 #include "binsrv/events/event_view.hpp"
 #include "binsrv/events/protocol_traits_fwd.hpp"
 #include "binsrv/events/reader_context.hpp"
 
 #include "util/byte_span_fwd.hpp"
+#include "util/ctime_timestamp.hpp"
 #include "util/semantic_version.hpp"
 
 static constexpr std::uint32_t default_server_id{42U};
@@ -61,7 +61,7 @@ BOOST_AUTO_TEST_CASE(EventRoundTrip) {
 
   const binsrv::events::generic_post_header<binsrv::events::code_type::rotate>
       rotate_post_header{binsrv::events::magic_binlog_offset};
-  const binsrv::composite_binlog_name binlog_name{"binlog", 1U};
+  const binsrv::events::composite_binlog_name binlog_name{"binlog", 1U};
   const binsrv::events::generic_body<binsrv::events::code_type::rotate>
       rotate_body{binlog_name};
 
@@ -69,8 +69,8 @@ BOOST_AUTO_TEST_CASE(EventRoundTrip) {
       binsrv::events::event::create_event<binsrv::events::code_type::rotate>(
           offset,
           // artificial ROTATE event must include zero timestamp
-          binsrv::ctime_timestamp{}, default_server_id, flags,
-          rotate_post_header, rotate_body, true, event_buffer)};
+          util::ctime_timestamp{}, default_server_id, flags, rotate_post_header,
+          rotate_body, true, event_buffer)};
 
   const binsrv::events::event_view generated_rotate_event_v{
       context, util::const_byte_span{event_buffer}};
@@ -87,7 +87,7 @@ BOOST_AUTO_TEST_CASE(EventRoundTrip) {
       binsrv::events::code_type::format_description>
       format_description_post_header{
           binsrv::events::default_binlog_version, server_version,
-          binsrv::ctime_timestamp::now(),
+          util::ctime_timestamp::now(),
           binsrv::events::default_common_header_length,
           binsrv::events::reader_context::get_hardcoded_post_header_lengths(
               server_version.get_encoded())};
@@ -98,7 +98,7 @@ BOOST_AUTO_TEST_CASE(EventRoundTrip) {
   const auto generated_format_description_event{
       binsrv::events::event::create_event<
           binsrv::events::code_type::format_description>(
-          offset, binsrv::ctime_timestamp::now(), default_server_id,
+          offset, util::ctime_timestamp::now(), default_server_id,
           binsrv::events::common_header_flag_set{},
           format_description_post_header, format_description_body, true,
           event_buffer)};
@@ -126,7 +126,7 @@ BOOST_AUTO_TEST_CASE(EventRoundTrip) {
   const auto generated_previous_gtids_log_event{
       binsrv::events::event::create_event<
           binsrv::events::code_type::previous_gtids_log>(
-          offset, binsrv::ctime_timestamp::now(), default_server_id,
+          offset, util::ctime_timestamp::now(), default_server_id,
           binsrv::events::common_header_flag_set{},
           previous_gtids_log_post_header, previous_gtids_log_body, true,
           event_buffer)};
@@ -161,7 +161,7 @@ BOOST_AUTO_TEST_CASE(EventMaterialization) {
 
   const binsrv::events::generic_post_header<binsrv::events::code_type::rotate>
       post_header{binsrv::events::magic_binlog_offset};
-  const binsrv::composite_binlog_name binlog_name{"binlog", 1U};
+  const binsrv::events::composite_binlog_name binlog_name{"binlog", 1U};
   const binsrv::events::generic_body<binsrv::events::code_type::rotate> body{
       binlog_name};
 
@@ -169,8 +169,8 @@ BOOST_AUTO_TEST_CASE(EventMaterialization) {
       binsrv::events::event::create_event<binsrv::events::code_type::rotate>(
           offset,
           // artificial ROTATE event must include zero timestamp
-          binsrv::ctime_timestamp{}, default_server_id, flags, post_header,
-          body, true, event_with_footer_buffer)};
+          util::ctime_timestamp{}, default_server_id, flags, post_header, body,
+          true, event_with_footer_buffer)};
 
   const binsrv::events::event_view generated_event_v{
       context_with_checksum, util::const_byte_span{event_with_footer_buffer}};

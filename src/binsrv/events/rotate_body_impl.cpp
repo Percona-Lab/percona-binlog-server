@@ -21,9 +21,8 @@
 #include <stdexcept>
 #include <string_view>
 
-#include "binsrv/composite_binlog_name.hpp"
-
 #include "binsrv/events/code_type.hpp"
+#include "binsrv/events/composite_binlog_name.hpp"
 
 #include "util/byte_span.hpp"
 #include "util/exception_location_helpers.hpp"

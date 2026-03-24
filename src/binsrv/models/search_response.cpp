@@ -63,8 +63,8 @@ void search_response::add_record(std::string_view name, std::uint64_t size,
                              {std::string{uri}},
                              {std::move(previous_gtids)},
                              {std::move(added_gtids)},
-                             {ctime_timestamp{min_timestamp}},
-                             {ctime_timestamp{max_timestamp}}}};
+                             {util::ctime_timestamp{min_timestamp}},
+                             {util::ctime_timestamp{max_timestamp}}}};
   impl_.template get<"result">().emplace_back(std::move(record));
 }
 

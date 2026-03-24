@@ -23,7 +23,7 @@
 
 #include <boost/container/small_vector.hpp>
 
-#include "binsrv/composite_binlog_name_fwd.hpp"
+#include "binsrv/events/composite_binlog_name_fwd.hpp"
 
 #include "util/byte_span.hpp"
 

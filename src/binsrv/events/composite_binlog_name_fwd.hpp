@@ -13,18 +13,18 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef BINSRV_COMPOSITE_BINLOG_NAME_FWD_HPP
-#define BINSRV_COMPOSITE_BINLOG_NAME_FWD_HPP
+#ifndef BINSRV_EVENTS_COMPOSITE_BINLOG_NAME_FWD_HPP
+#define BINSRV_EVENTS_COMPOSITE_BINLOG_NAME_FWD_HPP
 
 #include <iosfwd>
 
-namespace binsrv {
+namespace binsrv::events {
 
 class composite_binlog_name;
 
 std::ostream &operator<<(std::ostream &output,
                          const composite_binlog_name &obj);
 
-} // namespace binsrv
+} // namespace binsrv::events
 
-#endif // BINSRV_COMPOSITE_BINLOG_NAME_FWD_HPP
+#endif // BINSRV_EVENTS_COMPOSITE_BINLOG_NAME_FWD_HPP

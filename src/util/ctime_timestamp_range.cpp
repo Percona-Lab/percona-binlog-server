@@ -13,13 +13,13 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#include "binsrv/ctime_timestamp_range.hpp"
+#include "util/ctime_timestamp_range.hpp"
 
 #include <algorithm>
 
-#include "binsrv/ctime_timestamp.hpp"
+#include "util/ctime_timestamp.hpp"
 
-namespace binsrv {
+namespace util {
 
 ctime_timestamp_range::ctime_timestamp_range(
     // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
@@ -61,4 +61,4 @@ void ctime_timestamp_range::add_range(
   max_timestamp_ = std::max(max_timestamp_, range.get_max_timestamp());
 }
 
-} // namespace binsrv
+} // namespace util

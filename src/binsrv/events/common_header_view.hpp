@@ -22,13 +22,12 @@
 #include <string>
 #include <string_view>
 
-#include "binsrv/ctime_timestamp_fwd.hpp"
-
 #include "binsrv/events/code_type_fwd.hpp"
 #include "binsrv/events/common_header_flag_type_fwd.hpp"
 #include "binsrv/events/protocol_traits_fwd.hpp"
 
 #include "util/byte_span_fwd.hpp"
+#include "util/ctime_timestamp_fwd.hpp"
 
 namespace binsrv::events {
 
@@ -51,7 +50,7 @@ public:
   static_assert(size_in_bytes == default_common_header_length);
 
   // timestamp section
-  [[nodiscard]] static ctime_timestamp
+  [[nodiscard]] static util::ctime_timestamp
   get_timestamp_from_raw(std::uint32_t timestamp) noexcept;
   [[nodiscard]] static std::string
   get_readable_timestamp_from_raw(std::uint32_t timestamp);
@@ -73,7 +72,7 @@ protected:
 
   // timestamp section
   [[nodiscard]] std::uint32_t get_timestamp_raw() const noexcept;
-  [[nodiscard]] ctime_timestamp get_timestamp() const noexcept;
+  [[nodiscard]] util::ctime_timestamp get_timestamp() const noexcept;
   [[nodiscard]] std::string get_readable_timestamp() const {
     return get_readable_timestamp_from_raw(get_timestamp_raw());
   }

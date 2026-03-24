@@ -13,17 +13,17 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef BINSRV_CTIME_TIMESTAMP_HPP
-#define BINSRV_CTIME_TIMESTAMP_HPP
+#ifndef UTIL_CTIME_TIMESTAMP_HPP
+#define UTIL_CTIME_TIMESTAMP_HPP
 
-#include "binsrv/ctime_timestamp_fwd.hpp" // IWYU pragma: export
+#include "util/ctime_timestamp_fwd.hpp" // IWYU pragma: export
 
 #include <ctime>
 #include <istream>
 #include <ostream>
 #include <string_view>
 
-namespace binsrv {
+namespace util {
 
 class [[nodiscard]] ctime_timestamp {
 public:
@@ -52,6 +52,6 @@ private:
   std::time_t value_{};
 };
 
-} // namespace binsrv
+} // namespace util
 
-#endif // BINSRV_CTIME_TIMESTAMP_HPP
+#endif // UTIL_CTIME_TIMESTAMP_HPP

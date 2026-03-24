@@ -22,8 +22,6 @@
 #include <string>
 #include <string_view>
 
-#include "binsrv/ctime_timestamp.hpp"
-
 #include "binsrv/events/code_type.hpp"
 #include "binsrv/events/common_header_flag_type.hpp"
 
@@ -31,14 +29,16 @@
 #include "util/byte_span_fwd.hpp"
 #include "util/byte_span_inserters.hpp"
 #include "util/conversion_helpers.hpp"
+#include "util/ctime_timestamp.hpp"
 #include "util/exception_location_helpers.hpp"
 #include "util/flag_set.hpp"
 
 namespace binsrv::events {
 
-[[nodiscard]] ctime_timestamp common_header_view_base::get_timestamp_from_raw(
+[[nodiscard]] util::ctime_timestamp
+common_header_view_base::get_timestamp_from_raw(
     std::uint32_t timestamp) noexcept {
-  return ctime_timestamp{static_cast<std::time_t>(timestamp)};
+  return util::ctime_timestamp{static_cast<std::time_t>(timestamp)};
 }
 
 [[nodiscard]] std::string
@@ -115,7 +115,7 @@ common_header_view_base::get_timestamp_raw() const noexcept {
   util::extract_fixed_int_from_byte_span(remainder, timestamp);
   return timestamp;
 }
-[[nodiscard]] ctime_timestamp
+[[nodiscard]] util::ctime_timestamp
 common_header_view_base::get_timestamp() const noexcept {
   return get_timestamp_from_raw(get_timestamp_raw());
 }
