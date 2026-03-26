@@ -67,12 +67,14 @@ jobs:
             name: "GCC 14 Debug",
             label: "debug_gcc14",
             run_mtr: true,
+            mtr_options: "--repeat=2",
             run_ctest: true
           }
         - {
             name: "GCC 14 RelWithDebInfo",
             label: "release_gcc14",
             run_mtr: true,
+            mtr_options: "--repeat=2",
             run_ctest: true
           }
         - {
@@ -81,6 +83,14 @@ jobs:
             run_mtr: true,
             mtr_options: "--sanitize",
             run_ctest: true
+          }
+        - {
+            name: "GCC 14 Valgrind",
+            label: "debug_gcc14",
+            run_mtr: true,
+            mtr_options: "--valgrind",
+            run_ctest: true,
+            ctest_options: "-T memcheck"
           }
         - {
             name: "Clang 20 Debug",
@@ -135,6 +145,15 @@ jobs:
       if: startsWith(matrix.config.name, 'GCC')
       run: |
         sudo apt-get install g++-14
+
+    - name: Install Valgrind on ubuntu
+      if: endsWith(matrix.config.name, 'Valgrind')
+      # installing Valgrind 3.25 here from Ubuntu 25.10 that has support for syscall 333
+      run: |
+        sudo apt-get install libc6-dbg
+        wget -q http://mirrors.kernel.org/ubuntu/pool/main/v/valgrind/valgrind_3.25.1-0ubuntu1_amd64.deb
+        sudo dpkg -i valgrind_3.25.1-0ubuntu1_amd64.deb
+        rm -f valgrind_3.25.1-0ubuntu1_amd64.deb
 
     - name: Fixing libaio1 for MySQL Server tarball
       if: matrix.config.run_mtr
@@ -257,7 +276,7 @@ jobs:
       run: mkdir -p ${{github.workspace}}/dist
 
     - name: Unpacking MySQL Server 8.0 tarballs
-      if: matrix.config.run_mtr
+      if: matrix.config.run_mtr && !endsWith(matrix.config.name, 'Valgrind')
       working-directory: ${{github.workspace}}/dist
       run: |
         # https://dev.mysql.com/get/Downloads/MySQL-8.0/mysql-8.0.45-linux-glibc2.28-x86_64.tar.xz
@@ -295,12 +314,12 @@ jobs:
         ./${DIST_BASE_NAME}/bin/mysqld --version
 
     - name: MTR 8.0 tests
-      if: matrix.config.run_mtr
+      if: matrix.config.run_mtr && !endsWith(matrix.config.name, 'Valgrind')
       working-directory: ${{github.workspace}}/dist/${{format('mysql-{0}-{1}', env.MYSQL_80_VERSION, env.MYSQL_GLIBC_SUFFIX)}}/mysql-test
       run: |
         BINSRV=${{github.workspace}}/src-build-${{matrix.config.label}}/binlog_server ./mtr \
           --vardir=${{runner.temp}}/mtrvardir80 \
-          --force --max-test-fail=0 --retry=0 --nounit-tests --big-test --repeat=2 --parallel=${{steps.cpu-cores.outputs.count}} \
+          --force --max-test-fail=0 --retry=0 --nounit-tests --big-test --parallel=${{steps.cpu-cores.outputs.count}} \
           --suite=binlog_streaming ${{matrix.config.mtr_options}}
 
     - name: MTR 8.4 tests
@@ -309,7 +328,7 @@ jobs:
       run: |
         BINSRV=${{github.workspace}}/src-build-${{matrix.config.label}}/binlog_server ./mtr \
           --vardir=${{runner.temp}}/mtrvardir84 \
-          --force --max-test-fail=0 --retry=0 --nounit-tests --big-test --repeat=2 --parallel=${{steps.cpu-cores.outputs.count}} \
+          --force --max-test-fail=0 --retry=0 --nounit-tests --big-test --parallel=${{steps.cpu-cores.outputs.count}} \
           --suite=binlog_streaming ${{matrix.config.mtr_options}}
 
     - name: CTest
@@ -317,7 +336,7 @@ jobs:
       working-directory: ${{github.workspace}}/src-build-${{matrix.config.label}}
       # Execute tests defined by the CMake configuration.
       # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
-      run: ctest --parallel
+      run: ctest --parallel ${{matrix.config.ctest_options}}
 
     - name: Info Build artifacts
       run: |
