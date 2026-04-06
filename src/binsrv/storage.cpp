@@ -83,6 +83,13 @@ storage::storage(const storage_config &config,
   load_metadata();
   validate_metadata(replication_mode);
 
+  // if after metadata erasure 'storage_objects' is empty, then this mean
+  // that it has only metadata in it that passes validation and we can
+  // consider it as an initialized empty storage, so just return
+  if (storage_objects.empty()) {
+    return;
+  }
+
   const auto binlog_index_it{storage_objects.find(default_binlog_index_name)};
   if (binlog_index_it == std::cend(storage_objects)) {
     util::exception_location().raise<std::logic_error>(
