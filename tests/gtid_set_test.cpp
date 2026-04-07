@@ -721,3 +721,33 @@ BOOST_AUTO_TEST_CASE(GtidSetWhitespaces) {
       boost::lexical_cast<binsrv::gtids::gtid_set>(gtids_str)};
   BOOST_CHECK_EQUAL(gtids, restored_gtids);
 }
+
+BOOST_AUTO_TEST_CASE(GtidSetSimulateSearchByGTIDSet) {
+  constexpr std::string_view first_random_uuid_sv{
+      "ae6896b1-2e94-11f1-af82-76efd046f53d"};
+  constexpr std::string_view second_random_uuid_sv{
+      "bcd66d18-2e94-11f1-b929-76efd046f53d"};
+
+  const std::string first_binlog_file_added_gtids_str{
+      std::string{first_random_uuid_sv} + ":1-4, " +
+      std::string{second_random_uuid_sv} + ":1-1103"};
+  const binsrv::gtids::gtid_set first_binlog_file_added_gtids{
+      first_binlog_file_added_gtids_str};
+  BOOST_CHECK(first_binlog_file_added_gtids.str() ==
+              first_binlog_file_added_gtids_str);
+
+  const binsrv::gtids::gtid lookup_gtid{
+      binsrv::gtids::uuid{second_random_uuid_sv}, 1103ULL};
+
+  BOOST_CHECK(first_binlog_file_added_gtids.contains(lookup_gtid));
+
+  const binsrv::gtids::gtid_set lookup_gtids{lookup_gtid};
+  BOOST_CHECK(
+      binsrv::gtids::intersects(first_binlog_file_added_gtids, lookup_gtids));
+  BOOST_CHECK(
+      binsrv::gtids::intersects(lookup_gtids, first_binlog_file_added_gtids));
+
+  binsrv::gtids::gtid_set remaining_gtids{lookup_gtids};
+  remaining_gtids.subtract(first_binlog_file_added_gtids);
+  BOOST_CHECK(remaining_gtids.is_empty());
+}
