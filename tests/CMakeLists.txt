@@ -255,9 +255,11 @@ set_target_properties(event_test PROPERTIES
   CXX_EXTENSIONS NO
 )
 
-add_test(NAME byte_span_encoding_test COMMAND byte_span_encoding_test)
-add_test(NAME uuid_test COMMAND uuid_test)
-add_test(NAME tag_test COMMAND tag_test)
-add_test(NAME gtid_test COMMAND gtid_test)
-add_test(NAME gtid_set_test COMMAND gtid_set_test)
-add_test(NAME event_test COMMAND event_test)
+
+set(test_run_options --no_color_output)
+add_test(NAME byte_span_encoding_test COMMAND byte_span_encoding_test ${test_run_options})
+add_test(NAME uuid_test COMMAND uuid_test ${test_run_options})
+add_test(NAME tag_test COMMAND tag_test ${test_run_options})
+add_test(NAME gtid_test COMMAND gtid_test ${test_run_options})
+add_test(NAME gtid_set_test COMMAND gtid_set_test ${test_run_options})
+add_test(NAME event_test COMMAND event_test ${test_run_options})
