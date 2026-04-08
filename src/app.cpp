@@ -249,7 +249,9 @@ void log_storage_config_info(binsrv::basic_logger &logger,
 
   log_config_param<"backend">(logger, storage_config,
                               "binlog storage backend type");
-  // not printing "uri" here deliberately to avoid credentials leaking
+  logger.log(binsrv::log_severity::info,
+             "binlog storage backend URI (masked): " +
+                 storage_config.get_masked_uri());
   log_config_param<"fs_buffer_directory">(
       logger, storage_config,
       "binlog storage backend filesystem buffer directory");
@@ -420,14 +422,17 @@ void process_artificial_rotate_event(
         storage.get_current_binlog_name()) {
       // in addition, in position-based replication mode we also need to check
       // the position
-      const binsrv::events::generic_post_header<
-          binsrv::events::code_type::rotate>
-          current_rotate_post_header{current_event_v.get_post_header_raw()};
+      if (storage.get_replication_mode() ==
+          binsrv::replication_mode_type::position) {
+        const binsrv::events::generic_post_header<
+            binsrv::events::code_type::rotate>
+            current_rotate_post_header{current_event_v.get_post_header_raw()};
 
-      if (current_rotate_post_header.get_position_raw() !=
-          storage.get_current_position()) {
-        util::exception_location().raise<std::logic_error>(
-            "unexpected binlog position in artificial rotate event");
+        if (current_rotate_post_header.get_position_raw() !=
+            storage.get_current_position()) {
+          util::exception_location().raise<std::logic_error>(
+              "unexpected binlog position in artificial rotate event");
+        }
       }
 
       binlog_opening_needed = false;

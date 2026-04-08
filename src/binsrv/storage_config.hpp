@@ -37,7 +37,9 @@ struct [[nodiscard]] storage_config
           util::nv<"fs_buffer_directory", util::optional_string>,
           util::nv<"checkpoint_size", optional_size_unit>,
           util::nv<"checkpoint_interval", optional_time_unit>
-      > {};
+      > {
+  [[nodiscard]] std::string get_masked_uri() const;
+};
 // clang-format on
 
 } // namespace binsrv
