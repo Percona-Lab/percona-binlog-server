@@ -303,6 +303,7 @@ jobs:
         BINSRV=${{github.workspace}}/src-build-${{matrix.config.label}}/binlog_server ./mtr \
           --vardir=${{runner.temp}}/mtrvardir80 \
           --force --max-test-fail=0 --retry=0 --nounit-tests --big-test --repeat=2 --parallel=${{steps.cpu-cores.outputs.count}} \
+          --testcase-timeout=30 --suite-timeout=60 --shutdown-timeout=600 \
           --suite=binlog_streaming ${{matrix.config.mtr_options}}
 
     - name: MTR 8.4 tests
@@ -312,6 +313,7 @@ jobs:
         BINSRV=${{github.workspace}}/src-build-${{matrix.config.label}}/binlog_server ./mtr \
           --vardir=${{runner.temp}}/mtrvardir84 \
           --force --max-test-fail=0 --retry=0 --nounit-tests --big-test --repeat=2 --parallel=${{steps.cpu-cores.outputs.count}} \
+          --testcase-timeout=30 --suite-timeout=60 --shutdown-timeout=600 \
           --suite=binlog_streaming ${{matrix.config.mtr_options}}
 
     - name: CTest
