@@ -134,6 +134,11 @@ install -D -m 0644  main_config.json %{buildroot}/%{_sysconfdir}/percona-binlog-
 
 
 %changelog
+* Fri Apr 10 2026 Yura Sorokin <yura.sorokin@percona.com> - 0.2.1-1
+- PS-10910 Bucket name is missing in search_* outputs.
+- PS-11002 Changing storage prefix fails.
+- PS-10911 Unexpected binlog position in artificial rotate event.
+
 * Mon Mar 16 2026 Yura Sorokin <yura.sorokin@percona.com> - 0.2.0-1
 - Percona Binlog Server with GTID replication support.
 
