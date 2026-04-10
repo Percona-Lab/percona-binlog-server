@@ -42,7 +42,7 @@ if ($lts_series != v84)
 --echo *** Running 8.4 binaries on a 8.0 data directory
 --let $MYSQLD_LOG = $MYSQLTEST_VARDIR/log/upgrade.log
 --let $do_not_echo_parameters = 1
---let $restart_parameters = restart: --datadir=$CUSTOM_MYSQLD_DATADIR --log-error=$MYSQLD_LOG
+--let $restart_parameters = restart: --datadir=$CUSTOM_MYSQLD_DATADIR --log-error=$MYSQLD_LOG --binlog_expire_logs_auto_purge=OFF
 --source include/start_mysqld.inc
 
 --echo
