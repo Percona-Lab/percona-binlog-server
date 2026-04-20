@@ -1,3 +1,11 @@
+percona-binlog-server (0.2.1-1) unstable; urgency=low
+
+  * PS-10910 Bucket name is missing in search_* outputs.
+  * PS-11002 Changing storage prefix fails.
+  * PS-10911 Unexpected binlog position in artificial rotate event.
+
+ -- Yura Sorokin <yura.sorokin@percona.com>  Fri, 10 Apr 2026 16:13:14 +0200
+
 percona-binlog-server (0.2.0-1) unstable; urgency=low
 
   * Packaging for 0.2.0-1
