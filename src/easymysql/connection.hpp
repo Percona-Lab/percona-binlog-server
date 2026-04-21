@@ -58,6 +58,8 @@ public:
   [[nodiscard]] std::string_view get_character_set_name() const noexcept;
 
   void execute_generic_query_noresult(std::string_view query);
+  [[nodiscard]] std::string
+  execute_select_query_string_result(std::string_view query);
   [[nodiscard]] bool ping();
 
   [[nodiscard]] bool is_in_replication_mode() const noexcept {

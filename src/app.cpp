@@ -779,7 +779,7 @@ bool open_connection_and_switch_to_replication(
     if (operation_mode == binsrv::operation_mode_type::fetch) {
       throw;
     }
-    logger.log(binsrv::log_severity::info,
+    logger.log(binsrv::log_severity::error,
                "unable to establish connection to mysql server");
     return false;
   }
@@ -796,7 +796,20 @@ bool open_connection_and_switch_to_replication(
 
   try {
     if (storage.is_in_gtid_replication_mode()) {
-      const auto &gtids{storage.get_gtids()};
+      if (storage.is_empty()) {
+        static constexpr std::string_view select_gtid_purged_query{
+            "SELECT @@GLOBAL.gtid_purged"};
+        storage.set_purged_gtids(binsrv::gtids::gtid_set{
+            connection.execute_select_query_string_result(
+                select_gtid_purged_query)});
+        logger.log(
+            binsrv::log_severity::info,
+            "extracted purged GTIDs from the mysql server for an empty "
+            "storage: " +
+                boost::lexical_cast<std::string>(storage.get_purged_gtids()));
+      }
+
+      const auto gtids{storage.get_gtids()};
       const auto encoded_size{gtids.calculate_encoded_size()};
 
       binsrv::gtids::gtid_set_storage encoded_gtids_buffer(encoded_size);
@@ -820,7 +833,7 @@ bool open_connection_and_switch_to_replication(
     if (operation_mode == binsrv::operation_mode_type::fetch) {
       throw;
     }
-    logger.log(binsrv::log_severity::info, "unable to switch to replication");
+    logger.log(binsrv::log_severity::error, "unable to switch to replication");
     return false;
   }
 
