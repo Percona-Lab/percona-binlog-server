@@ -70,6 +70,11 @@ public:
   // file to complete the rule of 5
   ~storage();
 
+  [[nodiscard]] const gtids::gtid_set &get_purged_gtids() const noexcept {
+    return purged_gtids_;
+  }
+  void set_purged_gtids(const gtids::gtid_set &purged_gtids);
+
   [[nodiscard]] std::string get_backend_description() const;
 
   [[nodiscard]] replication_mode_type get_replication_mode() const noexcept {
@@ -94,16 +99,19 @@ public:
   }
 
   [[nodiscard]] gtids::gtid_set get_gtids() const {
-    gtids::gtid_set result{};
-    if (is_empty()) {
-      return result;
+    if (!is_in_gtid_replication_mode()) {
+      return {};
     }
+
+    if (is_empty()) {
+      return get_purged_gtids();
+    }
+    gtids::gtid_set result{};
     const auto &optional_previous_gtids{
         get_current_binlog_record().previous_gtids};
-    if (!optional_previous_gtids.has_value()) {
-      return result;
+    if (optional_previous_gtids.has_value()) {
+      result = *optional_previous_gtids;
     }
-    result = *optional_previous_gtids;
     const auto &optional_added_gtids{get_current_binlog_record().added_gtids};
     if (optional_added_gtids.has_value()) {
       result.add(*optional_added_gtids);
@@ -133,6 +141,7 @@ private:
 
   replication_mode_type replication_mode_;
   composite_binlog_name binlog_name_sentinel_{};
+  gtids::gtid_set purged_gtids_{};
   binlog_record_container binlog_records_{};
 
   std::uint64_t checkpoint_size_bytes_{0ULL};

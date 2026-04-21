@@ -197,7 +197,7 @@ may print
       "uri": "s3://binsrv-bucket/storage/binlog.000001",
       "min_timestamp": "2026-02-09T17:22:01",
       "max_timestamp": "2026-02-09T17:22:08",
-      "initial_gtids": "",
+      "previous_gtids": "",
       "added_gtids": "11111111-aaaa-1111-aaaa-111111111111:1-123456"
     },
     {
@@ -206,7 +206,7 @@ may print
       "uri": "s3://binsrv-bucket/storage/binlog.000002",
       "min_timestamp": "2026-02-09T17:22:08",
       "max_timestamp": "2026-02-09T17:22:09",
-      "initial_gtids": "11111111-aaaa-1111-aaaa-111111111111:1-123456",
+      "previous_gtids": "11111111-aaaa-1111-aaaa-111111111111:1-123456",
       "added_gtids": "11111111-aaaa-1111-aaaa-111111111111:123457-246912"
     }
   ]
@@ -243,7 +243,7 @@ may print
       "uri": "s3://binsrv-bucket/storage/binlog.000001",
       "min_timestamp": "2026-02-09T17:22:01",
       "max_timestamp": "2026-02-09T17:22:08",
-      "initial_gtids": "",
+      "previous_gtids": "",
       "added_gtids": "11111111-aaaa-1111-aaaa-111111111111:1-123456"
     }
   ]
@@ -264,7 +264,7 @@ may print
       "uri": "s3://binsrv-bucket/storage/binlog.000001",
       "min_timestamp": "2026-02-09T17:22:01",
       "max_timestamp": "2026-02-09T17:22:08",
-      "initial_gtids": "",
+      "previous_gtids": "",
       "added_gtids": "11111111-aaaa-1111-aaaa-111111111111:1-123456",
     },
     {
@@ -273,7 +273,7 @@ may print
       "uri": "s3://binsrv-bucket/storage/binlog.000002",
       "min_timestamp": "2026-02-09T17:22:08",
       "max_timestamp": "2026-02-09T17:22:09",
-      "initial_gtids": "11111111-aaaa-1111-aaaa-111111111111:1-123456",
+      "previous_gtids": "11111111-aaaa-1111-aaaa-111111111111:1-123456",
       "added_gtids": "11111111-aaaa-1111-aaaa-111111111111:123457-246912"
     }
   ]
