@@ -1,3 +1,9 @@
+percona-binlog-server (0.2.2-1) unstable; urgency=low
+
+  * PS-11054 Cannot replicate because the source purged required binary logs.
+
+ -- Yura Sorokin <yura.sorokin@percona.com>  Tue, 21 Apr 2026 19:09:19 +0200
+
 percona-binlog-server (0.2.1-1) unstable; urgency=low
 
   * PS-10910 Bucket name is missing in search_* outputs.
