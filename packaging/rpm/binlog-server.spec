@@ -134,6 +134,9 @@ install -D -m 0644  main_config.json %{buildroot}/%{_sysconfdir}/percona-binlog-
 
 
 %changelog
+* Tue Apr 21 2026 Yura Sorokin <yura.sorokin@percona.com> - 0.2.2-1
+- PS-11054 Cannot replicate because the source purged required binary logs.
+
 * Fri Apr 10 2026 Yura Sorokin <yura.sorokin@percona.com> - 0.2.1-1
 - PS-10910 Bucket name is missing in search_* outputs.
 - PS-11002 Changing storage prefix fails.

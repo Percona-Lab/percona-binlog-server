@@ -175,7 +175,7 @@ For instance,
 ```
 may print
 ```
-0.2.1
+0.2.2
 ```
 
 #### 'search_by_timestamp' operation mode

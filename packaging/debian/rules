@@ -9,7 +9,7 @@ export DEB_HOST_ARCH ?= $(shell dpkg-architecture -qDEB_HOST_ARCH)
 export CODENAME := $(shell . /etc/os-release && echo $$VERSION_CODENAME)
 
 # Versions
-export DEB_VERSION=0.2.1
+export DEB_VERSION=0.2.2
 export BOOST_VERSION=1.88.0
 export AWS_VERSION=1.11.570
 
@@ -105,7 +105,7 @@ override_dh_auto_build:
 	cd ..; \
 	cmake . --preset $(BUILD_PRESET_RELEASE); \
 	cmake --build ./percona-binlog-server-$(DEB_VERSION)-build-$(BUILD_PRESET_RELEASE)
-	./percona-binlog-server-$(DEB_VERSION)-build-$(BUILD_PRESET_DEBUG)/binlog_server version; \
+	./percona-binlog-server-$(DEB_VERSION)-build-$(BUILD_PRESET_RELEASE)/binlog_server version; \
 
 override_dh_auto_install:
 	install -d debian/percona-binlog-server/usr/bin
