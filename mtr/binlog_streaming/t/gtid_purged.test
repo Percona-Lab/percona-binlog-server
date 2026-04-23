@@ -76,7 +76,7 @@ eval PURGE BINARY LOGS TO '$second_binlog';
 
 --echo
 --echo *** Executing the Binlog Server utility in the 'search_by_gtid_set'
---echo one more time (expecting the same results)
+--echo *** one more time (expecting the same results)
 --exec $BINSRV search_by_gtid_set $binsrv_config_file_path $captured_second_insert_gtid > $read_from_file
 
 --source include/read_file_to_var.inc

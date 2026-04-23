@@ -47,6 +47,8 @@
 
 #include <aws/core/utils/memory/AWSMemory.h>
 
+#include <aws/core/utils/memory/stl/AWSVector.h>
+
 #include <aws/s3-crt/ClientConfiguration.h>
 #include <aws/s3-crt/S3CrtClient.h>
 
@@ -57,6 +59,7 @@
 #include <aws/s3-crt/model/GetObjectResult.h>
 #include <aws/s3-crt/model/ListObjectsV2Request.h>
 #include <aws/s3-crt/model/ListObjectsV2Result.h>
+#include <aws/s3-crt/model/Object.h>
 #include <aws/s3-crt/model/PutObjectRequest.h>
 
 #include "binsrv/s3_error_helpers_private.hpp"
@@ -187,6 +190,12 @@ private:
   void get_object_internal(const qualified_object_path &source,
                            const stream_factory_type &stream_factory,
                            const stream_handler_type &stream_handler) const;
+
+  using list_object_container = Aws::Vector<Aws::S3Crt::Model::Object>;
+  static void
+  process_list_objects_internal(const list_object_container &list_objects,
+                                const std::string &prefix,
+                                storage_object_name_container &storage_objects);
 };
 
 s3_storage_backend::aws_context::aws_context(
@@ -371,49 +380,45 @@ s3_storage_backend::aws_context::list_objects(
     list_objects_request.SetPrefix(prefix_str);
   }
 
-  const auto list_objects_outcome{client_->ListObjectsV2(list_objects_request)};
-  if (!list_objects_outcome.IsSuccess()) {
-    raise_s3_error_from_outcome("cannot list objects in the specified bucket",
-                                list_objects_outcome.GetError());
-  }
-  const auto &list_objects_result = list_objects_outcome.GetResult();
-  // TODO: implement receiving the rest of the list
-  if (list_objects_result.GetIsTruncated()) {
-    util::exception_location().raise<std::logic_error>(
-        "too many objects in the specified bucket");
-  }
-
-  auto model_key_count = list_objects_result.GetKeyCount();
-  if (!std::in_range<std::size_t>(model_key_count)) {
-    util::exception_location().raise<std::logic_error>(
-        "invalid key count in the list objects result");
-  }
-  auto key_count{static_cast<std::size_t>(model_key_count)};
-
-  const auto &model_objects{list_objects_result.GetContents()};
-  if (key_count != std::size(model_objects)) {
-    util::exception_location().raise<std::logic_error>(
-        "key count does not match the number of objects in the list objects "
-        "result");
-  }
-  result.reserve(key_count);
-
-  for (const auto &model_object : model_objects) {
-    // if the prefix is set, the list of objects in the response will include
-    // the prefix itself (as a directory) with zero size - it neeeds to be
-    // skipped
-
-    // moreover, we need to remove the prefix itself from the object paths
-    std::string_view key{model_object.GetKey()};
-    if (!prefix_str.empty()) {
-      if (!key.starts_with(prefix_str)) {
-        util::exception_location().raise<std::logic_error>(
-            "encountered an object with unexpected prefix");
-      }
-      key.remove_prefix(std::size(prefix_str));
+  std::string continuation_token;
+  bool has_more{true};
+  while (has_more) {
+    if (!continuation_token.empty()) {
+      list_objects_request.SetContinuationToken(continuation_token);
     }
-    if (!key.empty()) {
-      result.emplace(key, model_object.GetSize());
+
+    const auto list_objects_outcome{
+        client_->ListObjectsV2(list_objects_request)};
+    if (!list_objects_outcome.IsSuccess()) {
+      raise_s3_error_from_outcome("cannot list objects in the specified bucket",
+                                  list_objects_outcome.GetError());
+    }
+    const auto &list_objects_result = list_objects_outcome.GetResult();
+
+    auto model_key_count = list_objects_result.GetKeyCount();
+    if (!std::in_range<std::size_t>(model_key_count)) {
+      util::exception_location().raise<std::logic_error>(
+          "invalid key count in the list objects result");
+    }
+    auto key_count{static_cast<std::size_t>(model_key_count)};
+
+    const auto &model_objects{list_objects_result.GetContents()};
+    if (key_count != std::size(model_objects)) {
+      util::exception_location().raise<std::logic_error>(
+          "key count does not match the number of objects in the list objects "
+          "result");
+    }
+    result.reserve(std::size(result) + key_count);
+
+    process_list_objects_internal(model_objects, prefix_str, result);
+
+    has_more = list_objects_result.GetIsTruncated();
+    if (has_more) {
+      continuation_token = list_objects_result.GetNextContinuationToken();
+      if (continuation_token.empty()) {
+        util::exception_location().raise<std::logic_error>(
+            "truncated list objects result is missing continuation token");
+      }
     }
   }
 
@@ -450,6 +455,29 @@ void s3_storage_backend::aws_context::get_object_internal(
 
   if (stream_handler) {
     stream_handler(content_length, content_stream);
+  }
+}
+
+void s3_storage_backend::aws_context::process_list_objects_internal(
+    const list_object_container &list_objects, const std::string &prefix,
+    storage_object_name_container &storage_objects) {
+  for (const auto &list_object : list_objects) {
+    // if the prefix is set, the list of objects in the response will
+    // include the prefix itself (as a directory) with zero size - it
+    // needs to be skipped
+
+    // moreover, we need to remove the prefix itself from the object paths
+    std::string_view key{list_object.GetKey()};
+    if (!prefix.empty()) {
+      if (!key.starts_with(prefix)) {
+        util::exception_location().raise<std::logic_error>(
+            "encountered an object with unexpected prefix");
+      }
+      key.remove_prefix(std::size(prefix));
+    }
+    if (!key.empty()) {
+      storage_objects.emplace(key, list_object.GetSize());
+    }
   }
 }
 
