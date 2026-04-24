@@ -18,6 +18,6 @@
 
 #include "util/semantic_version.hpp"
 
-static constexpr util::semantic_version app_version{0U, 2U, 2U};
+static constexpr util::semantic_version app_version{0U, 2U, 3U};
 
 #endif // APP_VERSION_HPP

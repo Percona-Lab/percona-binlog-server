@@ -1,3 +1,9 @@
+percona-binlog-server (0.2.3-1) unstable; urgency=low
+
+  * PS-11033 Crash when S3 bucket accumulates large number of objects; recovery requires manual intervention.
+
+ -- Yura Sorokin <yura.sorokin@percona.com>  Fri, 24 Apr 2026 04:29:21 +0200
+
 percona-binlog-server (0.2.2-1) unstable; urgency=low
 
   * PS-11054 Cannot replicate because the source purged required binary logs.
