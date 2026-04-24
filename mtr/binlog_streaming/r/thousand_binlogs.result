@@ -1,7 +1,5 @@
 *** Resetting replication at the very beginning of the test.
 
-*** Determining the first binary log name.
-
 *** Generating a configuration file in JSON format for the Binlog
 *** Server utility.
 
@@ -13,28 +11,16 @@
 *** Creating a simple table.
 CREATE TABLE t1(id INT UNSIGNED NOT NULL AUTO_INCREMENT, PRIMARY KEY(id)) ENGINE=InnoDB;
 
-*** Filling the table with some data.
-INSERT INTO t1 VALUES();
-
-*** Flushing the first binary log and switching to the second one.
-FLUSH BINARY LOGS;
-
-*** Determining the second binary log name.
-
-*** Filling the table with more data.
-INSERT INTO t1 VALUES();
-
-*** Filling the table with more data.
-PURGE BINARY LOGS TO '<second_binlog>';
+*** Generating 1000 binlogs
 
 *** Executing the Binlog Server utility and fetching all events.
 
-*** Executing the Binlog Server utility in the 'search_by_gtid_set'
+*** Executing the Binlog Server utility in the 'search_by_timestamp'
 include/read_file_to_var.inc
 
 *** Executing the Binlog Server utility one more time (fetching nothing)
 
-*** Executing the Binlog Server utility in the 'search_by_gtid_set'
+*** Executing the Binlog Server utility in the 'search_by_timestamp'
 *** one more time (expecting the same results)
 include/read_file_to_var.inc
 
