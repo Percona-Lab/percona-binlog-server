@@ -134,6 +134,9 @@ install -D -m 0644  main_config.json %{buildroot}/%{_sysconfdir}/percona-binlog-
 
 
 %changelog
+* Fri Apr 24 2026 Yura Sorokin <yura.sorokin@percona.com> - 0.2.3-1
+- PS-11033 Crash when S3 bucket accumulates large number of objects; recovery requires manual intervention.
+
 * Tue Apr 21 2026 Yura Sorokin <yura.sorokin@percona.com> - 0.2.2-1
 - PS-11054 Cannot replicate because the source purged required binary logs.
 
