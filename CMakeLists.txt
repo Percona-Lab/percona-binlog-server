@@ -164,6 +164,10 @@ set(source_files
   src/binsrv/events/gtid_log_post_header_impl_fwd.hpp
   src/binsrv/events/gtid_log_post_header_impl.hpp
 
+  src/binsrv/events/gtid_renumberer_fwd.hpp
+  src/binsrv/events/gtid_renumberer.hpp
+  src/binsrv/events/gtid_renumberer.cpp
+
   src/binsrv/events/gtid_tagged_log_body_impl_fwd.hpp
   src/binsrv/events/gtid_tagged_log_body_impl.hpp
   src/binsrv/events/gtid_tagged_log_body_impl.cpp

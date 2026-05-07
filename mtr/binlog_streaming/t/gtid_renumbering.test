@@ -1,0 +1,206 @@
+--source ../include/have_binsrv.inc
+
+--source ../include/v80_v84_compatibility_defines.inc
+
+# This test exercises the rewrite-mode GTID renumberer. In rewrite mode
+# the binlog server discards the source's ROTATE / FORMAT_DESCRIPTION /
+# PREVIOUS_GTIDS / STOP events and coalesces transactions into local
+# binlog files of a configurable size. Two consequences:
+#   1. Multiple source binlogs may be folded into a single local file.
+#      The source resets sequence_number to 1 at every rotation, which
+#      would produce duplicate / non-monotone sequence_number values in
+#      our local file unless the rewriter renumbers them.
+#   2. The first event of each new source-file segment carries
+#      last_committed=0 from the source, relying on the implicit
+#      synchronization guarantee that every transaction of the previous
+#      source file commits before any transaction of the next file
+#      starts. After coalescing, that physical boundary is gone, so the
+#      rewriter must replace last_committed=0 with sequence_number-1 to
+#      preserve the cross-file commit ordering on the consumer side.
+#
+# We craft three source binlogs (10 + 5 + 3 GTIDs) coalesced into a
+# single local file (1G rewrite_file_size) and verify that:
+#   (a) sequence_number starts at 1 and advances by exactly 1 per event
+#       (renumbering covers all source-side rotations the rewriter
+#       absorbed - without the renumberer we would see duplicate
+#       sequence_number=1 values from each source file);
+#   (b) last_committed is in [0, sequence_number - 1] for every event;
+#   (c) the cross-source-file boundary events (events #11 and #16 -
+#       the first transactions from source binlogs B and C) carry
+#       a non-zero last_committed (specifically, sequence_number - 1).
+#       Without the rewriter's segment-boundary fix these would inherit
+#       the source's verbatim last_committed=0 and let the local
+#       applier reorder them ahead of the previous source file's
+#       commits. This assertion is robust regardless of the source's
+#       binlog_transaction_dependency_tracking mode.
+
+# in case of --repeat=N, we need to start from a fresh binary log to make
+# this test deterministic
+--echo *** Resetting replication at the very beginning of the test.
+--disable_query_log
+eval $stmt_reset_binary_logs_and_gtids;
+--enable_query_log
+
+# identifying backend storage type ('file' or 's3')
+--source ../include/identify_storage_backend.inc
+
+# creating data directory, configuration file, etc.
+--let $binsrv_connect_timeout = 20
+--let $binsrv_read_timeout = 60
+--let $binsrv_idle_time = 10
+--let $binsrv_verify_checksum = TRUE
+--let $binsrv_replication_mode = gtid
+--let $binsrv_checkpoint_size = 1
+# rewrite_file_size set high enough that all transactions land in a
+# single local file - the point of this test is to exercise multiple
+# source-file boundaries WITHIN the same local file
+--let $binsrv_rewrite_file_size = 1G
+--source ../include/set_up_binsrv_environment.inc
+
+--echo
+--echo *** Building deterministic binlog content with two source-binlog
+--echo *** rotations between transaction groups.
+--echo
+--echo *** Source binlog A: CREATE TABLE + 9 INSERTs (10 GTIDs total).
+CREATE TABLE t1(id INT UNSIGNED NOT NULL AUTO_INCREMENT, PRIMARY KEY(id)) ENGINE=InnoDB;
+--disable_query_log
+--let $i = 1
+while ($i <= 9)
+{
+  INSERT INTO t1 VALUES(DEFAULT);
+  --inc $i
+}
+--enable_query_log
+
+--echo
+--echo *** Flushing source binary log (introduces the first
+--echo *** source-binlog rotation that the rewriter must absorb).
+FLUSH BINARY LOGS;
+
+--echo
+--echo *** Source binlog B: 5 INSERTs.
+--disable_query_log
+--let $i = 1
+while ($i <= 5)
+{
+  INSERT INTO t1 VALUES(DEFAULT);
+  --inc $i
+}
+--enable_query_log
+
+--echo
+--echo *** Flushing source binary log one more time (second
+--echo *** source-binlog rotation absorbed inside the same local file).
+FLUSH BINARY LOGS;
+
+--echo
+--echo *** Source binlog C: 3 INSERTs.
+--disable_query_log
+--let $i = 1
+while ($i <= 3)
+{
+  INSERT INTO t1 VALUES(DEFAULT);
+  --inc $i
+}
+--enable_query_log
+
+--echo
+--echo *** Executing the Binlog Server utility in rewrite mode.
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+--echo
+--echo *** Materializing the local binlog file produced by the rewriter
+--echo *** and dumping it via mysqlbinlog for textual inspection.
+--let $local_binlog_path = $MYSQL_TMP_DIR/gtid_renumbering.bnlg.000001
+if ($storage_backend == file)
+{
+  --copy_file $binsrv_storage_path/bnlg.000001 $local_binlog_path
+}
+if ($storage_backend == s3)
+{
+  --exec $aws_cli s3 cp s3://$aws_s3_bucket$binsrv_storage_path/bnlg.000001 $local_binlog_path > /dev/null
+}
+
+--let GTID_DUMP = $MYSQL_TMP_DIR/gtid_renumbering.dump
+--exec $MYSQL_BINLOG --base64-output=DECODE-ROWS $local_binlog_path > $GTID_DUMP
+
+--echo
+--echo *** Validating (sequence_number, last_committed) of every GTID
+--echo *** event in the local binlog file. Aborts with --die on any
+--echo *** invariant violation; produces no output otherwise.
+
+--perl
+  use strict;
+  use warnings;
+
+  my $dump_path = $ENV{'GTID_DUMP'};
+  open(my $fh, '<', $dump_path) or die "Failed to open $dump_path: $!";
+  my @events;
+  while (my $line = <$fh>) {
+    if ($line =~ /last_committed=(\d+).*?sequence_number=(\d+)/) {
+      push @events, { lc => $1 + 0, sn => $2 + 0 };
+    }
+  }
+  close($fh);
+
+  # Source A contributes 10 GTIDs (CREATE TABLE + 9 INSERTs), source B
+  # contributes 5, source C contributes 3 - 18 events in total.
+  my $expected_count = 18;
+  die "expected exactly $expected_count GTID events in the local binlog "
+      . "file, got " . scalar @events
+    unless @events == $expected_count;
+
+  for my $i (0 .. $#events) {
+    my $expected_sn = $i + 1;
+
+    # Property (a): per-local-file sequence_number must restart at 1
+    # and advance gap-free by exactly 1 per event - this is what
+    # protects us from the source restarting its sequence_number at
+    # every rotation that we absorb.
+    die "sequence_number gap or duplicate at event index $i: "
+        . "expected sequence_number=$expected_sn, got $events[$i]{sn}"
+      unless $events[$i]{sn} == $expected_sn;
+
+    # Property (b): last_committed must reference an in-file
+    # sequence_number, i.e. lie in [0, sequence_number - 1]. A value
+    # >= sequence_number would point to the future; a negative value
+    # is impossible on the wire and would indicate a corrupt rewrite.
+    die "last_committed out of range at sequence_number=$events[$i]{sn}: "
+        . "got last_committed=$events[$i]{lc}"
+      unless $events[$i]{lc} >= 0 && $events[$i]{lc} < $events[$i]{sn};
+  }
+
+  # Property (c): every cross-source-file boundary event must carry
+  # last_committed = sequence_number - 1. By protocol the first event
+  # of each source binlog has source-side last_committed=0; if the
+  # rewriter's segment-boundary fix is missing, that 0 propagates
+  # verbatim into the local file. With the fix the value is replaced
+  # with the immediately preceding local sequence_number, restoring
+  # the source's "rotation = synchronization point" semantics that
+  # would otherwise be lost when we coalesce A, B, C into one local
+  # file.
+  #
+  # Source A contributes 10 GTIDs (CREATE TABLE + 9 INSERTs), source B
+  # contributes 5, source C contributes 3 - boundary events are
+  # therefore at sequence_number 11 (first of B) and 16 (first of C).
+  for my $boundary_seq (11, 16) {
+    my $idx = $boundary_seq - 1;
+    my $expected_lc = $boundary_seq - 1;
+    die "boundary-fix violation at sequence_number=$boundary_seq: "
+        . "expected last_committed=$expected_lc, got "
+        . "last_committed=$events[$idx]{lc}"
+      unless $events[$idx]{lc} == $expected_lc;
+  }
+EOF
+
+--echo
+--echo *** Removing temporary files.
+--remove_file $GTID_DUMP
+--remove_file $local_binlog_path
+
+--echo
+--echo *** Dropping the table.
+DROP TABLE t1;
+
+# cleaning up
+--source ../include/tear_down_binsrv_environment.inc

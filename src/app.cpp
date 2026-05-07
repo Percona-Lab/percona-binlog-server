@@ -64,6 +64,7 @@
 #include "binsrv/events/common_header_flag_type.hpp"
 #include "binsrv/events/event.hpp"
 #include "binsrv/events/event_view.hpp"
+#include "binsrv/events/gtid_renumberer.hpp"
 #include "binsrv/events/protocol_traits_fwd.hpp"
 #include "binsrv/events/reader_context.hpp"
 
@@ -285,6 +286,26 @@ void log_storage_info(binsrv::basic_logger &logger,
   logger.log(binsrv::log_severity::info, msg);
 }
 
+// Seeds `renumberer` from the recovery snapshot persisted in the
+// current binlog file's metadata, if applicable. No-op when not in
+// rewrite mode or when storage is empty (nothing to resume from).
+// Extracted out of main() to keep its cognitive complexity within
+// the project-wide threshold.
+void seed_renumberer_from_recovery_snapshot(
+    binsrv::events::gtid_renumberer &renumberer, const binsrv::storage &storage,
+    const binsrv::optional_rewrite_config &optional_rewrite_config,
+    binsrv::basic_logger &logger) {
+  if (!optional_rewrite_config.has_value() || storage.is_empty()) {
+    return;
+  }
+  const auto recovery_info{storage.get_current_renumberer_recovery_info()};
+  renumberer.resume_in_existing_local_file(recovery_info.next_local_seq,
+                                           recovery_info.last_emitted_offset);
+  logger.log(binsrv::log_severity::info,
+             "rewrite: resuming renumberer at next sequence_number=" +
+                 std::to_string(recovery_info.next_local_seq + 1));
+}
+
 void log_library_info(binsrv::basic_logger &logger,
                       const easymysql::library &mysql_lib) {
   std::string msg{};
@@ -486,10 +507,22 @@ void process_rotate_or_stop_event(binsrv::basic_logger &logger,
              "storage: closed binlog file: " + old_binlog_name);
 }
 
-void process_binlog_event(const binsrv::events::event_view &current_event_v,
-                          binsrv::basic_logger &logger,
-                          binsrv::events::reader_context &context,
-                          binsrv::storage &storage) {
+// `renumberer`, if non-null, lets process_binlog_event() promote the
+// renumberer's speculative state to committed (and mirror it into
+// storage's per-binlog recovery info) right before storage.write_event
+// is called. This is the moment the streaming pipeline detects a
+// transaction boundary AND the upcoming write_event call may trigger a
+// flush + save_binlog_metadata - i.e. the only spot where the .json
+// recovery snapshot is durably advanced. Synthetic events generated in
+// rewrite mode (artificial ROTATE, FDE, PREVIOUS_GTIDS, ...) and the
+// non-rewrite-mode call from receive_binlog_events() pass nullptr; the
+// renumberer's speculative counter is left untouched until the next
+// genuine GTID transaction reaches its boundary.
+void process_binlog_event(
+    const binsrv::events::event_view &current_event_v,
+    binsrv::basic_logger &logger, binsrv::events::reader_context &context,
+    binsrv::storage &storage,
+    binsrv::events::gtid_renumberer *renumberer = nullptr) {
   const auto current_common_header_v{current_event_v.get_common_header_view()};
   const auto readable_flags{current_common_header_v.get_readable_flags()};
   logger.log(binsrv::log_severity::info,
@@ -531,6 +564,26 @@ void process_binlog_event(const binsrv::events::event_view &current_event_v,
   // processing the very first event in the sequence - artificial ROTATE event
   if (code == binsrv::events::code_type::rotate && is_artificial) {
     process_artificial_rotate_event(current_event_v, logger, storage);
+  }
+
+  // In rewrite mode, this is the only point where the renumberer's
+  // committed snapshot is advanced and mirrored into storage's
+  // per-binlog recovery info. Doing it BEFORE storage.write_event is
+  // critical: write_event may trigger a checkpoint flush which calls
+  // save_binlog_metadata(), so the snapshot has to be in lockstep
+  // with the bytes about to be flushed. Doing it ONLY at transaction
+  // boundaries (instead of on every GTID event) is what keeps the
+  // persisted snapshot consistent under mid-transaction disconnects:
+  // if the connection drops between a GTID event and its commit, the
+  // renumberer's speculative bump is rolled back during the discard
+  // path (see rollback_to_committed() at the discard call site), and
+  // no flush in between had a chance to persist that speculative
+  // bump.
+  if (renumberer != nullptr && context.is_at_transaction_boundary()) {
+    renumberer->commit_pending_changes();
+    storage.update_renumberer_recovery_info(binsrv::renumberer_recovery_info{
+        .next_local_seq = renumberer->peek_next_local_seq(),
+        .last_emitted_offset = renumberer->peek_last_emitted_offset()});
   }
 
   // checking if the event needs to be written to the binlog
@@ -640,14 +693,21 @@ generate_previous_gtids_log_event(binsrv::events::event_storage &event_buffer,
 void rewrite_and_process_binlog_event(
     const binsrv::events::event_view &current_event_v,
     binsrv::basic_logger &logger, binsrv::events::reader_context &context,
-    binsrv::storage &storage, std::uint32_t server_id,
-    std::string_view base_file_name, std::uint64_t file_size) {
+    binsrv::events::gtid_renumberer &renumberer, binsrv::storage &storage,
+    std::uint32_t server_id, std::string_view base_file_name,
+    std::uint64_t file_size) {
   const auto current_common_header_v = current_event_v.get_common_header_view();
   const auto code = current_common_header_v.get_type_code();
 
   // for ROTATE (both artificial and non-artificial), FORMAT_DESCRIPTION,
   // PREVIOUS_GTIDS_LOG, and STOP events we don't have to do anything -
-  // simply return early from this function
+  // simply return early from this function. Note we deliberately do not
+  // notify the renumberer about source-side rotations or FDEs: per the
+  // MySQL protocol last_committed only references sequence_numbers from
+  // the same source file, and the renumberer translates last_committed
+  // through the CURRENT event's offset (new_seq - source_seq), which
+  // automatically jumps in lockstep with the source's own
+  // sequence_number reset at file boundaries.
   if (code == binsrv::events::code_type::format_description ||
       code == binsrv::events::code_type::previous_gtids_log ||
       code == binsrv::events::code_type::rotate ||
@@ -680,8 +740,23 @@ void rewrite_and_process_binlog_event(
   // 2. FORMAT_DESCRIPTION
   // 3. PREVIOUS_GTIDS_LOG
 
-  if (context.is_fresh() || (context.is_at_transaction_boundary() &&
-                             storage.get_current_position() >= file_size)) {
+  const bool will_rotate{context.is_fresh() ||
+                         (context.is_at_transaction_boundary() &&
+                          storage.get_current_position() >= file_size)};
+  // We reset the renumberer's sequence_number counter only when we are
+  // ACTUALLY starting a new local file (i.e. storage was empty, or we
+  // hit the configured file_size). When `is_fresh()` is true on a
+  // non-empty storage we are merely resuming the existing local file
+  // after a reconnect - in that case the renumberer is shared with
+  // the caller in main() and either still holds the in-memory state
+  // from before the reconnect, or (on a process restart) was re-seeded
+  // once from the persisted recovery snapshot right after storage
+  // construction. Either way, we deliberately do NOT call
+  // on_local_rotation() here and the counter keeps advancing from
+  // where the previous connection / process left off.
+  const bool will_open_fresh_local_file{
+      will_rotate && (context.is_fresh() ? storage.is_empty() : true)};
+  if (will_rotate) {
     binsrv::events::event_storage event_buffer;
     std::uint32_t offset{0U};
 
@@ -749,14 +824,40 @@ void rewrite_and_process_binlog_event(
         "rewrite: generated previous gtids log event in the rewrite mode");
     process_binlog_event(generated_previous_gtids_log_event_v, logger, context,
                          storage);
+
+    if (will_open_fresh_local_file) {
+      renumberer.on_local_rotation();
+    }
   }
 
   // in rewrite mode we need to update next_event_position (and optional
   // checksum in the footer) in the received event data portion
   binsrv::events::event_storage buffer{};
-  const auto event_copy_uv{binsrv::events::materialize(
+  auto event_copy_uv{binsrv::events::materialize(
       current_event_v, buffer,
       binsrv::events::materialization_type::force_add_checksum)};
+
+  // For GTID events we have to overwrite (sequence_number,
+  // last_committed) so they index into our local file's logical clock
+  // namespace rather than the source's. The tagged variant may grow or
+  // shrink the buffer, in which case `event_copy_uv` is reseated onto
+  // the resized buffer.
+  //
+  // The rewrite advances the renumberer's SPECULATIVE counter (its
+  // committed snapshot is unchanged at this point); the snapshot is
+  // promoted later, inside process_binlog_event(), once we know the
+  // transaction has actually reached its boundary. That ordering is
+  // what keeps the persisted recovery info from getting ahead of the
+  // durable binlog content: if the connection drops between this
+  // rewrite and the upcoming transaction boundary, the speculative
+  // increment is rolled back during the discard path before any
+  // flush has a chance to capture it (see rollback_to_committed()
+  // wired up next to discard_incomplete_transaction_events() in
+  // receive_binlog_events()).
+  if (binsrv::events::is_gtid_log_event(code)) {
+    event_copy_uv = renumberer.rewrite_if_gtid_event(event_copy_uv, buffer);
+  }
+
   {
     // TODO: optimize redundant checksum recalculation
     const auto proxy{event_copy_uv.get_write_proxy()};
@@ -764,7 +865,7 @@ void rewrite_and_process_binlog_event(
         static_cast<std::uint32_t>(storage.get_current_position() +
                                    event_copy_uv.get_total_size()));
   }
-  process_binlog_event(event_copy_uv, logger, context, storage);
+  process_binlog_event(event_copy_uv, logger, context, storage, &renumberer);
 }
 
 bool open_connection_and_switch_to_replication(
@@ -848,6 +949,7 @@ void receive_binlog_events(
     binsrv::basic_logger &logger, const easymysql::library &mysql_lib,
     const easymysql::connection_config &connection_config,
     std::uint32_t server_id, bool verify_checksum, binsrv::storage &storage,
+    binsrv::events::gtid_renumberer &renumberer,
     const binsrv::optional_rewrite_config &optional_rewrite_config) {
   easymysql::connection connection{};
   if (!open_connection_and_switch_to_replication(
@@ -866,6 +968,17 @@ void receive_binlog_events(
       connection.get_server_version(), verify_checksum,
       storage.get_replication_mode(), storage.get_current_binlog_name().str(),
       static_cast<std::uint32_t>(storage.get_current_position())};
+
+  // The renumberer is owned by the caller and outlives this function,
+  // so its in-memory state survives reconnects within a single
+  // process. We deliberately do NOT touch its counter here: a
+  // reconnect to the same source merely resumes appending to the
+  // current local file, and the next allocated sequence_number must
+  // continue forward from where the previous connection left off. If
+  // the very first event triggers a will_open_fresh_local_file
+  // rotation (e.g. file_size threshold reached while we were idle),
+  // rewrite_and_process_binlog_event() calls on_local_rotation()
+  // explicitly at the right moment.
 
   bool fetch_result{};
 
@@ -886,7 +999,7 @@ void receive_binlog_events(
       // FORMAT_DESCRIPTION, PREVIOUS_GTIDS_LOG, ROTATE (non-artificial),
       // and STOP events
       rewrite_and_process_binlog_event(
-          current_event_v, logger, context, storage, server_id,
+          current_event_v, logger, context, renumberer, storage, server_id,
           optional_rewrite_config->get<"base_file_name">(),
           optional_rewrite_config->get<"file_size">().get_value());
     } else {
@@ -917,6 +1030,15 @@ void receive_binlog_events(
   // transaction boundary
   if (storage.is_in_gtid_replication_mode()) {
     storage.discard_incomplete_transaction_events();
+    // Symmetric rollback: storage just dropped any partial-transaction
+    // bytes from its event buffer, so we also have to rewind the
+    // renumberer's speculative state (which may have been bumped by a
+    // GTID event whose transaction never reached its boundary) back to
+    // the most recent committed snapshot. Without this rollback, the
+    // next reconnect would re-process the same source GTID and bump
+    // next_local_seq AGAIN, leaving a permanent gap in the local
+    // sequence_number stream.
+    renumberer.rollback_to_committed();
   }
 
   // connection termination is a good place to flush any remaining data
@@ -1202,6 +1324,29 @@ int main(int argc, char *argv[]) {
                             replication_mode};
     log_storage_info(*logger, storage);
 
+    // Rewrite-mode GTID renumberer state. Lives alongside `storage`
+    // so its in-memory counter survives reconnects: every local
+    // rotation resets the per-file sequence_number counter (via
+    // on_local_rotation()) and every incoming GTID event's
+    // logical-clock fields are rewritten before the event is appended
+    // to the local binlog. Idle (default-constructed) when we are not
+    // in rewrite mode.
+    //
+    // We seed the renumberer ONCE here, immediately after storage is
+    // loaded, from the recovery snapshot persisted in the current
+    // binlog file's metadata. This is the only place where the
+    // snapshot is consulted: subsequent reconnects within the same
+    // process keep the in-memory state running. The snapshot was last
+    // written at the previous transaction-boundary checkpoint and is
+    // in lockstep with `binlog_record.size` (and therefore with the
+    // bytes already on disk) by construction. For an empty storage
+    // there is nothing to resume; for legacy metadata without the
+    // renumberer fields the snapshot defaults to "no prior emissions
+    // in this file" - documented limitation.
+    binsrv::events::gtid_renumberer renumberer{};
+    seed_renumberer_from_recovery_snapshot(renumberer, storage,
+                                           optional_rewrite_config, *logger);
+
     const easymysql::library mysql_lib;
     logger->log(binsrv::log_severity::info, "initialized mysql client library");
 
@@ -1209,7 +1354,7 @@ int main(int argc, char *argv[]) {
 
     receive_binlog_events(operation_mode, termination_flag, *logger, mysql_lib,
                           connection_config, server_id, verify_checksum,
-                          storage, optional_rewrite_config);
+                          storage, renumberer, optional_rewrite_config);
 
     if (operation_mode == binsrv::operation_mode_type::pull) {
       std::size_t iteration_number{1U};
@@ -1230,7 +1375,7 @@ int main(int argc, char *argv[]) {
 
         receive_binlog_events(operation_mode, termination_flag, *logger,
                               mysql_lib, connection_config, server_id,
-                              verify_checksum, storage,
+                              verify_checksum, storage, renumberer,
                               optional_rewrite_config);
         ++iteration_number;
       }

@@ -1,0 +1,34 @@
+*** Resetting replication at the very beginning of the test.
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+
+*** Building a single-source-binlog workload that is large enough
+*** to span multiple 1K local binlog files after rewrite.
+CREATE TABLE t1(id INT UNSIGNED NOT NULL AUTO_INCREMENT, payload VARCHAR(100) NOT NULL, PRIMARY KEY(id)) ENGINE=InnoDB;
+
+*** Executing the Binlog Server utility in rewrite mode.
+
+*** Asserting that the rewriter actually rotated locally
+*** (bnlg.000002 must exist - otherwise the test does not
+*** exercise the local-rotation reset code path).
+
+*** Validating per-local-file sequence_number reset and
+*** last_committed range. Aborts with --die on violation;
+*** produces no output otherwise.
+
+*** Removing temporary files.
+
+*** Dropping the table.
+DROP TABLE t1;
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.

@@ -87,7 +87,7 @@ public:
   [[nodiscard]] std::string get_readable_immediate_commit_timestamp() const;
 
   [[nodiscard]] bool has_original_commit_timestamp() const noexcept {
-    return original_commit_timestamp_ != unset_commit_timestamp;
+    return has_original_commit_timestamp_;
   }
   [[nodiscard]] std::uint64_t
   get_original_commit_timestamp_raw() const noexcept {
@@ -102,7 +102,7 @@ public:
   }
 
   [[nodiscard]] bool has_original_server_version() const noexcept {
-    return original_server_version_ != unset_server_version;
+    return has_original_server_version_;
   }
   [[nodiscard]] std::uint32_t get_original_server_version_raw() const noexcept {
     return original_server_version_;
@@ -123,11 +123,44 @@ public:
   [[nodiscard]] std::string get_readable_immediate_server_version() const;
 
   [[nodiscard]] bool has_commit_group_ticket() const noexcept {
-    return commit_group_ticket_ != unset_commit_group_ticket;
+    return has_commit_group_ticket_;
   }
   [[nodiscard]] std::uint64_t get_commit_group_ticket_raw() const noexcept {
     return commit_group_ticket_;
   }
+
+  // Mutators used by the rewrite-mode GTID renumberer. They modify only
+  // the in-memory representation; serializing back to bytes requires
+  // calling encode_to() on a freshly sized buffer.
+  void set_last_committed_raw(std::int64_t value) noexcept {
+    last_committed_ = value;
+  }
+  void set_sequence_number_raw(std::int64_t value) noexcept {
+    sequence_number_ = value;
+  }
+  void set_transaction_length_raw(std::uint64_t value) noexcept {
+    transaction_length_ = value;
+  }
+
+  // Returns the total number of bytes that encode_to() will emit for the
+  // current in-memory state, including the 3-field framing header
+  // (serialization_version_number, serializable_field_size,
+  // last_non_ignorable_field_id) and every TLV field. The value of the
+  // serializable_field_size field is computed self-consistently.
+  [[nodiscard]] std::size_t calculate_encoded_size() const;
+
+  // Writes the body to *destination* using the same TLV layout as the
+  // input. The set of optional fields actually emitted matches the set
+  // observed during construction (decoding); only the values of
+  // last_committed / sequence_number / transaction_length may have been
+  // mutated through the corresponding setters above.
+  //
+  // Precondition: std::size(destination) == calculate_encoded_size().
+  // The destination span size is read back as the on-wire
+  // serializable_field_size, so passing a wrong size produces a
+  // wrong-but-self-consistent encoding. Caller is expected to verify
+  // post-encode that `destination` was fully consumed.
+  void encode_to(util::byte_span &destination) const;
 
   friend bool operator==(const generic_body_impl & /* first */,
                          const generic_body_impl & /* second */) = default;
@@ -142,22 +175,52 @@ private:
   static constexpr std::uint64_t unset_commit_group_ticket{
       std::numeric_limits<std::uint64_t>::max()};
 
-  // the members are deliberately reordered for better packing
-  std::uint8_t flags_{};                                             // 0
-  gtids::uuid_storage uuid_{};                                       // 1
+  // The protocol fields below are deliberately reordered for better
+  // packing (largest first, then 32-bit, then 8-bit/bool last). The
+  // trailing "// N" annotation is the protocol field_id_type value
+  // upstream assigns to the field (see field_id_type enum in
+  // gtid_tagged_log_body_impl.cpp / define_fields() in upstream
+  // control_events.h), so the deviation from protocol order is
+  // visible at a glance.
   std::int64_t gno_{};                                               // 2
-  gtids::tag_storage tag_{};                                         // 3
   std::int64_t last_committed_{};                                    // 4
   std::int64_t sequence_number_{};                                   // 5
   std::uint64_t immediate_commit_timestamp_{unset_commit_timestamp}; // 6
   std::uint64_t original_commit_timestamp_{unset_commit_timestamp};  // 7
   std::uint64_t transaction_length_{unset_transaction_length};       // 8
-  std::uint32_t original_server_version_{unset_server_version};      // 9
-  std::uint32_t immediate_server_version_{unset_server_version};     // 10
   std::uint64_t commit_group_ticket_{unset_commit_group_ticket};     // 11
+  gtids::uuid_storage uuid_{};                                       // 1
+  gtids::tag_storage tag_{};                                         // 3
+  std::uint32_t original_server_version_{unset_server_version};      // 10
+  std::uint32_t immediate_server_version_{unset_server_version};     // 9
+  std::uint8_t flags_{};                                             // 0
+
+  // Echoed verbatim on encode_to() so the framing header matches the
+  // original. Reading and re-emitting it preserves forward compatibility
+  // with newer servers that may add ignorable fields above the current
+  // last non-ignorable id.
+  std::uint8_t last_non_ignorable_field_id_{0U};
+
+  // Recorded during decoding so that encode_to() emits exactly the same
+  // set of optional fields as was observed in the input event. This makes
+  // re-serialization byte-stable for unchanged member values and avoids
+  // having to reverse-engineer upstream's encode predicates from sentinel
+  // values (which would be brittle if a real timestamp/version ever
+  // happened to coincide with a sentinel).
+  bool has_original_commit_timestamp_{false};
+  bool has_original_server_version_{false};
+  bool has_commit_group_ticket_{false};
 
   void process_field_data(std::uint8_t field_id,
                           util::const_byte_span &remainder);
+
+  // Helpers for calculate_encoded_size() / encode_to().
+  // Returns the size in bytes of the TLV section (every <field_id,
+  // field_data> pair after the framing header).
+  [[nodiscard]] std::size_t calculate_tlv_section_size() const noexcept;
+  // Writes only the TLV section to *destination*; assumes destination has
+  // at least calculate_tlv_section_size() bytes available.
+  void encode_tlv_section_to(util::byte_span &destination) const;
 };
 
 } // namespace binsrv::events

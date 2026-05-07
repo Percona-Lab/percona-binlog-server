@@ -45,6 +45,7 @@
 #include "util/bounded_string_storage.hpp"
 #include "util/byte_span.hpp"
 #include "util/byte_span_extractors.hpp"
+#include "util/byte_span_inserters.hpp"
 #include "util/conversion_helpers.hpp"
 #include "util/exception_location_helpers.hpp"
 #include "util/flag_set.hpp"
@@ -52,21 +53,60 @@
 
 namespace binsrv::events {
 
+namespace {
+
+// Field identifiers in the order they are emitted by upstream's
+// define_fields() (libs/mysql/binlog/event/control_events.h:1111).
+// Both the decoder (process_field_data) and the encoder (encode_to /
+// calculate_encoded_size) use these values; keeping a single definition
+// avoids drift.
+enum class field_id_type : std::uint8_t {
+  flags,
+  uuid,
+  gno,
+  tag,
+  last_committed,
+  sequence_number,
+  immediate_commit_timestamp,
+  original_commit_timestamp,
+  transaction_length,
+  immediate_server_version,
+  original_server_version,
+  commit_group_ticket,
+
+  delimiter
+};
+
+[[nodiscard]] constexpr std::uint8_t
+field_id_byte(field_id_type field_id) noexcept {
+  return util::to_underlying(field_id);
+}
+
+// matches upstream serialization_format_version: ALWAYS 1 (see
+// libs/mysql/serialization/readme.md and Gtid_event::Decoder_type)
+constexpr std::uint8_t serialization_version_number_value{1U};
+
+} // namespace
+
 generic_body_impl<code_type::gtid_tagged_log>::generic_body_impl(
     util::const_byte_span portion) {
   // TODO: rework with direct member initialization
 
   // make sure we did OK with data members reordering
+  // (summands listed in the same order as the declarations in the .hpp)
   static_assert(
       sizeof *this ==
           boost::alignment::align_up(
-              sizeof flags_ + sizeof uuid_ + sizeof gno_ + sizeof tag_ +
-                  sizeof last_committed_ + sizeof sequence_number_ +
+              sizeof gno_ + sizeof last_committed_ + sizeof sequence_number_ +
                   sizeof immediate_commit_timestamp_ +
                   sizeof original_commit_timestamp_ +
-                  sizeof transaction_length_ + sizeof original_server_version_ +
-                  sizeof immediate_server_version_ +
-                  sizeof commit_group_ticket_,
+                  sizeof transaction_length_ + sizeof commit_group_ticket_ +
+                  sizeof uuid_ + sizeof tag_ + sizeof original_server_version_ +
+                  sizeof immediate_server_version_ + sizeof flags_ +
+                  sizeof last_non_ignorable_field_id_ +
+                  sizeof has_original_commit_timestamp_ +
+                  sizeof has_original_server_version_ +
+                  sizeof has_commit_group_ticket_,
               alignof(decltype(*this))),
       "inefficient data member reordering in gtid_log event body");
 
@@ -75,7 +115,6 @@ generic_body_impl<code_type::gtid_tagged_log>::generic_body_impl(
   // <message_field> ::= <serialization_version_number> <message_format>
   // Extracting <serialization_version_number>
 
-  static constexpr std::uint8_t expected_serialization_version_number{1U};
   std::uint8_t serialization_version_number{};
   if (!util::extract_varlen_int_from_byte_span_checked(
           remainder, serialization_version_number)) {
@@ -83,7 +122,7 @@ generic_body_impl<code_type::gtid_tagged_log>::generic_body_impl(
         "gtid_tagged_log event body is too short to extract "
         "serialization_version_number");
   }
-  if (serialization_version_number != expected_serialization_version_number) {
+  if (serialization_version_number != serialization_version_number_value) {
     util::exception_location().raise<std::invalid_argument>(
         "unexpected serialization_version_number in the gtid_tagged_log event "
         "body");
@@ -107,9 +146,8 @@ generic_body_impl<code_type::gtid_tagged_log>::generic_body_impl(
   }
 
   // Extracting <last_non_ignorable_field_id>
-  std::uint8_t last_non_ignorable_field_id{};
   if (!util::extract_varlen_int_from_byte_span_checked(
-          remainder, last_non_ignorable_field_id)) {
+          remainder, last_non_ignorable_field_id_)) {
     util::exception_location().raise<std::invalid_argument>(
         "gtid_tagged_log event body is too short to extract "
         "last_non_ignorable_field_id");
@@ -126,7 +164,7 @@ generic_body_impl<code_type::gtid_tagged_log>::generic_body_impl(
       util::exception_location().raise<std::invalid_argument>(
           "broken field_id sequence in the gtid_tagged_log event body");
     }
-    if (field_id <= last_non_ignorable_field_id) {
+    if (field_id <= last_non_ignorable_field_id_) {
       if (field_id != 0 && field_id != last_seen_field_id + 1U) {
         util::exception_location().raise<std::invalid_argument>(
             "violated last_non_ignorable_field_id rule in the gtid_tagged_log "
@@ -252,23 +290,6 @@ operator<<(std::ostream &output,
 void generic_body_impl<code_type::gtid_tagged_log>::process_field_data(
     std::uint8_t field_id, util::const_byte_span &remainder) {
   // https://github.com/mysql/mysql-server/blob/mysql-8.4.6/libs/mysql/binlog/event/control_events.h#L1111
-  enum class field_id_type : std::uint8_t {
-    flags,
-    uuid,
-    gno,
-    tag,
-    last_committed,
-    sequence_number,
-    immediate_commit_timestamp,
-    original_commit_timestamp,
-    transaction_length,
-    immediate_server_version,
-    original_server_version,
-    commit_group_ticket,
-
-    delimiter
-  };
-
   const auto varlen_int_extractor{
       [](util::const_byte_span &source, auto &target, std::string_view label) {
         if (!util::extract_varlen_int_from_byte_span_checked(source, target)) {
@@ -286,11 +307,7 @@ void generic_body_impl<code_type::gtid_tagged_log>::process_field_data(
     // Extracting a fixed-size (16 byte) array of varlen bytes
     std::uint8_t extracted_uuid_byte{};
     for (auto &uuid_byte : uuid_) {
-      if (!util::extract_varlen_int_from_byte_span_checked(
-              remainder, extracted_uuid_byte)) {
-        util::exception_location().raise<std::invalid_argument>(
-            "gtid_tagged_log event body is too short to extract uuid");
-      }
+      varlen_int_extractor(remainder, extracted_uuid_byte, "uuid");
       uuid_byte = util::from_underlying<std::byte>(extracted_uuid_byte);
     }
   } break;
@@ -323,6 +340,7 @@ void generic_body_impl<code_type::gtid_tagged_log>::process_field_data(
   case field_id_type::original_commit_timestamp:
     varlen_int_extractor(remainder, original_commit_timestamp_,
                          "original_commit_timestamp");
+    has_original_commit_timestamp_ = true;
     break;
   case field_id_type::transaction_length:
     varlen_int_extractor(remainder, transaction_length_, "transaction_length");
@@ -334,15 +352,232 @@ void generic_body_impl<code_type::gtid_tagged_log>::process_field_data(
   case field_id_type::original_server_version:
     varlen_int_extractor(remainder, original_server_version_,
                          "original_server_version");
+    has_original_server_version_ = true;
     break;
   case field_id_type::commit_group_ticket:
     varlen_int_extractor(remainder, commit_group_ticket_,
                          "commit_group_ticket");
+    has_commit_group_ticket_ = true;
     break;
   default:
     util::exception_location().raise<std::invalid_argument>(
         "unknown field_id in the gtid_tagged_log event body");
   }
+}
+
+[[nodiscard]] std::size_t
+generic_body_impl<code_type::gtid_tagged_log>::calculate_tlv_section_size()
+    const noexcept {
+  std::size_t total{0U};
+
+  // field: flags
+  total += util::calculate_varlen_int_size(field_id_byte(field_id_type::flags));
+  total += util::calculate_varlen_int_size(flags_);
+
+  // field: uuid (16 separate varlen-encoded bytes, one per UUID byte)
+  total += util::calculate_varlen_int_size(field_id_byte(field_id_type::uuid));
+  for (auto uuid_byte : uuid_) {
+    total += util::calculate_varlen_int_size(util::to_underlying(uuid_byte));
+  }
+
+  // field: gno
+  total += util::calculate_varlen_int_size(field_id_byte(field_id_type::gno));
+  total += util::calculate_varlen_int_size(gno_);
+
+  // field: tag (varlen length + raw bytes)
+  total += util::calculate_varlen_int_size(field_id_byte(field_id_type::tag));
+  total += util::calculate_varlen_int_size(std::size(tag_));
+  total += std::size(tag_);
+
+  // field: last_committed
+  total += util::calculate_varlen_int_size(
+      field_id_byte(field_id_type::last_committed));
+  total += util::calculate_varlen_int_size(last_committed_);
+
+  // field: sequence_number
+  total += util::calculate_varlen_int_size(
+      field_id_byte(field_id_type::sequence_number));
+  total += util::calculate_varlen_int_size(sequence_number_);
+
+  // field: immediate_commit_timestamp
+  total += util::calculate_varlen_int_size(
+      field_id_byte(field_id_type::immediate_commit_timestamp));
+  total += util::calculate_varlen_int_size(immediate_commit_timestamp_);
+
+  // field: original_commit_timestamp (optional)
+  if (has_original_commit_timestamp_) {
+    total += util::calculate_varlen_int_size(
+        field_id_byte(field_id_type::original_commit_timestamp));
+    total += util::calculate_varlen_int_size(original_commit_timestamp_);
+  }
+
+  // field: transaction_length
+  total += util::calculate_varlen_int_size(
+      field_id_byte(field_id_type::transaction_length));
+  total += util::calculate_varlen_int_size(transaction_length_);
+
+  // field: immediate_server_version
+  total += util::calculate_varlen_int_size(
+      field_id_byte(field_id_type::immediate_server_version));
+  total += util::calculate_varlen_int_size(immediate_server_version_);
+
+  // field: original_server_version (optional)
+  if (has_original_server_version_) {
+    total += util::calculate_varlen_int_size(
+        field_id_byte(field_id_type::original_server_version));
+    total += util::calculate_varlen_int_size(original_server_version_);
+  }
+
+  // field: commit_group_ticket (optional)
+  if (has_commit_group_ticket_) {
+    total += util::calculate_varlen_int_size(
+        field_id_byte(field_id_type::commit_group_ticket));
+    total += util::calculate_varlen_int_size(commit_group_ticket_);
+  }
+
+  return total;
+}
+
+[[nodiscard]] std::size_t
+generic_body_impl<code_type::gtid_tagged_log>::calculate_encoded_size() const {
+  // body layout:
+  //   [varlen: serialization_version_number == 1                ]
+  //   [varlen: serializable_field_size (== total body size)     ]
+  //   [varlen: last_non_ignorable_field_id                      ]
+  //   [TLV section: calculate_tlv_section_size() bytes          ]
+  //
+  // serializable_field_size encodes the entire body length INCLUDING
+  // itself, which makes it self-referential: the value depends on its
+  // own varlen-encoded width. Solve via a tiny iteration: increasing
+  // the value monotonically grows its width (1->2->3->...->9), so the
+  // loop always terminates in at most 9 steps.
+  const std::size_t framing_misc_size{
+      util::calculate_varlen_int_size(serialization_version_number_value) +
+      util::calculate_varlen_int_size(last_non_ignorable_field_id_)};
+  const std::size_t tlv_size{calculate_tlv_section_size()};
+  const std::size_t tail{framing_misc_size + tlv_size};
+
+  std::size_t total{tail + 1U};
+  for (;;) {
+    const std::size_t width{util::calculate_varlen_int_size(total)};
+    const std::size_t new_total{tail + width};
+    if (new_total == total) {
+      return total;
+    }
+    total = new_total;
+  }
+}
+
+void generic_body_impl<code_type::gtid_tagged_log>::encode_tlv_section_to(
+    util::byte_span &destination) const {
+  const auto check_inserted{[](bool inserted) {
+    if (!inserted) {
+      util::exception_location().raise<std::invalid_argument>(
+          "destination is too small to encode the gtid_tagged_log event "
+          "body");
+    }
+  }};
+  const auto emit_field_id{[&](field_id_type field_id) {
+    check_inserted(util::insert_varlen_int_to_byte_span_checked(
+        destination, field_id_byte(field_id)));
+  }};
+
+  // field: flags
+  emit_field_id(field_id_type::flags);
+  check_inserted(
+      util::insert_varlen_int_to_byte_span_checked(destination, flags_));
+
+  // field: uuid (16 separate varlen-encoded bytes)
+  emit_field_id(field_id_type::uuid);
+  for (auto uuid_byte : uuid_) {
+    check_inserted(util::insert_varlen_int_to_byte_span_checked(
+        destination, util::to_underlying(uuid_byte)));
+  }
+
+  // field: gno
+  emit_field_id(field_id_type::gno);
+  check_inserted(
+      util::insert_varlen_int_to_byte_span_checked(destination, gno_));
+
+  // field: tag (varlen length + raw bytes)
+  emit_field_id(field_id_type::tag);
+  check_inserted(util::insert_varlen_int_to_byte_span_checked(destination,
+                                                              std::size(tag_)));
+  const util::const_byte_span tag_span{tag_};
+  check_inserted(
+      util::insert_byte_span_to_byte_span_checked(destination, tag_span));
+
+  // field: last_committed
+  emit_field_id(field_id_type::last_committed);
+  check_inserted(util::insert_varlen_int_to_byte_span_checked(destination,
+                                                              last_committed_));
+
+  // field: sequence_number
+  emit_field_id(field_id_type::sequence_number);
+  check_inserted(util::insert_varlen_int_to_byte_span_checked(
+      destination, sequence_number_));
+
+  // field: immediate_commit_timestamp
+  emit_field_id(field_id_type::immediate_commit_timestamp);
+  check_inserted(util::insert_varlen_int_to_byte_span_checked(
+      destination, immediate_commit_timestamp_));
+
+  // field: original_commit_timestamp (optional)
+  if (has_original_commit_timestamp_) {
+    emit_field_id(field_id_type::original_commit_timestamp);
+    check_inserted(util::insert_varlen_int_to_byte_span_checked(
+        destination, original_commit_timestamp_));
+  }
+
+  // field: transaction_length
+  emit_field_id(field_id_type::transaction_length);
+  check_inserted(util::insert_varlen_int_to_byte_span_checked(
+      destination, transaction_length_));
+
+  // field: immediate_server_version
+  emit_field_id(field_id_type::immediate_server_version);
+  check_inserted(util::insert_varlen_int_to_byte_span_checked(
+      destination, immediate_server_version_));
+
+  // field: original_server_version (optional)
+  if (has_original_server_version_) {
+    emit_field_id(field_id_type::original_server_version);
+    check_inserted(util::insert_varlen_int_to_byte_span_checked(
+        destination, original_server_version_));
+  }
+
+  // field: commit_group_ticket (optional)
+  if (has_commit_group_ticket_) {
+    emit_field_id(field_id_type::commit_group_ticket);
+    check_inserted(util::insert_varlen_int_to_byte_span_checked(
+        destination, commit_group_ticket_));
+  }
+}
+
+void generic_body_impl<code_type::gtid_tagged_log>::encode_to(
+    util::byte_span &destination) const {
+  // Contract: the caller MUST size `destination` to exactly the value
+  // returned by calculate_encoded_size(). That value is also what we
+  // emit on the wire as serializable_field_size (size of the entire
+  // body), and we read it back from std::size(destination) here -
+  // avoiding a redundant inner fixpoint. Discrepancies are caught by
+  // the caller observing whether `destination` was fully consumed
+  // post-encode.
+  const std::uint64_t encoded_size{std::size(destination)};
+
+  // The framing header: serialization_version_number,
+  // serializable_field_size, last_non_ignorable_field_id.
+  if (!util::insert_varlen_int_to_byte_span_checked(
+          destination, serialization_version_number_value) ||
+      !util::insert_varlen_int_to_byte_span_checked(destination,
+                                                    encoded_size) ||
+      !util::insert_varlen_int_to_byte_span_checked(
+          destination, last_non_ignorable_field_id_)) {
+    util::exception_location().raise<std::invalid_argument>(
+        "failed to encode gtid_tagged_log event body framing header");
+  }
+
+  encode_tlv_section_to(destination);
 }
 
 } // namespace binsrv::events

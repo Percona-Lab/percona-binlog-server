@@ -84,6 +84,16 @@ enum class code_type : std::uint8_t {
 };
 #undef BINSRV_EVENTS_CODE_TYPE_XY_MACRO
 
+// returns true for GTID_LOG, ANONYMOUS_GTID_LOG and GTID_TAGGED_LOG events,
+// i.e. all three event types that carry GTID logical-clock fields
+// (sequence_number / last_committed) which need to be rewritten when the
+// rewrite mode causes our local binlog file boundaries to differ from the
+// source's
+[[nodiscard]] constexpr bool is_gtid_log_event(code_type code) noexcept {
+  return code == code_type::gtid_log || code == code_type::anonymous_gtid_log ||
+         code == code_type::gtid_tagged_log;
+}
+
 inline std::string_view to_string_view(code_type code) noexcept {
   using namespace std::string_view_literals;
   using nv_pair = std::pair<code_type, std::string_view>;

@@ -35,6 +35,17 @@ class [[nodiscard]] gtid_log_post_header {
 public:
   static constexpr std::size_t size_in_bytes{42U};
 
+  // byte offsets (within the 42-byte post header) of the two logical-clock
+  // fields that the rewrite-mode renumberer has to overwrite in place
+  //   flags          1B  @ 0
+  //   SID           16B  @ 1
+  //   GNO            8B  @ 17
+  //   lt_type        1B  @ 25
+  //   last_committed 8B  @ 26
+  //   sequence_number 8B @ 34
+  static constexpr std::size_t last_committed_offset_in_bytes{26U};
+  static constexpr std::size_t sequence_number_offset_in_bytes{34U};
+
   // https://github.com/mysql/mysql-server/blob/mysql-8.0.43/libbinlogevents/include/control_events.h#L1091
   // https://github.com/mysql/mysql-server/blob/mysql-8.4.6/libs/mysql/binlog/event/control_events.h#L1202
   static constexpr std::uint8_t expected_logical_ts_code{2U};
@@ -82,6 +93,14 @@ private:
   std::int64_t last_committed_{};  // 4
   std::int64_t sequence_number_{}; // 5
 };
+
+// Overwrites the (last_committed, sequence_number) pair in a raw 42-byte
+// gtid_log post-header byte span. Used by the rewrite-mode GTID renumberer
+// to retarget the parallel-applier dependency graph onto our local binlog
+// file boundaries. The overall event size is unchanged.
+void overwrite_logical_clock_in_post_header_raw(util::byte_span post_header_raw,
+                                                std::int64_t last_committed,
+                                                std::int64_t sequence_number);
 
 } // namespace binsrv::events
 
