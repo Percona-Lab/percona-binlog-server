@@ -1,0 +1,142 @@
+--source ../include/have_binsrv.inc
+
+--source ../include/v80_v84_compatibility_defines.inc
+
+# Companion test to gtid_renumbering.test exercising the OPPOSITE
+# side of the rewrite-mode renumberer: a single source binlog whose
+# transactions get split across multiple local binlog files because
+# the configured rewrite_file_size is much smaller than the total
+# stream size. The renumberer must:
+#   1. restart sequence_number at 1 in every new local file (otherwise
+#      sequence_number would keep growing across local files, leaving
+#      the consumer with a logical clock the local PREVIOUS_GTIDS
+#      header cannot describe);
+#   2. only ever emit last_committed values that reference an event
+#      already present in the SAME local file (i.e. < sequence_number).
+#
+# We verify (1) and (2) on the first two local files; observing local
+# rotation at all is what makes this test meaningful, so we also
+# require that bnlg.000002 actually got created.
+
+--echo *** Resetting replication at the very beginning of the test.
+--disable_query_log
+eval $stmt_reset_binary_logs_and_gtids;
+--enable_query_log
+
+--source ../include/identify_storage_backend.inc
+
+--let $binsrv_connect_timeout = 20
+--let $binsrv_read_timeout = 60
+--let $binsrv_idle_time = 10
+--let $binsrv_verify_checksum = TRUE
+--let $binsrv_replication_mode = gtid
+--let $binsrv_checkpoint_size = 1
+# small rewrite_file_size forces frequent local rotations
+--let $binsrv_rewrite_file_size = 1K
+--source ../include/set_up_binsrv_environment.inc
+
+--echo
+--echo *** Building a single-source-binlog workload that is large enough
+--echo *** to span multiple 1K local binlog files after rewrite.
+CREATE TABLE t1(id INT UNSIGNED NOT NULL AUTO_INCREMENT, payload VARCHAR(100) NOT NULL, PRIMARY KEY(id)) ENGINE=InnoDB;
+
+--disable_query_log
+--let $i = 1
+while ($i <= 60)
+{
+  INSERT INTO t1 (payload) VALUES (REPEAT('x', 80));
+  --inc $i
+}
+--enable_query_log
+
+--echo
+--echo *** Executing the Binlog Server utility in rewrite mode.
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+--echo
+--echo *** Asserting that the rewriter actually rotated locally
+--echo *** (bnlg.000002 must exist - otherwise the test does not
+--echo *** exercise the local-rotation reset code path).
+--let $first_local_path = $MYSQL_TMP_DIR/gtid_renumbering_local_rotation.bnlg.000001
+--let $second_local_path = $MYSQL_TMP_DIR/gtid_renumbering_local_rotation.bnlg.000002
+if ($storage_backend == file)
+{
+  --file_exists $binsrv_storage_path/bnlg.000002
+  --copy_file $binsrv_storage_path/bnlg.000001 $first_local_path
+  --copy_file $binsrv_storage_path/bnlg.000002 $second_local_path
+}
+if ($storage_backend == s3)
+{
+  --exec $aws_cli s3 cp s3://$aws_s3_bucket$binsrv_storage_path/bnlg.000001 $first_local_path > /dev/null
+  --exec $aws_cli s3 cp s3://$aws_s3_bucket$binsrv_storage_path/bnlg.000002 $second_local_path > /dev/null
+}
+
+--echo
+--echo *** Validating per-local-file sequence_number reset and
+--echo *** last_committed range. Aborts with --die on violation;
+--echo *** produces no output otherwise.
+
+--let FIRST_DUMP = $MYSQL_TMP_DIR/gtid_renumbering_local_rotation.first.dump
+--let SECOND_DUMP = $MYSQL_TMP_DIR/gtid_renumbering_local_rotation.second.dump
+--exec $MYSQL_BINLOG --base64-output=DECODE-ROWS $first_local_path > $FIRST_DUMP
+--exec $MYSQL_BINLOG --base64-output=DECODE-ROWS $second_local_path > $SECOND_DUMP
+
+--perl
+  use strict;
+  use warnings;
+
+  sub parse_gtid_dump {
+    my ($path) = @_;
+    open(my $fh, '<', $path) or die "Failed to open $path: $!";
+    my @events;
+    while (my $line = <$fh>) {
+      if ($line =~ /last_committed=(\d+).*?sequence_number=(\d+)/) {
+        push @events, { lc => $1 + 0, sn => $2 + 0 };
+      }
+    }
+    close($fh);
+    return @events;
+  }
+
+  sub validate_local_file {
+    my ($label, $events_ref) = @_;
+    my @events = @$events_ref;
+    die "$label: no GTID events found in dump" unless @events > 0;
+
+    for my $i (0 .. $#events) {
+      my $expected_sn = $i + 1;
+
+      # sequence_number must restart at 1 and grow gap-free in EACH
+      # local file
+      die "$label: sequence_number gap or duplicate at event index $i: "
+          . "expected $expected_sn, got $events[$i]{sn}"
+        unless $events[$i]{sn} == $expected_sn;
+
+      # last_committed must always reference an in-file
+      # sequence_number
+      die "$label: last_committed out of range at sequence_number="
+          . "$events[$i]{sn}: got last_committed=$events[$i]{lc}"
+        unless $events[$i]{lc} >= 0
+            && $events[$i]{lc} < $events[$i]{sn};
+    }
+  }
+
+  my @first  = parse_gtid_dump($ENV{'FIRST_DUMP'});
+  my @second = parse_gtid_dump($ENV{'SECOND_DUMP'});
+
+  validate_local_file("bnlg.000001", \@first);
+  validate_local_file("bnlg.000002", \@second);
+EOF
+
+--echo
+--echo *** Removing temporary files.
+--remove_file $FIRST_DUMP
+--remove_file $SECOND_DUMP
+--remove_file $first_local_path
+--remove_file $second_local_path
+
+--echo
+--echo *** Dropping the table.
+DROP TABLE t1;
+
+--source ../include/tear_down_binsrv_environment.inc

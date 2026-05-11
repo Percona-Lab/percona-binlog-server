@@ -318,6 +318,23 @@ storage::get_binlog_uri(const composite_binlog_name &binlog_name) const {
   return backend_->get_object_uri(binlog_name.str());
 }
 
+void storage::update_renumberer_recovery_info(
+    const renumberer_recovery_info &info) {
+  if (is_empty()) {
+    return;
+  }
+  get_current_binlog_record().renumberer_state = info;
+}
+
+[[nodiscard]] renumberer_recovery_info
+storage::get_current_renumberer_recovery_info() const {
+  if (is_empty()) {
+    util::exception_location().raise<std::logic_error>(
+        "cannot read renumberer recovery info from an empty storage");
+  }
+  return get_current_binlog_record().renumberer_state;
+}
+
 void storage::ensure_streaming_mode() const {
   if (construction_mode_ != storage_construction_mode_type::streaming) {
     util::exception_location().raise<std::logic_error>(
@@ -476,13 +493,31 @@ storage::load_binlog_metadata(const composite_binlog_name &binlog_name) const {
       backend_->get_object(generate_binlog_metadata_name(binlog_name))};
   binlog_file_metadata metadata{content};
 
+  // Both renumberer fields are missing in legacy metadata files; their
+  // optionals come back as std::nullopt and the recovery info is left
+  // at its struct-default value. From the renumberer's point of view
+  // that is indistinguishable from "this file has no prior emissions"
+  // - safe for files that genuinely have none, but for legacy files
+  // with prior emissions the first post-resume transaction will collide
+  // with sequence_number 1 (documented limitation of the legacy
+  // metadata format).
+  renumberer_recovery_info renumberer_state{};
+  const auto &optional_next_local_seq{
+      metadata.root().get<"renumberer_next_local_seq">()};
+  if (optional_next_local_seq.has_value()) {
+    renumberer_state.next_local_seq = *optional_next_local_seq;
+  }
+  renumberer_state.last_emitted_offset =
+      metadata.root().get<"renumberer_last_emitted_offset">();
+
   return binlog_record{.name = binlog_name,
                        .size = metadata.root().get<"size">(),
                        .previous_gtids =
                            metadata.root().get<"previous_gtids">(),
                        .added_gtids = metadata.root().get<"added_gtids">(),
                        .timestamps = {metadata.root().get<"min_timestamp">(),
-                                      metadata.root().get<"max_timestamp">()}};
+                                      metadata.root().get<"max_timestamp">()},
+                       .renumberer_state = renumberer_state};
 }
 
 void storage::validate_binlog_metadata(const binlog_record &record) const {
@@ -522,6 +557,10 @@ void storage::save_binlog_metadata(const binlog_record &record) const {
       ctime_timestamp{record.timestamps.get_min_timestamp()};
   metadata.root().get<"max_timestamp">() =
       ctime_timestamp{record.timestamps.get_max_timestamp()};
+  metadata.root().get<"renumberer_next_local_seq">() =
+      record.renumberer_state.next_local_seq;
+  metadata.root().get<"renumberer_last_emitted_offset">() =
+      record.renumberer_state.last_emitted_offset;
   const auto content{metadata.str()};
   backend_->put_object(generate_binlog_metadata_name(record.name),
                        util::as_const_byte_span(content));

@@ -33,6 +33,7 @@
 
 #include "util/byte_span.hpp"
 #include "util/byte_span_extractors.hpp"
+#include "util/byte_span_inserters.hpp"
 #include "util/exception_location_helpers.hpp"
 #include "util/flag_set.hpp"
 
@@ -139,6 +140,20 @@ gtid_log_post_header::get_flags() const noexcept {
     return {};
   }
   return {get_uuid(), get_gno()};
+}
+
+void overwrite_logical_clock_in_post_header_raw(util::byte_span post_header_raw,
+                                                std::int64_t last_committed,
+                                                std::int64_t sequence_number) {
+  if (std::size(post_header_raw) != gtid_log_post_header::size_in_bytes) {
+    util::exception_location().raise<std::invalid_argument>(
+        "invalid gtid_log post header length for in-place logical clock "
+        "overwrite");
+  }
+  auto remainder = post_header_raw.subspan(
+      gtid_log_post_header::last_committed_offset_in_bytes);
+  util::insert_fixed_int_to_byte_span(remainder, last_committed);
+  util::insert_fixed_int_to_byte_span(remainder, sequence_number);
 }
 
 std::ostream &operator<<(std::ostream &output,

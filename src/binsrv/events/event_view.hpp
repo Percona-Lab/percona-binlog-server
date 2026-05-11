@@ -201,23 +201,43 @@ public:
   event_updatable_view(const reader_context &context, util::byte_span portion)
       : event_view_base{context, portion} {}
 
+  // Construct a writable view directly from a byte span with explicit
+  // post_header / footer sizes. Bypasses the reader_context-driven
+  // validation; used by event reconstructors that materialize events
+  // from scratch (e.g. the rewrite-mode GTID renumberer, which has to
+  // emit a re-encoded GTID_TAGGED_LOG_EVENT possibly of a different
+  // size than the input).
+  [[nodiscard]] static event_updatable_view
+  // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+  from_raw_unchecked(util::byte_span portion, std::size_t post_header_size,
+                     std::size_t footer_size) noexcept {
+    return event_updatable_view{portion, post_header_size, footer_size};
+  }
+
   // clang-format off
   using event_view_base::get_portion;
+  using event_view_base::get_updatable_portion;
   using event_view_base::get_total_size;
   using event_view_base::calculate_crc;
 
   // common header section
   using event_view_base::get_common_header_size;
+  using event_view_base::get_common_header_raw;
+  using event_view_base::get_common_header_view;
 
   // post header section
   using event_view_base::get_post_header_size;
+  using event_view_base::get_post_header_raw;
 
   // body section
   using event_view_base::get_body_size;
+  using event_view_base::get_body_raw;
 
   // footer section
   using event_view_base::get_footer_size;
   using event_view_base::has_footer;
+  using event_view_base::get_footer_raw;
+  using event_view_base::get_footer_view;
   // clang-format on
 
   [[nodiscard]] write_proxy get_write_proxy() const {

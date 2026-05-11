@@ -1,0 +1,50 @@
+*** Resetting replication at the very beginning of the test.
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+
+*** Phase 1: CREATE TABLE + 4 INSERTs in source binlog A
+*** (5 GTID events).
+CREATE TABLE t1(id INT UNSIGNED NOT NULL AUTO_INCREMENT, PRIMARY KEY(id)) ENGINE=InnoDB;
+
+*** First binsrv invocation: writes 5 GTID events with
+*** sequence_number 1..5 to bnlg.000001 and persists the
+*** renumberer recovery snapshot (next_local_seq=5) in the
+*** per-binlog metadata file.
+
+*** Flushing source binary log between invocations so the
+*** second binsrv run also has to absorb a source-side
+*** rotation right after resuming.
+FLUSH BINARY LOGS;
+
+*** Phase 2: 5 INSERTs in source binlog B (5 more GTID events).
+
+*** Second binsrv invocation: must resume the renumberer from
+*** the persisted snapshot (next_local_seq=5) and append
+*** sequence_number 6..10 to bnlg.000001.
+
+*** Materializing the local binlog file produced across the two
+*** invocations and dumping it via mysqlbinlog for textual
+*** inspection.
+
+*** Validating that sequence_number is gap-free across the
+*** binsrv-invocation boundary and that the post-resume
+*** source-binlog-boundary event has last_committed =
+*** sequence_number - 1. Aborts with --die on any invariant
+*** violation; produces no output otherwise.
+
+*** Removing temporary files.
+
+*** Dropping the table.
+DROP TABLE t1;
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.

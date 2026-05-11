@@ -1,0 +1,47 @@
+*** Resetting replication at the very beginning of the test.
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+
+*** Building deterministic binlog content with two source-binlog
+*** rotations between transaction groups.
+
+*** Source binlog A: CREATE TABLE + 9 INSERTs (10 GTIDs total).
+CREATE TABLE t1(id INT UNSIGNED NOT NULL AUTO_INCREMENT, PRIMARY KEY(id)) ENGINE=InnoDB;
+
+*** Flushing source binary log (introduces the first
+*** source-binlog rotation that the rewriter must absorb).
+FLUSH BINARY LOGS;
+
+*** Source binlog B: 5 INSERTs.
+
+*** Flushing source binary log one more time (second
+*** source-binlog rotation absorbed inside the same local file).
+FLUSH BINARY LOGS;
+
+*** Source binlog C: 3 INSERTs.
+
+*** Executing the Binlog Server utility in rewrite mode.
+
+*** Materializing the local binlog file produced by the rewriter
+*** and dumping it via mysqlbinlog for textual inspection.
+
+*** Validating (sequence_number, last_committed) of every GTID
+*** event in the local binlog file. Aborts with --die on any
+*** invariant violation; produces no output otherwise.
+
+*** Removing temporary files.
+
+*** Dropping the table.
+DROP TABLE t1;
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.

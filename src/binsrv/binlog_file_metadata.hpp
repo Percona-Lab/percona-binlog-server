@@ -19,6 +19,7 @@
 #include "binsrv/binlog_file_metadata_fwd.hpp" // IWYU pragma: export
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -32,6 +33,16 @@ namespace binsrv {
 
 class [[nodiscard]] binlog_file_metadata {
 private:
+  // The two `*_renumberer_*` fields persist the rewrite-mode GTID
+  // renumberer's recovery state for this binlog file. They are stored
+  // here (rather than re-derived from the binlog file content on
+  // resume) because every other piece of resume state already lives in
+  // this metadata record - keeping the renumberer state alongside it
+  // makes recovery a single read-and-load step. Both are
+  // std::optional<> so that legacy metadata files written by older
+  // binlog-server builds (which lacked these fields) load cleanly with
+  // both values defaulting to std::nullopt; on next save the up-to-date
+  // values are written back.
   using impl_type = util::nv_tuple<
       // clang-format off
       util::nv<"version", std::uint32_t>,
@@ -39,7 +50,10 @@ private:
       util::nv<"previous_gtids", gtids::optional_gtid_set>,
       util::nv<"added_gtids", gtids::optional_gtid_set>,
       util::nv<"min_timestamp", ctime_timestamp>,
-      util::nv<"max_timestamp", ctime_timestamp>
+      util::nv<"max_timestamp", ctime_timestamp>,
+      util::nv<"renumberer_next_local_seq", std::optional<std::int64_t>>,
+      util::nv<"renumberer_last_emitted_offset",
+               std::optional<std::int64_t>>
       // clang-format on
       >;
 

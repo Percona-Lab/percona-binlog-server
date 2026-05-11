@@ -1,0 +1,78 @@
+*** Resetting replication at the very beginning of the test.
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+
+*** Phase 1: T_first = CREATE TABLE t1 (1 GTID event, no
+*** Write_rows).
+CREATE TABLE t1(id INT UNSIGNED NOT NULL AUTO_INCREMENT, PRIMARY KEY(id)) ENGINE=InnoDB;
+
+*** First binsrv invocation: writes T_first with
+*** sequence_number=1 to bnlg.000001 and persists
+*** next_local_seq=1 in the per-binlog metadata.
+
+*** Phase 2: arm the source dump thread to pause AFTER
+*** sending the first WRITE_ROWS event of any transaction.
+*** Combined with the short binsrv read_timeout, this freezes
+*** the second binsrv invocation mid-T_third (after T_third's
+*** GTID has been processed by binsrv but before T_third's
+*** XID can be received).
+SET @old_global_debug = @@global.debug;
+SET GLOBAL DEBUG = '+d,dump_thread_wait_after_send_write_rows';
+
+*** Workload that the second binsrv invocation will read:
+*** T_second (CREATE TABLE t2, no Write_rows; will be
+*** absorbed in full) and T_third (INSERT INTO t1, has
+*** Write_rows; binsrv will receive its GTID and prefix
+*** events and then time out waiting for the rest).
+CREATE TABLE t2(id INT UNSIGNED NOT NULL AUTO_INCREMENT, PRIMARY KEY(id)) ENGINE=InnoDB;
+INSERT INTO t1 VALUES(DEFAULT);
+
+*** Second binsrv invocation: expected to exit with non-zero
+*** status after read_timeout. The storage destructor flushes
+*** the COMMITTED transaction (T_second) and persists the
+*** per-binlog metadata. The renumberer recovery snapshot
+*** persisted here MUST be next_local_seq=2 (committed, in
+*** lockstep with the flushed bytes) and not the speculative
+*** next_local_seq=3 produced by T_third's GTID rewrite.
+
+*** Releasing the paused source dump thread: SIGNAL wakes it
+*** from the debug_sync wait, after which its first attempt
+*** to send the next event fails on the half-closed socket
+*** and the dump thread exits. DEBUG flag is then restored so
+*** the new dump thread spawned by binsrv 3 does not pause.
+SET DEBUG_SYNC = 'now SIGNAL signal.continue';
+SET GLOBAL DEBUG = @old_global_debug;
+SET DEBUG_SYNC = 'RESET';
+
+*** Third binsrv invocation: the source resends T_third
+*** (binsrv never acknowledged it), and the renumberer
+*** continues from the persisted committed snapshot. T_third
+*** must land as sequence_number=3 so bnlg.000001 ends up
+*** gap-free.
+
+*** Materializing bnlg.000001 produced across all three
+*** invocations and dumping it via mysqlbinlog for textual
+*** inspection.
+
+*** Validating that bnlg.000001 contains exactly 3 GTID
+*** events with contiguous sequence_numbers 1, 2, 3 and
+*** that every last_committed value references an in-file
+*** sequence_number. Aborts with --die on any invariant
+*** violation; produces no output otherwise.
+
+*** Removing temporary files.
+
+*** Dropping the tables.
+DROP TABLE t1, t2;
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.

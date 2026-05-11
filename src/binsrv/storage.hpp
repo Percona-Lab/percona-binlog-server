@@ -19,6 +19,8 @@
 #include "binsrv/storage_fwd.hpp" // IWYU pragma: export
 
 #include <chrono>
+#include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -37,6 +39,16 @@
 
 namespace binsrv {
 
+// Snapshot of the rewrite-mode GTID renumberer's recovery state, as
+// persisted alongside other per-binlog metadata. Used by the storage
+// layer to round-trip the state across reconnects and process
+// restarts; the renumberer-side semantics live in
+// `binsrv::events::gtid_renumberer`.
+struct [[nodiscard]] renumberer_recovery_info {
+  std::int64_t next_local_seq{0};
+  std::optional<std::int64_t> last_emitted_offset{};
+};
+
 class [[nodiscard]] storage {
 private:
   struct binlog_record {
@@ -45,6 +57,7 @@ private:
     gtids::optional_gtid_set previous_gtids{};
     gtids::optional_gtid_set added_gtids{};
     ctime_timestamp_range timestamps{};
+    renumberer_recovery_info renumberer_state{};
   };
   using binlog_record_container = std::vector<binlog_record>;
 
@@ -128,6 +141,26 @@ public:
                    const gtids::gtid &transaction_gtid,
                    const ctime_timestamp &event_timestamp);
   void close_binlog();
+
+  // Rewrite-mode hook: keeps the in-memory renumberer recovery state
+  // for the current binlog file in sync with the actual renumberer.
+  // The persisted snapshot is written out by the next
+  // save_binlog_metadata() call (i.e. on the next checkpoint flush).
+  // Caller is expected to invoke this whenever the renumberer's
+  // observable state (next_local_seq / last_emitted_offset) changes,
+  // typically right after rewrite_if_gtid_event(). No-op if the
+  // storage has no current binlog yet.
+  void update_renumberer_recovery_info(const renumberer_recovery_info &info);
+
+  // Returns the renumberer recovery snapshot persisted for the current
+  // binlog file (i.e. read back from the per-binlog .json metadata at
+  // storage construction). If the current metadata predates the
+  // persisted-renumberer-state feature, both fields hold their default
+  // values (next_local_seq = 0, last_emitted_offset = std::nullopt) -
+  // which the renumberer treats as "no prior emissions in this file".
+  // Precondition: the storage must be non-empty.
+  [[nodiscard]] renumberer_recovery_info
+  get_current_renumberer_recovery_info() const;
 
   void discard_incomplete_transaction_events();
   void flush_event_buffer();
