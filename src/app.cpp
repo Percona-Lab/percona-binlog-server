@@ -908,16 +908,11 @@ void receive_binlog_events(
         "fetch operation did not reach EOF reading binlog events");
   }
 
-  // in GTID-based replication mode we also need to discard some data in the
-  // transaction event buffer to make sure that upon reconnection we will
-  // continue operation from the transaction boundary
-
-  // in position-based replication mode this is not needed as it is not a
-  // problem to resume streaming from a position that does not correspond to
-  // transaction boundary
-  if (storage.is_in_gtid_replication_mode()) {
-    storage.discard_incomplete_transaction_events();
-  }
+  // Truncate the in-memory event buffer to the last completed transaction so
+  // the persisted stream offset matches a transaction boundary. On reconnect,
+  // reader_context always expects the first logical event after the
+  // pseudo-preamble to be anonymous_gtid_log / gtid_log / gtid_tagged_log
+  storage.discard_incomplete_transaction_events();
 
   // connection termination is a good place to flush any remaining data
   // in the event buffer - this can be considered the third kind of
