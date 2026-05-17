@@ -21,6 +21,7 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "binsrv/events/common_types.hpp"
 #include "binsrv/events/gtid_log_flag_type_fwd.hpp"
 
 #include "binsrv/gtids/common_types.hpp"
@@ -37,9 +38,13 @@ public:
 
   // https://github.com/mysql/mysql-server/blob/mysql-8.0.43/libbinlogevents/include/control_events.h#L1091
   // https://github.com/mysql/mysql-server/blob/mysql-8.4.6/libs/mysql/binlog/event/control_events.h#L1202
-  static constexpr std::uint8_t expected_logical_ts_code{2U};
+  static constexpr std::uint8_t known_logical_ts_code{2U};
 
   explicit gtid_log_post_header(util::const_byte_span portion);
+  gtid_log_post_header(const gtid_log_flag_set &flags, const gtids::uuid &uuid,
+                       gtids::gno_t gno, std::uint8_t logical_ts_code,
+                       events::seq_no_t last_committed,
+                       events::seq_no_t sequence_number) noexcept;
 
   [[nodiscard]] std::uint8_t get_flags_raw() const noexcept { return flags_; }
   [[nodiscard]] gtid_log_flag_set get_flags() const noexcept;
@@ -65,10 +70,27 @@ public:
   [[nodiscard]] std::int64_t get_last_committed_raw() const noexcept {
     return last_committed_;
   }
+  [[nodiscard]] events::seq_no_t get_last_committed() const noexcept {
+    return static_cast<events::seq_no_t>(last_committed_);
+  }
+  void set_last_committed_raw(std::int64_t last_committed) noexcept {
+    last_committed_ = last_committed;
+  }
 
   [[nodiscard]] std::int64_t get_sequence_number_raw() const noexcept {
     return sequence_number_;
   }
+  [[nodiscard]] events::seq_no_t get_sequence_number() const noexcept {
+    return static_cast<events::seq_no_t>(sequence_number_);
+  }
+  void set_sequence_number_raw(std::int64_t sequence_number) noexcept {
+    sequence_number_ = sequence_number;
+  }
+
+  [[nodiscard]] static std::size_t calculate_encoded_size() noexcept {
+    return size_in_bytes;
+  }
+  void encode_to(util::byte_span &destination) const;
 
   friend bool operator==(const gtid_log_post_header & /* first */,
                          const gtid_log_post_header & /* second */) = default;

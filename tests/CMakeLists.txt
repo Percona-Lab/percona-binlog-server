@@ -177,8 +177,9 @@ set(event_set_source_files
   ${PROJECT_SOURCE_DIR}/src/binsrv/events/unknown_post_header.cpp
 
 
-  ${PROJECT_SOURCE_DIR}/src/util/semantic_version.cpp
   ${PROJECT_SOURCE_DIR}/src/util/crc_helpers.cpp
+  ${PROJECT_SOURCE_DIR}/src/util/semantic_version.cpp
+  ${PROJECT_SOURCE_DIR}/src/util/timestamp_helpers.cpp
 )
 
 add_executable(byte_span_encoding_test byte_span_encoding_test.cpp ${byte_span_encoding_source_files})

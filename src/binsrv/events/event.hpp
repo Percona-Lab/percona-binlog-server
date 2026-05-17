@@ -120,10 +120,10 @@ public:
 
   template <code_type Code>
   static event
-  create_event(std::uint32_t offset, const ctime_timestamp &timestamp,
-               std::uint32_t server_id, common_header_flag_set flags,
-               const generic_post_header<Code> &post_header,
-               const generic_body<Code> &body, bool include_checksum) {
+  create_event_simple(std::uint32_t offset, const ctime_timestamp &timestamp,
+                      std::uint32_t server_id, common_header_flag_set flags,
+                      const generic_post_header<Code> &post_header,
+                      const generic_body<Code> &body, bool include_checksum) {
     return event{Code,        offset, timestamp,        server_id, flags,
                  post_header, body,   include_checksum, nullptr};
   }
