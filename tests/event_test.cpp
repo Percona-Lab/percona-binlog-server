@@ -13,6 +13,7 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
+#include <chrono>
 #include <cstdint>
 #include <string_view>
 
@@ -29,14 +30,18 @@
 #include "binsrv/ctime_timestamp.hpp"
 #include "binsrv/replication_mode_type.hpp"
 
+#include "binsrv/gtids/common_types.hpp"
 #include "binsrv/gtids/gtid_set.hpp"
 
 #include "binsrv/events/checksum_algorithm_type.hpp"
 #include "binsrv/events/code_type.hpp"
 #include "binsrv/events/common_header.hpp"
 #include "binsrv/events/common_header_flag_type.hpp"
+#include "binsrv/events/common_types.hpp"
 #include "binsrv/events/event.hpp"
 #include "binsrv/events/event_view.hpp"
+#include "binsrv/events/gtid_log_flag_type.hpp"
+#include "binsrv/events/gtid_log_post_header.hpp"
 #include "binsrv/events/protocol_traits_fwd.hpp"
 #include "binsrv/events/reader_context.hpp"
 
@@ -140,6 +145,122 @@ BOOST_AUTO_TEST_CASE(EventRoundTrip) {
 
   BOOST_CHECK_EQUAL(generated_previous_gtids_log_event,
                     parsed_previous_gtids_log_event);
+
+  const auto earlier_ts{std::chrono::high_resolution_clock::now()};
+  const auto later_ts{earlier_ts + std::chrono::hours(1U)};
+
+  // GTID_LOG event
+  offset = generated_previous_gtids_log_event.get_common_header()
+               .get_next_event_position_raw();
+  const binsrv::events::generic_post_header<binsrv::events::code_type::gtid_log>
+      gtid_log_post_header{
+          binsrv::events::gtid_log_flag_set{
+              binsrv::events::gtid_log_flag_type::may_have_sbr},       // flags
+          binsrv::gtids::uuid{"11111111-aaaa-1111-aaaa-111111111111"}, // uuid
+          binsrv::gtids::gno_t{6ULL},                                  // gno
+          binsrv::events::gtid_log_post_header::
+              known_logical_ts_code,      // logical_ts_code
+          binsrv::events::seq_no_t{0ULL}, // last_committed
+          binsrv::events::seq_no_t{1ULL}  // sequence_number
+      };
+  const binsrv::events::generic_body<binsrv::events::code_type::gtid_log>
+      gtid_log_body{
+          later_ts,                         // immediate_commit_timestamp
+          earlier_ts,                       // original_commit_timestamp
+          42ULL,                            // transaction_length
+          util::semantic_version{"8.4.8"},  // immediate_server_version
+          util::semantic_version{"8.0.46"}, // original_server_version
+          123ULL                            // commit_group_ticket
+      };
+  const auto generated_gtid_log_event{
+      binsrv::events::event::create_event<binsrv::events::code_type::gtid_log>(
+          offset, binsrv::ctime_timestamp::now(), default_server_id,
+          binsrv::events::common_header_flag_set{}, gtid_log_post_header,
+          gtid_log_body, true, event_buffer)};
+
+  const binsrv::events::event_view generated_gtid_log_event_v{
+      context, util::const_byte_span{event_buffer}};
+  const binsrv::events::event parsed_gtid_log_event{generated_gtid_log_event_v};
+
+  BOOST_CHECK_EQUAL(generated_gtid_log_event, parsed_gtid_log_event);
+
+  // ANONYMOUS_GTID_LOG event
+  offset = generated_previous_gtids_log_event.get_common_header()
+               .get_next_event_position_raw();
+  const binsrv::events::generic_post_header<
+      binsrv::events::code_type::anonymous_gtid_log>
+      anonymous_gtid_log_post_header{
+          binsrv::events::gtid_log_flag_set{
+              binsrv::events::gtid_log_flag_type::may_have_sbr}, // flags
+          binsrv::gtids::uuid{},                                 // uuid
+          binsrv::gtids::gno_t{0ULL},                            // gno
+          binsrv::events::gtid_log_post_header::
+              known_logical_ts_code,      // logical_ts_code
+          binsrv::events::seq_no_t{0ULL}, // last_committed
+          binsrv::events::seq_no_t{1ULL}  // sequence_number
+      };
+  const binsrv::events::generic_body<
+      binsrv::events::code_type::anonymous_gtid_log>
+      anonymous_gtid_log_body{
+          later_ts,                         // immediate_commit_timestamp
+          earlier_ts,                       // original_commit_timestamp
+          42ULL,                            // transaction_length
+          util::semantic_version{"8.4.8"},  // immediate_server_version
+          util::semantic_version{"8.0.46"}, // original_server_version
+          123ULL                            // commit_group_ticket
+      };
+  const auto generated_anonymous_gtid_log_event{
+      binsrv::events::event::create_event<
+          binsrv::events::code_type::anonymous_gtid_log>(
+          offset, binsrv::ctime_timestamp::now(), default_server_id,
+          binsrv::events::common_header_flag_set{},
+          anonymous_gtid_log_post_header, anonymous_gtid_log_body, true,
+          event_buffer)};
+
+  const binsrv::events::event_view generated_anonymous_gtid_log_event_v{
+      context, util::const_byte_span{event_buffer}};
+  const binsrv::events::event parsed_anonymous_gtid_log_event{
+      generated_anonymous_gtid_log_event_v};
+
+  BOOST_CHECK_EQUAL(generated_anonymous_gtid_log_event,
+                    parsed_anonymous_gtid_log_event);
+
+  // GTID_TAGGED_LOG event
+  offset = generated_previous_gtids_log_event.get_common_header()
+               .get_next_event_position_raw();
+  const binsrv::events::generic_post_header<
+      binsrv::events::code_type::gtid_tagged_log>
+      gtid_tagged_log_post_header{};
+  const binsrv::events::generic_body<binsrv::events::code_type::gtid_tagged_log>
+      gtid_tagged_log_body{
+          binsrv::events::gtid_log_flag_set{
+              binsrv::events::gtid_log_flag_type::may_have_sbr},       // flags
+          binsrv::gtids::uuid{"11111111-aaaa-1111-aaaa-111111111111"}, // uuid
+          binsrv::gtids::gno_t{6ULL},                                  // gno
+          binsrv::gtids::tag{"mytag"},                                 // tag
+          binsrv::events::seq_no_t{0ULL},   // last_committed
+          binsrv::events::seq_no_t{1ULL},   // sequence_number
+          later_ts,                         // immediate_commit_timestamp
+          earlier_ts,                       // original_commit_timestamp
+          42ULL,                            // transaction_length
+          util::semantic_version{"8.4.8"},  // immediate_server_version
+          util::semantic_version{"8.0.46"}, // original_server_version
+          123ULL                            // commit_group_ticket
+      };
+  const auto generated_gtid_tagged_log_event{
+      binsrv::events::event::create_event<
+          binsrv::events::code_type::gtid_tagged_log>(
+          offset, binsrv::ctime_timestamp::now(), default_server_id,
+          binsrv::events::common_header_flag_set{}, gtid_tagged_log_post_header,
+          gtid_tagged_log_body, true, event_buffer)};
+
+  const binsrv::events::event_view generated_gtid_tagged_log_event_v{
+      context, util::const_byte_span{event_buffer}};
+  const binsrv::events::event parsed_gtid_tagged_log_event{
+      generated_gtid_tagged_log_event_v};
+
+  BOOST_CHECK_EQUAL(generated_gtid_tagged_log_event,
+                    parsed_gtid_tagged_log_event);
 }
 
 BOOST_AUTO_TEST_CASE(EventMaterialization) {

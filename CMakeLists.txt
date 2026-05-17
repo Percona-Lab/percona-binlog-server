@@ -109,6 +109,8 @@ set(source_files
   src/binsrv/events/common_header_flag_type_fwd.hpp
   src/binsrv/events/common_header_flag_type.hpp
 
+  src/binsrv/events/common_types.hpp
+
   src/binsrv/events/empty_body_fwd.hpp
   src/binsrv/events/empty_body.hpp
   src/binsrv/events/empty_body.cpp
@@ -388,6 +390,10 @@ set(source_files
   src/util/semantic_version_fwd.hpp
   src/util/semantic_version.hpp
   src/util/semantic_version.cpp
+
+  src/util/timestamp_types.hpp
+  src/util/timestamp_helpers.hpp
+  src/util/timestamp_helpers.cpp
 
   # mysql wrapper library files
   src/easymysql/core_error_helpers_private.hpp

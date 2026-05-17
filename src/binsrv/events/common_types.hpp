@@ -13,17 +13,15 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef UTIL_SEMANTIC_VERSION_FWD_HPP
-#define UTIL_SEMANTIC_VERSION_FWD_HPP
+#ifndef BINSRV_EVENTS_COMMON_TYPES_HPP
+#define BINSRV_EVENTS_COMMON_TYPES_HPP
 
-#include <optional>
+#include <cstdint>
 
-namespace util {
+namespace binsrv::events {
 
-class semantic_version;
+using seq_no_t = std::uint64_t;
 
-using optional_semantic_version = std::optional<semantic_version>;
+} // namespace binsrv::events
 
-} // namespace util
-
-#endif // UTIL_SEMANTIC_VERSION_FWD_HPP
+#endif // BINSRV_EVENTS_COMMON_TYPES_HPP

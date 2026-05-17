@@ -41,6 +41,7 @@ public:
   explicit uuid(const uuid_storage &data);
 
   [[nodiscard]] bool is_empty() const noexcept { return data_.is_nil(); }
+  [[nodiscard]] uuid_storage get_raw() const noexcept;
 
   [[nodiscard]] std::string str() const;
 

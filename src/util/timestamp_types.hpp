@@ -13,17 +13,19 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef UTIL_SEMANTIC_VERSION_FWD_HPP
-#define UTIL_SEMANTIC_VERSION_FWD_HPP
+#ifndef UTIL_TIMESTAMP_TYPES_HPP
+#define UTIL_TIMESTAMP_TYPES_HPP
 
+#include <chrono>
 #include <optional>
 
 namespace util {
 
-class semantic_version;
-
-using optional_semantic_version = std::optional<semantic_version>;
+using high_resolution_time_point =
+    std::chrono::high_resolution_clock::time_point;
+using optional_high_resolution_time_point =
+    std::optional<high_resolution_time_point>;
 
 } // namespace util
 
-#endif // UTIL_SEMANTIC_VERSION_FWD_HPP
+#endif // UTIL_TIMESTAMP_TYPES_HPP
