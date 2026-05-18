@@ -25,6 +25,7 @@
 #include "binsrv/gtids/gtid.hpp"
 
 #include "binsrv/events/common_header_view_fwd.hpp"
+#include "binsrv/events/common_types.hpp"
 #include "binsrv/events/event_fwd.hpp"
 #include "binsrv/events/event_view_fwd.hpp"
 #include "binsrv/events/protocol_traits.hpp"
@@ -63,6 +64,13 @@ public:
   [[nodiscard]] const gtids::gtid &get_transaction_gtid() const noexcept {
     return transaction_gtid_;
   }
+  [[nodiscard]] bool has_transaction_sequence_number() const noexcept {
+    return transaction_sequence_number_ != 0ULL;
+  }
+  [[nodiscard]] seq_no_t get_transaction_sequence_number() const noexcept {
+    return transaction_sequence_number_;
+  }
+
   [[nodiscard]] bool is_at_transaction_boundary() const noexcept {
     return (state_ == state_type::any_other_expected &&
             current_transaction_length_ == expected_transaction_length_) ||
@@ -112,8 +120,14 @@ private:
   std::uint32_t position_;
   post_header_length_container post_header_lengths_{};
 
+  // last seen transaction GTID (empty GTID if between transactions)
   gtids::gtid transaction_gtid_{};
+  // sequence number of the last transaction seen (0 if between transactions)
+  seq_no_t transaction_sequence_number_{0ULL};
+  // the expected length of the current transaction
+  // (extracted from one of the GTID_LOG events)
   std::uint32_t expected_transaction_length_{0U};
+  // the length of the transaction seen so far
   std::uint32_t current_transaction_length_{0U};
 
   bool expect_info_only_preamble_events_{false};

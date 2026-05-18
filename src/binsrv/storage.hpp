@@ -33,6 +33,8 @@
 #include "binsrv/gtids/gtid_fwd.hpp"
 #include "binsrv/gtids/gtid_set.hpp"
 
+#include "binsrv/events/common_types.hpp"
+
 #include "util/byte_span_fwd.hpp"
 
 namespace binsrv {
@@ -40,11 +42,19 @@ namespace binsrv {
 class [[nodiscard]] storage {
 private:
   struct binlog_record {
+    // binlog file name
     composite_binlog_name name;
+    // binlog file size in bytes
     std::uint64_t size{0ULL};
+    // accumulated GTIDs present in the binlog files before this one
     gtids::optional_gtid_set previous_gtids{};
+    // GTIDs present in this binlog file
     gtids::optional_gtid_set added_gtids{};
+    // minimum and maximum event timestamps observed in this binlog file
     ctime_timestamp_range timestamps{};
+    // sequence_number of the last transaction seen in this file -
+    // used for GTID rewrite-mode resume state persistence
+    events::seq_no_t last_sequence_number{0ULL};
   };
   using binlog_record_container = std::vector<binlog_record>;
 
@@ -119,6 +129,11 @@ public:
     return result;
   }
 
+  [[nodiscard]] events::seq_no_t
+  get_last_transaction_sequence_number() const noexcept {
+    return incomplete_transaction_last_sequence_number_;
+  }
+
   [[nodiscard]] bool is_binlog_open() const noexcept;
 
   [[nodiscard]] open_binlog_status
@@ -126,7 +141,8 @@ public:
   void write_event(util::const_byte_span event_data,
                    bool at_transaction_boundary,
                    const gtids::gtid &transaction_gtid,
-                   const ctime_timestamp &event_timestamp);
+                   const ctime_timestamp &event_timestamp,
+                   events::seq_no_t transaction_sequence_number);
   void close_binlog();
 
   void discard_incomplete_transaction_events();
@@ -156,6 +172,8 @@ private:
   gtids::gtid_set gtids_in_event_buffer_{};
   ctime_timestamp_range ready_to_flush_timestamps_{};
   ctime_timestamp_range incomplete_transaction_timestamps_{};
+  events::seq_no_t ready_to_flush_last_sequence_number_{0ULL};
+  events::seq_no_t incomplete_transaction_last_sequence_number_{0ULL};
 
   void ensure_streaming_mode() const;
 
@@ -187,6 +205,11 @@ private:
     return get_flushed_position() +
            last_transaction_boundary_position_in_event_buffer_;
   }
+  [[nodiscard]] open_binlog_status
+  open_new_binlog_file_internal(const composite_binlog_name &binlog_name);
+  [[nodiscard]] open_binlog_status
+  open_existing_binlog_file_internal(std::uint64_t open_stream_offset);
+
   void flush_event_buffer_internal();
 
   void load_binlog_index();
