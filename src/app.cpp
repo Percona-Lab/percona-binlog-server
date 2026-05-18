@@ -535,10 +535,10 @@ void process_binlog_event(const binsrv::events::event_view &current_event_v,
 
   // checking if the event needs to be written to the binlog
   if (!info_only) {
-    storage.write_event(current_event_v.get_portion(),
-                        context.is_at_transaction_boundary(),
-                        context.get_transaction_gtid(),
-                        current_common_header_v.get_timestamp());
+    storage.write_event(
+        current_event_v.get_portion(), context.is_at_transaction_boundary(),
+        context.get_transaction_gtid(), current_common_header_v.get_timestamp(),
+        context.get_transaction_sequence_number());
   }
 
   // processing the very last event in the sequence - either a non-artificial
