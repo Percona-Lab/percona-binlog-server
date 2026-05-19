@@ -70,6 +70,18 @@ include/read_file_to_var.inc
 ***     mode with a non-existing GTID range
 include/read_file_to_var.inc
 
+*** 12. Executing the Binlog Server utility in the 'search_by_gtid_set'
+***     mode with GTIDs listed in reverse order
+include/read_file_to_var.inc
+
+*** 13. Executing the Binlog Server utility in the 'search_by_gtid_set'
+***     mode with overlapping requested GTID sets
+include/read_file_to_var.inc
+
+*** 14. Executing the Binlog Server utility in the 'search_by_gtid_set'
+***     mode with the full stored GTID set
+include/read_file_to_var.inc
+
 *** Removing the search result file.
 
 *** Dropping the table.

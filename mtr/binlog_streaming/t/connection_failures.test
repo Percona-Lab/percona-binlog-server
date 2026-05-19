@@ -1,0 +1,330 @@
+--source ../include/have_binsrv.inc
+
+--source ../include/v80_v84_compatibility_defines.inc
+
+# identifying backend storage type ('file' or 's3')
+--source ../include/identify_storage_backend.inc
+
+--echo
+--echo *** Testing connection failure scenarios
+
+--echo
+--echo *** Test 1: Invalid host (should fail in fetch mode)
+--let $binsrv_connection_host = 999.999.999.999
+--let $binsrv_connection_port = 3306
+--let $binsrv_connection_user = root
+--let $binsrv_connection_password = 
+--let $binsrv_connect_timeout = 2
+--let $binsrv_read_timeout = 60
+--let $binsrv_idle_time = 10
+--let $binsrv_verify_checksum = TRUE
+--let $binsrv_replication_mode = position
+--source ../include/set_up_binsrv_environment.inc
+
+--error 1
+--exec $BINSRV fetch $binsrv_config_file_path > $binsrv_log_path 2>&1
+
+--let $assert_text = Invalid host should fail while establishing MySQL connection
+--let $assert_file = $binsrv_log_path
+--let $assert_count = 1
+--let $assert_select = cannot establish MySQL connection: Unknown MySQL server host
+--source include/assert_grep.inc
+
+--echo
+--echo *** Cleaning up test environment
+if ($storage_backend == file)
+{
+  --force-rmdir $binsrv_storage_path
+}
+if ($storage_backend == s3)
+{
+  --exec $aws_cli s3 rm s3://$aws_s3_bucket/$binsrv_storage_path/ --recursive > /dev/null 2>&1 || true
+  --force-rmdir $binsrv_buffer_path
+}
+--exec rm -f $binsrv_log_path $binsrv_config_file_path
+
+--echo
+--echo *** Test 2: Invalid port (should fail in fetch mode)
+--let $binsrv_connection_host = 127.0.0.1
+--let $binsrv_connection_user = root
+--let $binsrv_connection_password = 
+--let $binsrv_connect_timeout = 2
+--let $binsrv_read_timeout = 60
+--let $binsrv_idle_time = 10
+--let $binsrv_verify_checksum = TRUE
+--source ../include/set_up_binsrv_environment.inc
+
+# Manually modify config to use invalid port using sed
+--exec sed -i 's/"port": *[0-9][0-9]*/"port": 99999/' $binsrv_config_file_path
+
+--error 1
+--exec $BINSRV fetch $binsrv_config_file_path > $binsrv_log_path 2>&1
+
+--let $assert_text = Invalid port should fail config extraction
+--let $assert_file = $binsrv_log_path
+--let $assert_count = 1
+--let $assert_select = unable to extract "connection.port"
+--source include/assert_grep.inc
+
+--echo
+--echo *** Cleaning up test environment
+if ($storage_backend == file)
+{
+  --force-rmdir $binsrv_storage_path
+}
+if ($storage_backend == s3)
+{
+  --exec $aws_cli s3 rm s3://$aws_s3_bucket/$binsrv_storage_path/ --recursive > /dev/null 2>&1 || true
+  --force-rmdir $binsrv_buffer_path
+}
+--exec rm -f $binsrv_log_path $binsrv_config_file_path
+
+--echo
+--echo *** Test 3: Invalid user credentials (should fail in fetch mode)
+--let $binsrv_connection_host = 127.0.0.1
+--let $binsrv_connection_user = nonexistent_user_12345
+--let $binsrv_connection_password = wrong_password
+--let $binsrv_connect_timeout = 2
+--let $binsrv_read_timeout = 60
+--let $binsrv_idle_time = 10
+--let $binsrv_verify_checksum = TRUE
+--source ../include/set_up_binsrv_environment.inc
+
+--error 1
+--exec $BINSRV fetch $binsrv_config_file_path > $binsrv_log_path 2>&1
+
+--let $assert_text = Invalid credentials should fail with access denied
+--let $assert_file = $binsrv_log_path
+--let $assert_count = 1
+--let $assert_select = Access denied
+--source include/assert_grep.inc
+
+--echo
+--echo *** Cleaning up test environment
+if ($storage_backend == file)
+{
+  --force-rmdir $binsrv_storage_path
+}
+if ($storage_backend == s3)
+{
+  --exec $aws_cli s3 rm s3://$aws_s3_bucket/$binsrv_storage_path/ --recursive > /dev/null 2>&1 || true
+  --force-rmdir $binsrv_buffer_path
+}
+--exec rm -f $binsrv_log_path $binsrv_config_file_path
+
+--echo
+--echo *** Test 4: User without REPLICATION SLAVE privilege (should fail)
+--disable_query_log
+CREATE USER IF NOT EXISTS 'test_user_no_priv'@'127.0.0.1' IDENTIFIED BY 'testpass';
+--enable_query_log
+
+--let $binsrv_connection_host = 127.0.0.1
+--let $binsrv_connection_user = test_user_no_priv
+--let $binsrv_connection_password = testpass
+--let $binsrv_connect_timeout = 2
+--let $binsrv_read_timeout = 60
+--let $binsrv_idle_time = 10
+--let $binsrv_verify_checksum = TRUE
+--source ../include/set_up_binsrv_environment.inc
+
+--error 1
+--exec $BINSRV fetch $binsrv_config_file_path > $binsrv_log_path 2>&1
+
+--let $assert_text = User without replication privilege should fail with access denied
+--let $assert_file = $binsrv_log_path
+--let $assert_count = 1
+--let $assert_select = Access denied
+--source include/assert_grep.inc
+
+--echo
+--echo *** Cleaning up test environment
+if ($storage_backend == file)
+{
+  --force-rmdir $binsrv_storage_path
+}
+if ($storage_backend == s3)
+{
+  --exec $aws_cli s3 rm s3://$aws_s3_bucket/$binsrv_storage_path/ --recursive > /dev/null 2>&1 || true
+  --force-rmdir $binsrv_buffer_path
+}
+--exec rm -f $binsrv_log_path $binsrv_config_file_path
+
+--disable_query_log
+DROP USER IF EXISTS 'test_user_no_priv'@'127.0.0.1';
+--enable_query_log
+
+--echo
+--echo *** Test 5: No mysql server running on host (fail in fetch mode)
+--let $binsrv_connection_host = 192.0.2.0
+--let $binsrv_connection_user = root
+--let $binsrv_connection_password = 
+--let $binsrv_connect_timeout = 1
+--let $binsrv_read_timeout = 60
+--let $binsrv_idle_time = 2
+--let $binsrv_verify_checksum = TRUE
+--source ../include/set_up_binsrv_environment.inc
+
+--error 1
+--exec $BINSRV fetch $binsrv_config_file_path > $binsrv_log_path 2>&1
+
+--let $assert_text = Connection timeout should fail while establishing MySQL connection
+--let $assert_file = $binsrv_log_path
+--let $assert_count = 1
+--let $assert_select = cannot establish MySQL connection: Can't connect to MySQL server on
+--source include/assert_grep.inc
+
+--echo
+--echo *** Cleaning up test environment
+if ($storage_backend == file)
+{
+  --force-rmdir $binsrv_storage_path
+}
+if ($storage_backend == s3)
+{
+  --exec $aws_cli s3 rm s3://$aws_s3_bucket/$binsrv_storage_path/ --recursive > /dev/null 2>&1 || true
+  --force-rmdir $binsrv_buffer_path
+}
+--exec rm -f $binsrv_log_path $binsrv_config_file_path
+
+
+--echo
+--echo *** Test 6: DNS SRV name with host/port (should fail - validation error)
+--let $binsrv_connection_host = 127.0.0.1
+--let $binsrv_connection_user = root
+--let $binsrv_connection_password = 
+--let $binsrv_connect_timeout = 2
+--let $binsrv_read_timeout = 60
+--let $binsrv_idle_time = 10
+--let $binsrv_verify_checksum = TRUE
+--let $binsrv_replication_mode = position
+--source ../include/set_up_binsrv_environment.inc
+
+# Manually add dns_srv_name to config (should conflict with host/port)
+--exec sed -i 's/"host": "127.0.0.1"/"host": "127.0.0.1",\n     "dns_srv_name": "_mysql._tcp.example.com"/' $binsrv_config_file_path
+
+--error 1
+--exec $BINSRV fetch $binsrv_config_file_path > $binsrv_log_path 2>&1
+
+--let $assert_text = Config validation should fail when both host/port and dns_srv_name are specified
+--let $assert_file = $binsrv_log_path
+--let $assert_count = 1
+--let $assert_select = either dns_srv_name or both host and port must be specified
+--source include/assert_grep.inc
+
+--echo
+--echo *** Cleaning up test environment
+if ($storage_backend == file)
+{
+  --force-rmdir $binsrv_storage_path
+}
+if ($storage_backend == s3)
+{
+  --exec $aws_cli s3 rm s3://$aws_s3_bucket/$binsrv_storage_path/ --recursive > /dev/null 2>&1 || true
+  --force-rmdir $binsrv_buffer_path
+}
+--exec rm -f $binsrv_log_path $binsrv_config_file_path
+
+--echo
+--echo *** Test 7: Invalid DNS SRV name (should fail in fetch mode)
+--let $binsrv_connection_user = root
+--let $binsrv_connection_password = 
+--let $binsrv_connect_timeout = 2
+--let $binsrv_read_timeout = 60
+--let $binsrv_idle_time = 10
+--let $binsrv_verify_checksum = TRUE
+--let $binsrv_replication_mode = position
+--source ../include/set_up_binsrv_environment.inc
+
+# Manually modify config to use dns_srv_name instead of host/port
+--exec sed -i 's/"host": "[^"]*",//' $binsrv_config_file_path
+--exec sed -i 's/"port": *[0-9][0-9]*,//' $binsrv_config_file_path
+--exec sed -i 's/"user":/"dns_srv_name": "_mysql._tcp.nonexistent.invalid",\n     "user":/' $binsrv_config_file_path
+
+--error 1
+--exec $BINSRV fetch $binsrv_config_file_path > $binsrv_log_path 2>&1
+
+--let $assert_text = Invalid DNS SRV name should fail while establishing MySQL connection
+--let $assert_file = $binsrv_log_path
+--let $assert_count = 1
+--let $assert_select = cannot establish MySQL connection: DNS SRV lookup failed with error
+--source include/assert_grep.inc
+
+--echo
+--echo *** Cleaning up test environment
+if ($storage_backend == file)
+{
+  --force-rmdir $binsrv_storage_path
+}
+if ($storage_backend == s3)
+{
+  --exec $aws_cli s3 rm s3://$aws_s3_bucket/$binsrv_storage_path/ --recursive > /dev/null 2>&1 || true
+  --force-rmdir $binsrv_buffer_path
+}
+--exec rm -f $binsrv_log_path $binsrv_config_file_path
+
+if ($MTR_BINSRV_DNS_SRV_NAME != '')
+{
+--echo
+--echo *** Test 8: Valid DNS SRV name (optional - requires DNS configuration)
+--echo *** This test is skipped unless MTR_BINSRV_DNS_SRV_NAME environment
+--echo *** variable is set to a valid DNS SRV record pointing to the MySQL server.
+
+--echo
+--echo *** Resetting replication at the very beginning of the test.
+--disable_query_log
+eval $stmt_reset_binary_logs_and_gtids;
+--enable_query_log
+
+--echo
+--echo *** Creating a simple table and filling it with some data.
+CREATE TABLE t1(id INT UNSIGNED NOT NULL AUTO_INCREMENT, PRIMARY KEY(id)) ENGINE=InnoDB;
+INSERT INTO t1 VALUES(DEFAULT);
+FLUSH BINARY LOGS;
+
+--let $binsrv_connection_user = root
+--let $binsrv_connection_password = 
+--let $binsrv_connect_timeout = 20
+--let $binsrv_read_timeout = 60
+--let $binsrv_idle_time = 10
+--let $binsrv_verify_checksum = TRUE
+--let $binsrv_replication_mode = position
+--source ../include/set_up_binsrv_environment.inc
+
+# Manually modify config to use dns_srv_name instead of host/port
+--exec sed -i 's/"host": "[^"]*",//' $binsrv_config_file_path
+--exec sed -i 's/"port": *[0-9][0-9]*,//' $binsrv_config_file_path
+--exec sed -i "s/\"user\":/\"dns_srv_name\": \"$MTR_BINSRV_DNS_SRV_NAME\",\n     \"user\":/" $binsrv_config_file_path
+
+--echo
+--echo *** Testing fetch with valid DNS SRV name (should succeed)
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+--echo
+--echo *** Verifying that binlog was fetched successfully
+if ($storage_backend == file)
+{
+  --let $assert_text = Binlog file should exist in storage
+  --let $assert_file = $MYSQL_TMP_DIR/dns_srv_check.log
+  --exec ls -la $binsrv_storage_path > $assert_file 2>&1 || true
+  --let $assert_count = 1
+  --let $assert_select = binlog
+  --source include/assert_grep.inc
+  --remove_file $assert_file
+}
+
+DROP TABLE t1;
+
+--echo
+--echo *** Cleaning up test environment
+if ($storage_backend == file)
+{
+  --force-rmdir $binsrv_storage_path
+}
+if ($storage_backend == s3)
+{
+  --exec $aws_cli s3 rm s3://$aws_s3_bucket/$binsrv_storage_path/ --recursive > /dev/null 2>&1 || true
+  --force-rmdir $binsrv_buffer_path
+}
+--exec rm -f $binsrv_log_path $binsrv_config_file_path
+}
+

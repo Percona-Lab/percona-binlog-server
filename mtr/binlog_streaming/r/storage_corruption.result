@@ -1,0 +1,190 @@
+
+*** Testing storage corruption scenarios
+
+*** Resetting replication at the very beginning of the test.
+
+*** Creating a simple table and filling it with some data.
+CREATE TABLE t1(id INT UNSIGNED NOT NULL AUTO_INCREMENT, PRIMARY KEY(id)) ENGINE=InnoDB;
+INSERT INTO t1 VALUES(DEFAULT);
+FLUSH BINARY LOGS;
+
+*** Test 1: Storage with missing binlog.index but containing binlog files
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+
+*** Corrupting storage: removing binlog.index but keeping binlog files
+include/assert_grep.inc [Storage without binlog.index should be rejected]
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.
+
+*** Test 2: Storage with binlog.index containing duplicate entries
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+
+*** Corrupting storage: adding duplicate entry to binlog.index
+include/assert_grep.inc [Duplicate binlog.index entries should be rejected]
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.
+
+*** Test 3: Storage with binlog.index referencing non-existent binlog file
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+
+*** Corrupting storage: adding reference to non-existent binlog
+include/assert_grep.inc [binlog.index references to non-existing objects should be rejected]
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.
+
+*** Test 4: Storage with binlog file not referenced in binlog.index
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+
+*** Corrupting storage: adding orphaned binlog file
+include/assert_grep.inc [Binlog objects not referenced in binlog.index should be rejected]
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.
+
+*** Test 5: Storage with binlog.index containing invalid path
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+
+*** Corrupting storage: adding invalid path to binlog.index
+include/assert_grep.inc [binlog.index entries with invalid paths should be rejected]
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.
+
+*** Test 6: Unsupported top-level storage metadata version
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+include/assert_grep.inc [Unsupported storage metadata version should be rejected]
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.
+
+*** Test 7: Replication mode mismatch with initialized storage
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+include/assert_grep.inc [Replication mode mismatch should be rejected]
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.
+
+*** Test 8: Missing per-binlog metadata file
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+include/assert_grep.inc [Missing binlog metadata should be rejected]
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.
+
+*** Test 9: Per-binlog metadata size mismatch
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+include/assert_grep.inc [Metadata size mismatch should be rejected]
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.
+
+*** Test 10: Metadata file for a non-existing binlog
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+include/assert_grep.inc [Orphaned binlog metadata should be rejected]
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.
+DROP TABLE t1;

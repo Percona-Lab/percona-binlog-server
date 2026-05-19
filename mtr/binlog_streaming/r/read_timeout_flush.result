@@ -1,0 +1,86 @@
+
+*** Test : Storage flush after read_timeout disconnection (PS-10320 fix)
+*** This test verifies that local binary log data is flushed to storage
+*** upon disconnection due to read_timeout
+*** This test also verifies existence of teporary files in buffer directory
+*** in S3 storage mode while binlog_server run is in progress.
+SET SESSION binlog_transaction_compression=ON;
+CREATE TABLE t2(id INT UNSIGNED NOT NULL AUTO_INCREMENT, val CHAR(64), PRIMARY KEY(id)) ENGINE=InnoDB;
+
+*** Starting with a fresh binlog
+FLUSH BINARY LOGS;
+
+*** Setting up binsrv with short read_timeout to trigger timeout
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+
+*** Starting Binlog Server Utility in background in pull mode
+include/read_file_to_var.inc
+
+*** Waiting for binsrv to initialize and create binlog file in storage
+
+*** Step 1: Check initial binlog size (baseline)
+include/read_file_to_var.inc
+
+*** Step 2: Execute INSERT and wait for read_timeout to trigger flush (read_timeout=20, wait 25 seconds)
+INSERT INTO t2(val) VALUES('test_data_before_timeout');
+include/assert_grep.inc [Buffer directory should contain temporary files (UUID format)]
+
+*** Step 3: Check binlog size after read_timeout flush (should have increased)
+include/read_file_to_var.inc
+
+*** Verifying that data was flushed to storage after first read_timeout (PS-10320 fix)
+
+*** Step 4: Wait around idle_time and generate new data in the binary log. verify either in idle_time or upon reconnection data was not flushed to storage.
+INSERT INTO t2(val) VALUES('test_data_after_timeout');
+SET @save_binlog_row_value_options = @@GLOBAL.binlog_row_value_options;
+SET GLOBAL binlog_row_value_options = PARTIAL_JSON;
+Warnings:
+Warning	3647	When binlog_row_image=FULL, the option binlog_row_value_options=PARTIAL_JSON will be used only for the after-image. Full values will be written in the before-image, so the saving in disk space due to binlog_row_value_options is limited to less than 50%.
+UPDATE t2 set val='update_test_data_after_timeout' where val='test_data_after_timeout';
+CREATE TABLE tj (j JSON);
+INSERT INTO tj VALUES('{"name":"john","age":30,"city":"blr"}');
+INSERT INTO tj VALUES('{"arr":[1,2,3],"details":{"salary":5000}}');
+UPDATE tj SET j = JSON_REPLACE(j, '$.city', 'mysore') WHERE JSON_EXTRACT(j, '$.name') = 'john';
+UPDATE tj SET j = JSON_REPLACE(j, '$.arr[1]', 999);
+DROP TABLE tj;
+SET GLOBAL binlog_row_value_options = @save_binlog_row_value_options;
+
+*** Step 5: Check binlog size after around idle time (should NOT have changed - since no flush)
+include/read_file_to_var.inc
+
+*** Verifying that size did NOT change after reconnection (no flush)
+
+*** Step 6: Execute INSERT again
+INSERT INTO t2(val) VALUES('test_data_after_timeout');
+
+*** Step 7: Check size immediately after INSERT ie around idle/reconnection time (should NOT have changed - data in buffer)
+include/read_file_to_var.inc
+
+*** Verifying that size did NOT change immediately after INSERT (data still in buffer)
+
+*** Step 8: Wait for read_timeout to trigger flush again (read_timeout=20)
+
+*** Step 9: Check binlog size after second read_timeout flush (should have increased)
+include/read_file_to_var.inc
+
+*** Verifying that size increased after second read_timeout flush
+FLUSH BINARY LOGS;
+
+*** Terminating the utility
+include/assert_grep.inc [Temporary files shall be cleaned up in buffer directory (UUID format)]
+
+*** Final verification: Compare storage object with server binlog
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.
+DROP TABLE t2;

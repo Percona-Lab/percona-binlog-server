@@ -1,0 +1,99 @@
+
+*** Testing rewrite mode with custom base file name and split size
+
+*** Resetting replication at the very beginning of the test.
+
+*** Determining the original server binlog name.
+
+*** Creating a table and capturing GTIDs before source binlog rotation.
+CREATE TABLE t1(
+id SERIAL,
+val CHAR(64) CHARACTER SET ascii NOT NULL,
+PRIMARY KEY(id)
+) ENGINE=InnoDB;
+INSERT INTO t1(val) VALUES(SHA2('before-rotation', 256));
+
+*** Rotating source binlog; rewrite mode should ignore source file names.
+FLUSH BINARY LOGS;
+
+*** Generating enough GTID transactions to force rewrite file splitting.
+
+*** Setting up rewrite mode with a custom base file name and 1K split size.
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+SET @binsrv_config_json = JSON_SET(@binsrv_config_json, '$.replication.rewrite.base_file_name', 'custom_rewrite');
+
+*** Test 1: Fetching in rewrite mode should create rewritten binlogs.
+include/assert_grep.inc [Rewrite mode should use the configured base file name]
+include/assert_grep.inc [Rewrite mode should split files when configured size is reached]
+include/assert_grep.inc [Rewrite mode should not keep the original first source binlog name]
+include/assert_grep.inc [Rewrite mode should not keep the original second source binlog name]
+
+*** Test 2: GTID search over split workload should span rewritten files.
+include/read_file_to_var.inc
+
+*** Generating more data after the first fetch to verify rewrite resume.
+
+*** Test 3: Fetching again should resume rewritten storage.
+include/assert_grep.inc [Rewrite resume should preserve the configured base file name]
+include/read_file_to_var.inc
+
+*** Test 4: Timestamp search should also expose rewritten file names.
+include/read_file_to_var.inc
+
+*** Removing temporary files.
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.
+
+*** Testing rewrite mode with large file size across source rotations.
+
+*** Creating a table and generating transactions in the first source binlog.
+CREATE TABLE t2(
+id SERIAL,
+val CHAR(64) CHARACTER SET ascii NOT NULL,
+PRIMARY KEY(id)
+) ENGINE=InnoDB;
+
+*** Rotating source binlog and generating more transactions.
+FLUSH BINARY LOGS;
+
+*** Rotating source binlog again and generating final transactions.
+FLUSH BINARY LOGS;
+
+*** Setting up rewrite mode with a large file size.
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+SET @binsrv_config_json = JSON_SET(@binsrv_config_json, '$.replication.rewrite.base_file_name', 'large_rewrite');
+
+*** Test 5: Large rewrite file size should keep all source rotations in one rewritten binlog.
+include/assert_grep.inc [Large rewrite file size should create the first rewritten binlog]
+include/assert_grep.inc [Large rewrite file size should not rotate to a second rewritten binlog]
+
+*** Test 6: GTID search across source rotations should return one rewritten binlog.
+include/read_file_to_var.inc
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.
+
+*** Dropping the tables.
+DROP TABLE t1;
+DROP TABLE t2;

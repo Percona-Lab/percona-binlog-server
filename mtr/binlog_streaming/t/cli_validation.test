@@ -1,0 +1,195 @@
+--source ../include/have_binsrv.inc
+
+--echo
+--echo *** Testing command line argument validation
+
+--echo
+--echo *** Test 1: No arguments (should fail)
+--error 1
+--exec $BINSRV
+
+--echo
+--echo *** Test 2: Invalid operation mode (should fail)
+--error 1
+--exec $BINSRV invalid_mode
+
+--echo
+--echo *** Test 3: Version mode without config file (should succeed)
+--let $binsrv_version_output = $MYSQL_TMP_DIR/binsrv_version_output.txt
+--exec $BINSRV version > $binsrv_version_output 2>&1
+
+--echo
+--echo *** Test 3a: Verify version output format (semantic version)
+--let $assert_text = Version output should match semantic version format (e.g., 0.1.0)
+--let $assert_file = $binsrv_version_output
+--let $assert_count = 1
+--let $assert_select = [0-9]+\.[0-9]+\.[0-9]+
+--source include/assert_grep.inc
+
+--echo
+--echo *** Test 3b: Verify version output is only on stdout (not stderr)
+--let $binsrv_version_stderr = $MYSQL_TMP_DIR/binsrv_version_stderr.txt
+--exec $BINSRV version > $binsrv_version_output 2> $binsrv_version_stderr
+--let $read_from_file = $binsrv_version_stderr
+--source include/read_file_to_var.inc
+--let $stderr_content = $result
+--let $stderr_empty = `SELECT LENGTH('$stderr_content') = 0`
+if ($stderr_empty != 1)
+{
+  --die Version command should not output anything to stderr
+}
+--remove_file $binsrv_version_stderr
+
+--echo
+--echo *** Test 3c: Verify version output is a single line
+--let $read_from_file = $binsrv_version_output
+--source include/read_file_to_var.inc
+--let $version_output = $result
+--let $line_count = `SELECT (LENGTH('$version_output') - LENGTH(REPLACE('$version_output', '\n', '')) + 1)`
+if ($line_count != 1)
+{
+  --die Version command should output exactly one line
+}
+--remove_file $binsrv_version_output
+
+--echo
+--echo *** Test 4: Fetch mode without config file (should fail)
+--error 1
+--exec $BINSRV fetch
+
+--echo
+--echo *** Test 5: Pull mode without config file (should fail)
+--error 1
+--exec $BINSRV pull
+
+--let $binsrv_log_path = $MYSQL_TMP_DIR/binsrv_utility.log
+
+--echo
+--echo *** Test 6: Fetch mode with non-existent config file (should fail)
+--error 1
+--exec $BINSRV fetch /nonexistent/path/config.json > $binsrv_log_path 2>&1
+
+--let $assert_text = Fetch failed since the config file specified doesn't exist.
+--let $assert_file = $binsrv_log_path
+--let $assert_count = 1
+--let $assert_select = exception caught.*cannot open configuration file
+--source include/assert_grep.inc
+--remove_file $binsrv_log_path
+
+--echo
+--echo *** Test 7: Pull mode with non-existent config file (should fail)
+--error 1
+--exec $BINSRV pull /nonexistent/path/config.json > $binsrv_log_path 2>&1
+
+--let $assert_text = Pull failed since the config file specified doesn't exist.
+--let $assert_file = $binsrv_log_path
+--let $assert_count = 1
+--let $assert_select = exception caught.*cannot open configuration file
+--source include/assert_grep.inc
+--remove_file $binsrv_log_path
+
+--echo
+--echo *** Test 8: Too many arguments (should fail)
+--error 1
+--exec $BINSRV fetch config.json extra_arg
+
+--echo
+--echo *** Test 9: Version mode with extra argument (should fail)
+--error 1
+--exec $BINSRV version /nonexistent/path/config.json
+
+--echo
+--echo *** Test 10: Version mode with multiple extra arguments (should fail)
+--error 1
+--exec $BINSRV version arg1 arg2 arg3
+
+--echo
+--echo *** Test 11: Version mode case sensitivity - uppercase (should fail)
+--error 1
+--exec $BINSRV VERSION
+
+--echo
+--echo *** Test 12: Version mode case sensitivity - mixed case (should fail)
+--error 1
+--exec $BINSRV Version
+
+--echo
+--echo *** Test 13: Version mode case sensitivity - VeRsIoN (should fail)
+--error 1
+--exec $BINSRV VeRsIoN
+
+--echo
+--echo *** Test 14: Verify version command exit code is 0
+--let EXPORTED_BINSRV = $BINSRV
+--let EXPORTED_VERSION_OUTPUT = $MYSQL_TMP_DIR/binsrv_version_output_test.txt
+--let EXPORTED_EXIT_CODE_FILE = $MYSQL_TMP_DIR/binsrv_exit_code.txt
+--perl
+  use strict;
+  use warnings;
+  my $binsrv = $ENV{'EXPORTED_BINSRV'};
+  my $output_file = $ENV{'EXPORTED_VERSION_OUTPUT'};
+  my $exit_code_file = $ENV{'EXPORTED_EXIT_CODE_FILE'};
+  
+  system("$binsrv version > $output_file 2>&1 & echo \$? > $exit_code_file");
+EOF
+--let $read_from_file = $MYSQL_TMP_DIR/binsrv_exit_code.txt
+--source include/read_file_to_var.inc
+--let $exit_code = $result
+if ($exit_code != 0)
+{
+  --die Version command should exit with code 0, but got $exit_code
+}
+--remove_file $MYSQL_TMP_DIR/binsrv_exit_code.txt
+--remove_file $MYSQL_TMP_DIR/binsrv_version_output_test.txt
+
+--echo
+--echo *** Test 15: Invalid replication mode value (should fail)
+--let $binsrv_log_path = $MYSQL_TMP_DIR/binsrv_utility.log
+--let $binsrv_connection_host = 127.0.0.1
+--let $binsrv_connect_timeout = 20
+--let $binsrv_read_timeout = 60
+--let $binsrv_idle_time = 10
+--let $binsrv_verify_checksum = TRUE
+--let $binsrv_replication_mode = position
+--source ../include/set_up_binsrv_environment.inc
+
+# Manually modify config to use invalid replication mode
+--exec sed -i 's/"mode": "position"/"mode": "invalid_mode"/' $binsrv_config_file_path
+
+--error 1
+--exec $BINSRV fetch $binsrv_config_file_path > $binsrv_log_path 2>&1
+
+--let $assert_text = Config validation should fail with invalid replication mode
+--let $assert_file = $binsrv_log_path
+--let $assert_count = 1
+--let $assert_select = exception caught|invalid|replication.*mode
+--source include/assert_grep.inc
+--remove_file $binsrv_log_path
+--exec rm -f $binsrv_config_file_path
+
+--echo
+--echo *** Test 16: Missing replication mode (should fail)
+--let $binsrv_log_path = $MYSQL_TMP_DIR/binsrv_utility.log
+--let $binsrv_connection_host = 127.0.0.1
+--let $binsrv_connect_timeout = 20
+--let $binsrv_read_timeout = 60
+--let $binsrv_idle_time = 10
+--let $binsrv_verify_checksum = TRUE
+--let $binsrv_replication_mode = position
+--source ../include/set_up_binsrv_environment.inc
+
+# Manually remove replication mode from config
+--exec sed -i 's/,"mode": "[^"]*"//' $binsrv_config_file_path
+
+--error 1
+--exec $BINSRV fetch $binsrv_config_file_path > $binsrv_log_path 2>&1
+
+--let $assert_text = Config validation should fail with missing replication mode
+--let $assert_file = $binsrv_log_path
+--let $assert_count = 1
+--let $assert_select = exception caught|missing|replication.*mode
+--source include/assert_grep.inc
+--remove_file $binsrv_log_path
+--exec rm -f $binsrv_config_file_path
+
+

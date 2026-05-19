@@ -1,0 +1,365 @@
+--source ../include/have_binsrv.inc
+
+--source ../include/v80_v84_compatibility_defines.inc
+
+# identifying backend storage type ('file' or 's3')
+--source ../include/identify_storage_backend.inc
+
+--echo
+--echo *** Testing storage corruption scenarios
+
+--echo
+--echo *** Resetting replication at the very beginning of the test.
+--disable_query_log
+eval $stmt_reset_binary_logs_and_gtids;
+--enable_query_log
+
+--echo
+--echo *** Creating a simple table and filling it with some data.
+CREATE TABLE t1(id INT UNSIGNED NOT NULL AUTO_INCREMENT, PRIMARY KEY(id)) ENGINE=InnoDB;
+INSERT INTO t1 VALUES(DEFAULT);
+FLUSH BINARY LOGS;
+
+--let $first_binlog = query_get_value($stmt_show_binary_log_status, File, 1)
+
+--echo
+--echo *** Test 1: Storage with missing binlog.index but containing binlog files
+--let $binsrv_connect_timeout = 20
+--let $binsrv_read_timeout = 60
+--let $binsrv_idle_time = 10
+--let $binsrv_verify_checksum = TRUE
+--let $binsrv_replication_mode = position
+--source ../include/set_up_binsrv_environment.inc
+
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+--echo
+--echo *** Corrupting storage: removing binlog.index but keeping binlog files
+if ($storage_backend == file)
+{
+  --remove_file $binsrv_storage_path/binlog.index
+  --write_file $binsrv_storage_path/dummy.binlog
+    dummy content
+  EOF
+}
+if ($storage_backend == s3)
+{
+  --exec $aws_cli s3 rm s3://$aws_s3_bucket/$binsrv_storage_path/binlog.index > /dev/null
+  --exec echo "dummy content" | $aws_cli s3 cp - s3://$aws_s3_bucket/$binsrv_storage_path/dummy.binlog > /dev/null
+}
+
+--error 1
+--exec $BINSRV fetch $binsrv_config_file_path > $binsrv_log_path 2>&1
+
+--let $assert_text = Storage without binlog.index should be rejected
+--let $assert_file = $binsrv_log_path
+--let $assert_count = 1
+--let $assert_select = storage is not empty but does not contain binlog index
+--source include/assert_grep.inc
+
+--source ../include/tear_down_binsrv_environment.inc
+
+--echo
+--echo *** Test 2: Storage with binlog.index containing duplicate entries
+--source ../include/set_up_binsrv_environment.inc
+
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+--echo
+--echo *** Corrupting storage: adding duplicate entry to binlog.index
+if ($storage_backend == file)
+{
+  --exec cat $binsrv_storage_path/binlog.index > $MYSQL_TMP_DIR/temp_index
+  --exec echo "./$first_binlog" >> $MYSQL_TMP_DIR/temp_index
+  --exec cp $MYSQL_TMP_DIR/temp_index $binsrv_storage_path/binlog.index
+  --remove_file $MYSQL_TMP_DIR/temp_index
+}
+if ($storage_backend == s3)
+{
+  --exec $aws_cli s3 cp s3://$aws_s3_bucket/$binsrv_storage_path/binlog.index $MYSQL_TMP_DIR/temp_index > /dev/null
+  --exec echo "./$first_binlog" >> $MYSQL_TMP_DIR/temp_index
+  --exec $aws_cli s3 cp $MYSQL_TMP_DIR/temp_index s3://$aws_s3_bucket/$binsrv_storage_path/binlog.index > /dev/null
+  --remove_file $MYSQL_TMP_DIR/temp_index
+}
+
+--error 1
+--exec $BINSRV fetch $binsrv_config_file_path > $binsrv_log_path 2>&1
+
+--let $assert_text = Duplicate binlog.index entries should be rejected
+--let $assert_file = $binsrv_log_path
+--let $assert_count = 1
+--let $assert_select = binlog index contains a duplicate entry
+--source include/assert_grep.inc
+
+--source ../include/tear_down_binsrv_environment.inc
+
+--echo
+--echo *** Test 3: Storage with binlog.index referencing non-existent binlog file
+--source ../include/set_up_binsrv_environment.inc
+
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+--echo
+--echo *** Corrupting storage: adding reference to non-existent binlog
+if ($storage_backend == file)
+{
+  --exec cat $binsrv_storage_path/binlog.index > $MYSQL_TMP_DIR/temp_index
+  --exec echo "./nonexistent.999999" >> $MYSQL_TMP_DIR/temp_index
+  --exec cp $MYSQL_TMP_DIR/temp_index $binsrv_storage_path/binlog.index
+  --remove_file $MYSQL_TMP_DIR/temp_index
+}
+if ($storage_backend == s3)
+{
+  --exec $aws_cli s3 cp s3://$aws_s3_bucket/$binsrv_storage_path/binlog.index $MYSQL_TMP_DIR/temp_index > /dev/null
+  --exec echo "./nonexistent.999999" >> $MYSQL_TMP_DIR/temp_index
+  --exec $aws_cli s3 cp $MYSQL_TMP_DIR/temp_index s3://$aws_s3_bucket/$binsrv_storage_path/binlog.index > /dev/null
+  --remove_file $MYSQL_TMP_DIR/temp_index
+}
+
+--error 1
+--exec $BINSRV fetch $binsrv_config_file_path > $binsrv_log_path 2>&1
+
+--let $assert_text = binlog.index references to non-existing objects should be rejected
+--let $assert_file = $binsrv_log_path
+--let $assert_count = 1
+--let $assert_select = binlog index contains a reference to a non-existing object
+--source include/assert_grep.inc
+
+--source ../include/tear_down_binsrv_environment.inc
+
+--echo
+--echo *** Test 4: Storage with binlog file not referenced in binlog.index
+--source ../include/set_up_binsrv_environment.inc
+
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+--echo
+--echo *** Corrupting storage: adding orphaned binlog file
+if ($storage_backend == file)
+{
+  --write_file $binsrv_storage_path/orphaned.binlog
+    dummy binlog content
+  EOF
+}
+if ($storage_backend == s3)
+{
+  --exec echo "dummy binlog content" | $aws_cli s3 cp - s3://$aws_s3_bucket/$binsrv_storage_path/orphaned.binlog > /dev/null
+}
+
+--error 1
+--exec $BINSRV fetch $binsrv_config_file_path > $binsrv_log_path 2>&1
+
+--let $assert_text = Binlog objects not referenced in binlog.index should be rejected
+--let $assert_file = $binsrv_log_path
+--let $assert_count = 1
+--let $assert_select = storage contains an object that is not referenced in the binlog index
+--source include/assert_grep.inc
+
+--source ../include/tear_down_binsrv_environment.inc
+
+--echo
+--echo *** Test 5: Storage with binlog.index containing invalid path
+--source ../include/set_up_binsrv_environment.inc
+
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+--echo
+--echo *** Corrupting storage: adding invalid path to binlog.index
+if ($storage_backend == file)
+{
+  --exec cat $binsrv_storage_path/binlog.index > $MYSQL_TMP_DIR/temp_index
+  --exec echo "../invalid/path.binlog" >> $MYSQL_TMP_DIR/temp_index
+  --exec cp $MYSQL_TMP_DIR/temp_index $binsrv_storage_path/binlog.index
+  --remove_file $MYSQL_TMP_DIR/temp_index
+}
+if ($storage_backend == s3)
+{
+  --exec $aws_cli s3 cp s3://$aws_s3_bucket/$binsrv_storage_path/binlog.index $MYSQL_TMP_DIR/temp_index > /dev/null
+  --exec echo "../invalid/path.binlog" >> $MYSQL_TMP_DIR/temp_index
+  --exec $aws_cli s3 cp $MYSQL_TMP_DIR/temp_index s3://$aws_s3_bucket/$binsrv_storage_path/binlog.index > /dev/null
+  --remove_file $MYSQL_TMP_DIR/temp_index
+}
+
+--error 1
+--exec $BINSRV fetch $binsrv_config_file_path > $binsrv_log_path 2>&1
+
+--let $assert_text = binlog.index entries with invalid paths should be rejected
+--let $assert_file = $binsrv_log_path
+--let $assert_count = 1
+--let $assert_select = binlog index contains an entry that has an invalid path
+--source include/assert_grep.inc
+
+--source ../include/tear_down_binsrv_environment.inc
+
+--echo
+--echo *** Test 6: Unsupported top-level storage metadata version
+--source ../include/set_up_binsrv_environment.inc
+
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+if ($storage_backend == file)
+{
+  --write_file $binsrv_storage_path/metadata.json
+{"version":0,"mode":"position"}
+EOF
+}
+if ($storage_backend == s3)
+{
+  --let $corrupt_metadata_file = $MYSQL_TMP_DIR/corrupt_metadata.json
+  --write_file $corrupt_metadata_file
+{"version":0,"mode":"position"}
+EOF
+  --exec $aws_cli s3 cp $corrupt_metadata_file s3://$aws_s3_bucket/$binsrv_storage_path/metadata.json > /dev/null
+  --remove_file $corrupt_metadata_file
+}
+
+--error 1
+--exec $BINSRV fetch $binsrv_config_file_path > $binsrv_log_path 2>&1
+--let $assert_text = Unsupported storage metadata version should be rejected
+--let $assert_file = $binsrv_log_path
+--let $assert_count = 1
+--let $assert_select = unsupported storage metadata version
+--source include/assert_grep.inc
+
+--source ../include/tear_down_binsrv_environment.inc
+
+--echo
+--echo *** Test 7: Replication mode mismatch with initialized storage
+--source ../include/set_up_binsrv_environment.inc
+
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+--let EXPORTED_BINSRV_CONFIG_FILE_PATH = $binsrv_config_file_path
+--perl
+  use strict;
+  use warnings;
+  my $config_file = $ENV{'EXPORTED_BINSRV_CONFIG_FILE_PATH'};
+  open(my $in, '<', $config_file) or die "Failed to open config file: $!";
+  local $/;
+  my $config = <$in>;
+  close($in);
+  $config =~ s/"mode"\s*:\s*"position"/"mode":"gtid"/
+      or die "Failed to replace replication mode";
+  open(my $out, '>', $config_file) or die "Failed to write config file: $!";
+  print {$out} $config;
+  close($out) or die "Failed to close config file: $!";
+EOF
+
+--error 1
+--exec $BINSRV fetch $binsrv_config_file_path > $binsrv_log_path 2>&1
+--let $assert_text = Replication mode mismatch should be rejected
+--let $assert_file = $binsrv_log_path
+--let $assert_count = 1
+--let $assert_select = replication mode provided to initialize storage differs from the one stored in metadata
+--source include/assert_grep.inc
+
+--source ../include/tear_down_binsrv_environment.inc
+
+--echo
+--echo *** Test 8: Missing per-binlog metadata file
+--source ../include/set_up_binsrv_environment.inc
+
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+if ($storage_backend == file)
+{
+  --remove_file $binsrv_storage_path/$first_binlog.json
+}
+if ($storage_backend == s3)
+{
+  --exec $aws_cli s3 rm s3://$aws_s3_bucket/$binsrv_storage_path/$first_binlog.json > /dev/null
+}
+
+--error 1
+--exec $BINSRV fetch $binsrv_config_file_path > $binsrv_log_path 2>&1
+--let $assert_text = Missing binlog metadata should be rejected
+--let $assert_file = $binsrv_log_path
+--let $assert_count = 1
+--let $assert_select = missing metadata for a binlog listed in the binlog index
+--source include/assert_grep.inc
+
+--source ../include/tear_down_binsrv_environment.inc
+
+--echo
+--echo *** Test 9: Per-binlog metadata size mismatch
+--source ../include/set_up_binsrv_environment.inc
+
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+--let $binlog_metadata_file = $MYSQL_TMP_DIR/binlog_metadata_corrupt.json
+if ($storage_backend == file)
+{
+  --copy_file $binsrv_storage_path/$first_binlog.json $binlog_metadata_file
+}
+if ($storage_backend == s3)
+{
+  --exec $aws_cli s3 cp s3://$aws_s3_bucket/$binsrv_storage_path/$first_binlog.json $binlog_metadata_file > /dev/null
+}
+
+--let EXPORTED_BINLOG_METADATA_FILE = $binlog_metadata_file
+--perl
+  use strict;
+  use warnings;
+  my $metadata_file = $ENV{'EXPORTED_BINLOG_METADATA_FILE'};
+  open(my $in, '<', $metadata_file) or die "Failed to open metadata file: $!";
+  local $/;
+  my $metadata = <$in>;
+  close($in);
+  $metadata =~ s/"size"\s*:\s*\d+/"size":1/
+      or die "Failed to replace metadata size";
+  open(my $out, '>', $metadata_file) or die "Failed to write metadata file: $!";
+  print {$out} $metadata;
+  close($out) or die "Failed to close metadata file: $!";
+EOF
+
+if ($storage_backend == file)
+{
+  --copy_file $binlog_metadata_file $binsrv_storage_path/$first_binlog.json
+}
+if ($storage_backend == s3)
+{
+  --exec $aws_cli s3 cp $binlog_metadata_file s3://$aws_s3_bucket/$binsrv_storage_path/$first_binlog.json > /dev/null
+}
+--remove_file $binlog_metadata_file
+
+--error 1
+--exec $BINSRV fetch $binsrv_config_file_path > $binsrv_log_path 2>&1
+--let $assert_text = Metadata size mismatch should be rejected
+--let $assert_file = $binsrv_log_path
+--let $assert_count = 1
+--let $assert_select = size from the binlog metadata does not match the actual binlog size
+--source include/assert_grep.inc
+
+--source ../include/tear_down_binsrv_environment.inc
+
+--echo
+--echo *** Test 10: Metadata file for a non-existing binlog
+--source ../include/set_up_binsrv_environment.inc
+
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+if ($storage_backend == file)
+{
+  --copy_file $binsrv_storage_path/$first_binlog.json $binsrv_storage_path/orphaned.000001.json
+}
+if ($storage_backend == s3)
+{
+  --exec $aws_cli s3 cp s3://$aws_s3_bucket/$binsrv_storage_path/$first_binlog.json s3://$aws_s3_bucket/$binsrv_storage_path/orphaned.000001.json > /dev/null
+}
+
+--error 1
+--exec $BINSRV fetch $binsrv_config_file_path > $binsrv_log_path 2>&1
+--let $assert_text = Orphaned binlog metadata should be rejected
+--let $assert_file = $binsrv_log_path
+--let $assert_count = 1
+--let $assert_select = found metadata for a non-existing binlog
+--source include/assert_grep.inc
+
+--source ../include/tear_down_binsrv_environment.inc
+
+DROP TABLE t1;
+
+
+
+
+

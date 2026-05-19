@@ -54,6 +54,12 @@ include/read_file_to_var.inc
 ***    files to be returned
 include/read_file_to_var.inc
 
+*** Search response should include useful metadata fields.
+
+*** Storage URI in the response should match the configured backend.
+
+*** GTID fields should only be present for GTID storage.
+
 *** Removing the search result file.
 
 *** Dropping the table.

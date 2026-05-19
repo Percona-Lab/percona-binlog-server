@@ -1,0 +1,93 @@
+
+*** Testing connection failure scenarios
+
+*** Test 1: Invalid host (should fail in fetch mode)
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+include/assert_grep.inc [Invalid host should fail while establishing MySQL connection]
+
+*** Cleaning up test environment
+
+*** Test 2: Invalid port (should fail in fetch mode)
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+include/assert_grep.inc [Invalid port should fail config extraction]
+
+*** Cleaning up test environment
+
+*** Test 3: Invalid user credentials (should fail in fetch mode)
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+include/assert_grep.inc [Invalid credentials should fail with access denied]
+
+*** Cleaning up test environment
+
+*** Test 4: User without REPLICATION SLAVE privilege (should fail)
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+include/assert_grep.inc [User without replication privilege should fail with access denied]
+
+*** Cleaning up test environment
+
+*** Test 5: No mysql server running on host (fail in fetch mode)
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+include/assert_grep.inc [Connection timeout should fail while establishing MySQL connection]
+
+*** Cleaning up test environment
+
+*** Test 6: DNS SRV name with host/port (should fail - validation error)
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+include/assert_grep.inc [Config validation should fail when both host/port and dns_srv_name are specified]
+
+*** Cleaning up test environment
+
+*** Test 7: Invalid DNS SRV name (should fail in fetch mode)
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+include/assert_grep.inc [Invalid DNS SRV name should fail while establishing MySQL connection]
+
+*** Cleaning up test environment

@@ -120,6 +120,38 @@ INSERT INTO t1 VALUES();
 --assert(`SELECT JSON_EXTRACT('$result', '$.result[1].name') = '$second_binlog'`)
 
 --echo
+--echo *** Search response should include useful metadata fields.
+--assert(`SELECT JSON_EXTRACT('$result', '$.result[0].size') > 4`)
+--assert(`SELECT JSON_UNQUOTE(JSON_EXTRACT('$result', '$.result[0].uri')) != ''`)
+--assert(`SELECT JSON_UNQUOTE(JSON_EXTRACT('$result', '$.result[0].min_timestamp')) != ''`)
+--assert(`SELECT JSON_UNQUOTE(JSON_EXTRACT('$result', '$.result[0].max_timestamp')) != ''`)
+--assert(`SELECT JSON_UNQUOTE(JSON_EXTRACT('$result', '$.result[0].min_timestamp')) <= JSON_UNQUOTE(JSON_EXTRACT('$result', '$.result[0].max_timestamp'))`)
+
+--echo
+--echo *** Storage URI in the response should match the configured backend.
+if ($storage_backend == file)
+{
+  --assert(`SELECT JSON_UNQUOTE(JSON_EXTRACT('$result', '$.result[0].uri')) LIKE 'file:%'`)
+}
+if ($storage_backend == s3)
+{
+  --assert(`SELECT JSON_UNQUOTE(JSON_EXTRACT('$result', '$.result[0].uri')) LIKE 's3:%' OR JSON_UNQUOTE(JSON_EXTRACT('$result', '$.result[0].uri')) LIKE 'http:%' OR JSON_UNQUOTE(JSON_EXTRACT('$result', '$.result[0].uri')) LIKE 'https:%'`)
+}
+
+--echo
+--echo *** GTID fields should only be present for GTID storage.
+if ($binsrv_replication_mode == gtid)
+{
+  --assert(`SELECT JSON_CONTAINS_PATH('$result', 'one', '$.result[0].previous_gtids')`)
+  --assert(`SELECT JSON_CONTAINS_PATH('$result', 'one', '$.result[0].added_gtids')`)
+}
+if ($binsrv_replication_mode == position)
+{
+  --assert(`SELECT JSON_CONTAINS_PATH('$result', 'one', '$.result[0].previous_gtids') = 0`)
+  --assert(`SELECT JSON_CONTAINS_PATH('$result', 'one', '$.result[0].added_gtids') = 0`)
+}
+
+--echo
 --echo *** Removing the search result file.
 --remove_file $read_from_file
 

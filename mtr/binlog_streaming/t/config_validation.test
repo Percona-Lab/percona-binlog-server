@@ -1,0 +1,329 @@
+--source ../include/have_binsrv.inc
+
+--echo
+--echo *** Testing configuration parsing and validation failures
+
+--let $binsrv_cmd_output = $MYSQL_TMP_DIR/binsrv_config_validation.out
+--let $binsrv_config_file_path = $MYSQL_TMP_DIR/binsrv_config_validation.json
+--let $binsrv_log_path = $MYSQL_TMP_DIR/binsrv_config_validation.log
+--let $binsrv_storage_path = $MYSQL_TMP_DIR/config_validation_storage
+--let EXPORTED_BINSRV_CONFIG_FILE_PATH = $binsrv_config_file_path
+--replace_result $MYSQL_TMP_DIR MYSQL_TMP_DIR
+--echo
+--echo *** Test 1: Empty configuration file
+--perl
+  use strict;
+  use warnings;
+  my $config_file = $ENV{'EXPORTED_BINSRV_CONFIG_FILE_PATH'};
+  open(my $fh, '>', $config_file) or die "Failed to open config file: $!";
+  close($fh) or die "Failed to close config file: $!";
+EOF
+
+--error 1
+--exec $BINSRV fetch $binsrv_config_file_path > $binsrv_cmd_output 2>&1
+--let $assert_text = Empty config file should be rejected
+--let $assert_file = $binsrv_cmd_output
+--let $assert_count = 1
+--let $assert_select = configuration file is empty
+--source include/assert_grep.inc
+
+--remove_file $binsrv_config_file_path
+--remove_file $binsrv_cmd_output
+
+--echo
+--echo *** Test 2: Malformed JSON configuration file
+--perl
+  use strict;
+  use warnings;
+  my $config_file = $ENV{'EXPORTED_BINSRV_CONFIG_FILE_PATH'};
+  open(my $fh, '>', $config_file) or die "Failed to open config file: $!";
+  print {$fh} "{\n";
+  close($fh) or die "Failed to close config file: $!";
+EOF
+
+--error 1
+--exec $BINSRV fetch $binsrv_config_file_path > $binsrv_cmd_output 2>&1
+--let $assert_text = Malformed JSON config should be rejected
+--let $assert_file = $binsrv_cmd_output
+--let $assert_count = 1
+--let $assert_select = exception caught
+--source include/assert_grep.inc
+
+--remove_file $binsrv_config_file_path
+--remove_file $binsrv_cmd_output
+
+--echo
+--echo *** Test 3: Oversized configuration file
+--perl
+  use strict;
+  use warnings;
+  my $config_file = $ENV{'EXPORTED_BINSRV_CONFIG_FILE_PATH'};
+  open(my $fh, '>', $config_file) or die "Failed to open config file: $!";
+  print {$fh} 'x' x (1024 * 1024 + 1);
+  close($fh) or die "Failed to close config file: $!";
+EOF
+
+--error 1
+--exec $BINSRV fetch $binsrv_config_file_path > $binsrv_cmd_output 2>&1
+--let $assert_text = Oversized config file should be rejected
+--let $assert_file = $binsrv_cmd_output
+--let $assert_count = 1
+--let $assert_select = configuration file is too large
+--source include/assert_grep.inc
+
+--remove_file $binsrv_config_file_path
+--remove_file $binsrv_cmd_output
+
+--echo
+--echo *** Preparing reusable local storage directory and config values
+--mkdir $binsrv_storage_path
+--replace_result $MYSQL_TMP_DIR MYSQL_TMP_DIR
+eval SET @config_validation_log_path = '$binsrv_log_path';
+--replace_result $MYSQL_TMP_DIR MYSQL_TMP_DIR
+eval SET @config_validation_storage_uri = CONCAT('file://', '$binsrv_storage_path');
+
+--echo
+--echo *** Test 4: Rewrite mode cannot be used with position replication
+eval SET @binsrv_config_json = JSON_OBJECT(
+  'logger', JSON_OBJECT('level', 'error', 'file', @config_validation_log_path),
+  'connection', JSON_OBJECT(
+     'host', '127.0.0.1',
+     'port', @@global.port,
+     'user', 'root',
+     'password', '',
+     'connect_timeout', 20,
+     'read_timeout', 60,
+     'write_timeout', 60
+  ),
+  'replication', JSON_OBJECT(
+     'server_id', @@server_id + 1,
+     'idle_time', 10,
+     'verify_checksum', TRUE,
+     'mode', 'position',
+     'rewrite', JSON_OBJECT('base_file_name', 'rewritten', 'file_size', '1K')
+  ),
+  'storage', JSON_OBJECT(
+     'backend', 'file',
+     'uri', @config_validation_storage_uri
+  )
+);
+--let $write_var = `SELECT @binsrv_config_json`
+--let $write_to_file = $binsrv_config_file_path
+--source include/write_var_to_file.inc
+
+--error 1
+--exec $BINSRV fetch $binsrv_config_file_path > $binsrv_cmd_output 2>&1
+--let $assert_text = Rewrite mode in position replication should fail validation
+--let $assert_file = $binsrv_cmd_output
+--let $assert_count = 1
+--let $assert_select = rewrite can only be enabled in gtid replication mode
+--source include/assert_grep.inc
+
+--echo
+--echo *** Test 5: Rewrite file size below minimum
+eval SET @binsrv_config_json = JSON_SET(@binsrv_config_json,
+  '$.replication.mode', 'gtid',
+  '$.replication.rewrite.file_size', '1023'
+);
+--let $write_var = `SELECT @binsrv_config_json`
+--source include/write_var_to_file.inc
+
+--error 1
+--exec $BINSRV fetch $binsrv_config_file_path > $binsrv_cmd_output 2>&1
+--let $assert_text = Rewrite file size below 1024 bytes should fail validation
+--let $assert_file = $binsrv_cmd_output
+--let $assert_count = 1
+--let $assert_select = file size must be >= 1024 bytes
+--source include/assert_grep.inc
+
+--echo
+--echo *** Test 6: Invalid checkpoint_size unit
+eval SET @binsrv_config_json = JSON_REMOVE(@binsrv_config_json, '$.replication.rewrite');
+eval SET @binsrv_config_json = JSON_SET(@binsrv_config_json,
+  '$.replication.mode', 'position',
+  '$.storage.checkpoint_size', 'abc'
+);
+--let $write_var = `SELECT @binsrv_config_json`
+--source include/write_var_to_file.inc
+
+--error 1
+--exec $BINSRV fetch $binsrv_config_file_path > $binsrv_cmd_output 2>&1
+--let $assert_text = Invalid checkpoint size should fail parsing
+--let $assert_file = $binsrv_cmd_output
+--let $assert_count = 1
+--let $assert_select = unable to extract "storage.checkpoint_size"
+--source include/assert_grep.inc
+
+--echo
+--echo *** Test 7: Invalid checkpoint_interval unit
+eval SET @binsrv_config_json = JSON_REMOVE(@binsrv_config_json, '$.storage.checkpoint_size');
+eval SET @binsrv_config_json = JSON_SET(@binsrv_config_json,
+  '$.storage.checkpoint_interval', '5w'
+);
+--let $write_var = `SELECT @binsrv_config_json`
+--source include/write_var_to_file.inc
+
+--error 1
+--exec $BINSRV fetch $binsrv_config_file_path > $binsrv_cmd_output 2>&1
+--let $assert_text = Invalid checkpoint interval should fail parsing
+--let $assert_file = $binsrv_cmd_output
+--let $assert_count = 1
+--let $assert_select = unable to extract "storage.checkpoint_interval"
+--source include/assert_grep.inc
+
+--echo
+--echo *** Test 8: Connection config without host/port or DNS SRV name
+eval SET @binsrv_config_json = JSON_REMOVE(@binsrv_config_json, '$.storage.checkpoint_interval');
+eval SET @binsrv_config_json = JSON_REMOVE(@binsrv_config_json, '$.connection.host');
+eval SET @binsrv_config_json = JSON_REMOVE(@binsrv_config_json, '$.connection.port');
+--let $write_var = `SELECT @binsrv_config_json`
+--source include/write_var_to_file.inc
+
+--error 1
+--exec $BINSRV fetch $binsrv_config_file_path > $binsrv_cmd_output 2>&1
+--let $assert_text = Connection config must specify DNS SRV or host and port
+--let $assert_file = $binsrv_cmd_output
+--let $assert_count = 1
+--let $assert_select = either dns_srv_name or both host and port must be specified
+--source include/assert_grep.inc
+
+--echo
+--echo *** Test 9: File URI with userinfo
+--replace_result $MYSQL_TMP_DIR MYSQL_TMP_DIR
+eval SET @file_uri_with_userinfo = CONCAT('file://user:pass@', '$binsrv_storage_path');
+eval SET @binsrv_config_json = JSON_SET(@binsrv_config_json,
+  '$.connection.host', '127.0.0.1',
+  '$.connection.port', @@global.port,
+  '$.storage.uri', @file_uri_with_userinfo
+);
+--let $write_var = `SELECT @binsrv_config_json`
+--source include/write_var_to_file.inc
+
+--error 1
+--exec $BINSRV fetch $binsrv_config_file_path > $binsrv_cmd_output 2>&1
+--let $assert_text = File URI with userinfo should be rejected
+--let $assert_file = $binsrv_log_path
+--let $assert_count = 1
+--let $assert_select = file URI must not have userinfo
+--source include/assert_grep.inc
+--remove_file $binsrv_log_path
+
+--echo
+--echo *** Test 10: File URI with query string
+--replace_result $MYSQL_TMP_DIR MYSQL_TMP_DIR
+eval SET @file_uri_with_query = CONCAT('file://', '$binsrv_storage_path', '?x=1');
+eval SET @binsrv_config_json = JSON_SET(@binsrv_config_json,
+  '$.storage.uri', @file_uri_with_query
+);
+--let $write_var = `SELECT @binsrv_config_json`
+--source include/write_var_to_file.inc
+
+--error 1
+--exec $BINSRV fetch $binsrv_config_file_path > $binsrv_cmd_output 2>&1
+--let $assert_text = File URI with query string should be rejected
+--let $assert_file = $binsrv_log_path
+--let $assert_count = 1
+--let $assert_select = file URI must not have query
+--source include/assert_grep.inc
+--remove_file $binsrv_log_path
+
+--echo
+--echo *** Test 11: File URI with missing path
+eval SET @binsrv_config_json = JSON_SET(@binsrv_config_json,
+  '$.storage.uri', 'file://'
+);
+--let $write_var = `SELECT @binsrv_config_json`
+--source include/write_var_to_file.inc
+
+--error 1
+--exec $BINSRV fetch $binsrv_config_file_path > $binsrv_cmd_output 2>&1
+--let $assert_text = File URI with missing path should be rejected
+--let $assert_file = $binsrv_log_path
+--let $assert_count = 1
+--let $assert_select = root path does not exist
+--source include/assert_grep.inc
+--remove_file $binsrv_log_path
+
+--echo
+--echo *** Test 12: File URI with host
+eval SET @binsrv_config_json = JSON_SET(@binsrv_config_json,
+  '$.storage.uri', 'file://host/path'
+);
+--let $write_var = `SELECT @binsrv_config_json`
+--source include/write_var_to_file.inc
+
+--error 1
+--exec $BINSRV fetch $binsrv_config_file_path > $binsrv_cmd_output 2>&1
+--let $assert_text = File URI with host should be rejected
+--let $assert_file = $binsrv_log_path
+--let $assert_count = 1
+--let $assert_select = file URI must not have host
+--source include/assert_grep.inc
+--remove_file $binsrv_log_path
+
+--echo
+--echo *** Test 13: Storage directory does not exist
+--let $missing_binsrv_storage_path = $MYSQL_TMP_DIR/nonexistent_config_validation_storage
+--replace_result $MYSQL_TMP_DIR MYSQL_TMP_DIR
+eval SET @missing_file_uri = CONCAT('file://', '$missing_binsrv_storage_path');
+eval SET @binsrv_config_json = JSON_SET(@binsrv_config_json,
+  '$.storage.uri', @missing_file_uri
+);
+--let $write_var = `SELECT @binsrv_config_json`
+--source include/write_var_to_file.inc
+
+--error 1
+--exec $BINSRV fetch $binsrv_config_file_path > $binsrv_cmd_output 2>&1
+--let $assert_text = Missing storage directory should be rejected
+--let $assert_file = $binsrv_log_path
+--let $assert_count = 1
+--let $assert_select = root path does not exist
+--source include/assert_grep.inc
+--remove_file $binsrv_log_path
+
+--echo
+--echo *** Test 14: Storage path is a file, not a directory
+--let $storage_file_path = $MYSQL_TMP_DIR/config_validation_storage_file
+--exec echo "dummy file content" > $storage_file_path
+--replace_result $MYSQL_TMP_DIR MYSQL_TMP_DIR
+eval SET @storage_file_uri = CONCAT('file://', '$storage_file_path');
+eval SET @binsrv_config_json = JSON_SET(@binsrv_config_json,
+  '$.storage.uri', @storage_file_uri
+);
+--let $write_var = `SELECT @binsrv_config_json`
+--source include/write_var_to_file.inc
+
+--error 1
+--exec $BINSRV fetch $binsrv_config_file_path > $binsrv_cmd_output 2>&1
+--let $assert_text = Storage path that is a file should be rejected
+--let $assert_file = $binsrv_log_path
+--let $assert_count = 1
+--let $assert_select = root path is not a directory
+--source include/assert_grep.inc
+--remove_file $binsrv_log_path
+
+--echo
+--echo *** Test 15: Storage directory containing a subdirectory
+eval SET @binsrv_config_json = JSON_SET(@binsrv_config_json,
+  '$.storage.uri', @config_validation_storage_uri
+);
+--let $write_var = `SELECT @binsrv_config_json`
+--source include/write_var_to_file.inc
+--mkdir $binsrv_storage_path/nested_directory
+
+--error 1
+--exec $BINSRV fetch $binsrv_config_file_path > $binsrv_cmd_output 2>&1
+--let $assert_text = Storage directory entries must be regular files
+--let $assert_file = $binsrv_log_path
+--let $assert_count = 1
+--let $assert_select = storage directory contains an entry that is not a regular file
+--source include/assert_grep.inc
+
+--remove_file $storage_file_path
+--force-rmdir $binsrv_storage_path/nested_directory
+--force-rmdir $binsrv_storage_path
+--remove_file $binsrv_config_file_path
+--remove_file $binsrv_cmd_output
+--remove_file $binsrv_log_path
+
+

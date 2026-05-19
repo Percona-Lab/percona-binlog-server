@@ -60,6 +60,38 @@ INSERT INTO t1 VALUES(DEFAULT);
 --let $assert_select = binlog storage initialized on an empty directory
 --source include/assert_grep.inc
 
+--echo
+--echo *** Verifying that binlog files were written to storage
+--let $assert_text = First binlog should exist in storage
+--let $assert_file = $MYSQL_TMP_DIR/storage_check.log
+if ($storage_backend == file)
+{
+  --exec ls -la $binsrv_storage_path/$first_binlog > $assert_file 2>&1 || true
+}
+if ($storage_backend == s3)
+{
+  --exec $aws_cli s3 ls s3://$aws_s3_bucket/$binsrv_storage_path/$first_binlog > $assert_file 2>&1 || true
+}
+--let $assert_count = 2
+--let $assert_select = $first_binlog
+--source include/assert_grep.inc
+--remove_file $assert_file
+
+--let $assert_text = Second binlog also hould exist in storage
+--let $assert_file = $MYSQL_TMP_DIR/storage_check.log
+if ($storage_backend == file)
+{
+  --exec ls -la $binsrv_storage_path/$second_binlog > $assert_file 2>&1 || true
+}
+if ($storage_backend == s3)
+{
+  --exec $aws_cli s3 ls s3://$aws_s3_bucket/$binsrv_storage_path/$second_binlog > $assert_file 2>&1 || true
+}
+--let $assert_count = 2
+--let $assert_select = $second_binlog
+--source include/assert_grep.inc
+--remove_file $assert_file
+
 # At this point we have 2 binlog files $first_binlog (already closed/rotated
 # by the server) and $second_binlog (currently open).
 

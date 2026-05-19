@@ -1,0 +1,138 @@
+--source ../include/have_binsrv.inc
+
+--let $localhost_ip = 127.0.0.1
+
+--let $user_name = test_ssl_user
+--let $user_password = test_password
+
+--echo
+--echo *** Testing SSL/TLS negative scenarios
+
+--echo
+--echo *** Creating test user without SSL requirement
+eval CREATE USER IF NOT EXISTS '$user_name'@'$localhost_ip' IDENTIFIED BY '$user_password';
+eval GRANT REPLICATION SLAVE ON *.* TO '$user_name'@'$localhost_ip';
+
+# identifying backend storage type ('file' or 's3')
+--source ../include/identify_storage_backend.inc
+
+#--let $skip_binsrv_log_path_cleanup = 1
+
+--echo
+--echo *** Test 1: SSL mode verify_ca without CA certificate (should fail)
+--let $binsrv_connection_host = $localhost_ip
+--let $binsrv_connection_user = $user_name
+--let $binsrv_connection_password = $user_password
+--let $binsrv_connect_timeout = 5
+--let $binsrv_read_timeout = 60
+--let $binsrv_idle_time = 10
+--let $binsrv_verify_checksum = TRUE
+--let $binsrv_ssl_mode = verify_ca
+--let $binsrv_ssl_ca =
+--let $binsrv_replication_mode = position
+--source ../include/set_up_binsrv_environment.inc
+
+--error 1
+--exec $BINSRV fetch $binsrv_config_file_path > $binsrv_log_path 2>&1
+
+--let $assert_text = verify_ca without CA certificate should fail while establishing MySQL connection
+--let $assert_file = $binsrv_log_path
+--let $assert_count = 1
+--let $assert_select = cannot establish MySQL connection: SSL connection error: CA certificate is required if ssl-mode is VERIFY_CA or VERIFY_IDENTITY
+--source include/assert_grep.inc
+--source ../include/tear_down_binsrv_environment.inc
+
+--echo
+--echo *** Test 2: SSL mode verify_identity without CA certificate (should fail)
+--let $binsrv_ssl_mode = verify_identity
+--let $binsrv_ssl_ca =
+--source ../include/set_up_binsrv_environment.inc
+
+--error 1
+--exec $BINSRV fetch $binsrv_config_file_path > $binsrv_log_path 2>&1
+
+--let $assert_text = verify_identity without CA certificate should fail while establishing MySQL connection
+--let $assert_file = $binsrv_log_path
+--let $assert_count = 1
+--let $assert_select = cannot establish MySQL connection: SSL connection error: CA certificate is required if ssl-mode is VERIFY_CA or VERIFY_IDENTITY
+--source include/assert_grep.inc
+--source ../include/tear_down_binsrv_environment.inc
+
+--echo
+--echo *** Test 3: SSL mode verify_ca with non-existent CA file (should fail)
+--let $binsrv_ssl_mode = verify_ca
+--let $binsrv_ssl_ca = /nonexistent/ca.pem
+--source ../include/set_up_binsrv_environment.inc
+
+--error 1
+--exec $BINSRV fetch $binsrv_config_file_path > $binsrv_log_path 2>&1
+
+--let $assert_text = verify_ca with non-existent CA file should fail while establishing MySQL connection
+--let $assert_file = $binsrv_log_path
+--let $assert_count = 1
+--let $assert_select = cannot establish MySQL connection: SSL connection error: SSL_CTX_set_default_verify_paths
+--source include/assert_grep.inc
+--source ../include/tear_down_binsrv_environment.inc
+
+--echo
+--echo *** Test 4: SSL mode verify_identity with invalid certificate (should fail)
+--let $binsrv_ssl_mode = verify_identity
+--let $binsrv_ssl_ca = $MYSQL_TEST_DIR/std_data/ca-cert-verify-san.pem
+--let $binsrv_ssl_cert = /nonexistent/cert.pem
+--let $binsrv_ssl_key = /nonexistent/key.pem
+--source ../include/set_up_binsrv_environment.inc
+
+--error 1
+--exec $BINSRV fetch $binsrv_config_file_path > $binsrv_log_path 2>&1
+
+--let $assert_text = verify_identity with invalid certificate should fail while establishing MySQL connection
+--let $assert_file = $binsrv_log_path
+--let $assert_count = 1
+--let $assert_select = cannot establish MySQL connection: SSL connection error: Unable to get certificate
+--source include/assert_grep.inc
+--source ../include/tear_down_binsrv_environment.inc
+
+--echo
+--echo *** Test 5: TLS version mismatch (if server doesn't support requested version)
+--let $binsrv_ssl_mode = required
+--let $binsrv_ssl_ca =
+--let $binsrv_ssl_cert =
+--let $binsrv_ssl_key =
+--let $binsrv_tls_version = TLSv1.4
+--source ../include/set_up_binsrv_environment.inc
+
+--error 1
+--exec $BINSRV fetch $binsrv_config_file_path > $binsrv_log_path 2>&1
+
+--let $assert_text = Invalid TLS version should fail while setting MySQL TLS version
+--let $assert_file = $binsrv_log_path
+--let $assert_count = 1
+--let $assert_select = cannot set MySQL TLS VERSION
+--source include/assert_grep.inc
+--source ../include/tear_down_binsrv_environment.inc
+
+--echo
+--echo *** Test 6: SSL cert without key (should fail)
+--let $binsrv_ssl_mode = verify_identity
+--let $binsrv_ssl_ca = $MYSQL_TEST_DIR/std_data/ca-cert-verify-san.pem
+--let $binsrv_ssl_cert = $MYSQL_TEST_DIR/std_data/client-cert-verify-san.pem
+--let $binsrv_ssl_key =
+--let $binsrv_tls_version =
+--source ../include/set_up_binsrv_environment.inc
+
+--error 1
+--exec $BINSRV fetch $binsrv_config_file_path > $binsrv_log_path 2>&1
+
+--let $assert_text = SSL certificate without key should fail while establishing MySQL connection
+--let $assert_file = $binsrv_log_path
+--let $assert_count = 1
+--let $assert_select = cannot establish MySQL connection: SSL connection error: Unable to get private key
+--source include/assert_grep.inc
+--source ../include/tear_down_binsrv_environment.inc
+--echo
+--echo *** Dropping test user
+eval DROP USER IF EXISTS '$user_name'@'$localhost_ip';
+
+
+
+
