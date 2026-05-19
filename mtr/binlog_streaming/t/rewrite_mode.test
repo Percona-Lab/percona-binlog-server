@@ -1,0 +1,290 @@
+--source ../include/have_binsrv.inc
+
+--source ../include/v80_v84_compatibility_defines.inc
+
+# identifying backend storage type ('file' or 's3')
+--source ../include/identify_storage_backend.inc
+
+--echo
+--echo *** Testing rewrite mode with custom base file name and split size
+
+--echo
+--echo *** Resetting replication at the very beginning of the test.
+--disable_query_log
+eval $stmt_reset_binary_logs_and_gtids;
+--enable_query_log
+
+--echo
+--echo *** Determining the original server binlog name.
+--let $original_first_binlog = query_get_value($stmt_show_binary_log_status, File, 1)
+
+--let $gtid_executed_initial = `SELECT @@global.gtid_executed`
+
+--echo
+--echo *** Creating a table and capturing GTIDs before source binlog rotation.
+CREATE TABLE t1(
+  id SERIAL,
+  val CHAR(64) CHARACTER SET ascii NOT NULL,
+  PRIMARY KEY(id)
+) ENGINE=InnoDB;
+
+INSERT INTO t1(val) VALUES(SHA2('before-rotation', 256));
+--let $gtid_executed_after_first_insert = `SELECT @@global.gtid_executed`
+
+--echo
+--echo *** Rotating source binlog; rewrite mode should ignore source file names.
+FLUSH BINARY LOGS;
+--let $original_second_binlog = query_get_value($stmt_show_binary_log_status, File, 1)
+
+--echo
+--echo *** Generating enough GTID transactions to force rewrite file splitting.
+--disable_query_log
+--let $transaction_idx = 0
+while ($transaction_idx < 20)
+{
+  eval INSERT INTO t1(val) VALUES(SHA2(CONCAT('rewrite-split-', $transaction_idx), 256));
+  --inc $transaction_idx
+}
+--enable_query_log
+--let $gtid_executed_after_split_workload = `SELECT @@global.gtid_executed`
+--let $split_workload_gtids = `SELECT GTID_SUBTRACT(@@global.gtid_executed, '$gtid_executed_after_first_insert')`
+
+--echo
+--echo *** Setting up rewrite mode with a custom base file name and 1K split size.
+--let $binsrv_connect_timeout = 20
+--let $binsrv_read_timeout = 60
+--let $binsrv_idle_time = 10
+--let $binsrv_verify_checksum = TRUE
+--let $binsrv_replication_mode = gtid
+--let $binsrv_checkpoint_size = 1
+--let $binsrv_rewrite_file_size = 1K
+--source ../include/set_up_binsrv_environment.inc
+
+--let $rewrite_base_file_name = custom_rewrite
+eval SET @binsrv_config_json = JSON_SET(@binsrv_config_json, '$.replication.rewrite.base_file_name', '$rewrite_base_file_name');
+--let $write_var = `SELECT @binsrv_config_json`
+--let $write_to_file = $binsrv_config_file_path
+--source include/write_var_to_file.inc
+
+--echo
+--echo *** Test 1: Fetching in rewrite mode should create rewritten binlogs.
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+--let $storage_index_file = $MYSQL_TMP_DIR/rewrite_mode_binlog.index
+if ($storage_backend == file)
+{
+  --copy_file $binsrv_storage_path/binlog.index $storage_index_file
+}
+if ($storage_backend == s3)
+{
+  --exec $aws_cli s3 cp s3://$aws_s3_bucket/$binsrv_storage_path/binlog.index $storage_index_file > /dev/null
+}
+
+--let $assert_text = Rewrite mode should use the configured base file name
+--let $assert_file = $storage_index_file
+--let $assert_count = 1
+--let $assert_select = ./$rewrite_base_file_name.000001
+--source include/assert_grep.inc
+
+--let $assert_text = Rewrite mode should split files when configured size is reached
+--let $assert_file = $storage_index_file
+--let $assert_count = 1
+--let $assert_select = ./$rewrite_base_file_name.000002
+--source include/assert_grep.inc
+
+--let $assert_text = Rewrite mode should not keep the original first source binlog name
+--let $assert_file = $storage_index_file
+--let $assert_count = 0
+--let $assert_select = $original_first_binlog
+--source include/assert_grep.inc
+
+--let $assert_text = Rewrite mode should not keep the original second source binlog name
+--let $assert_file = $storage_index_file
+--let $assert_count = 0
+--let $assert_select = $original_second_binlog
+--source include/assert_grep.inc
+
+--echo
+--echo *** Test 2: GTID search over split workload should span rewritten files.
+--let $read_from_file = $MYSQL_TMP_DIR/rewrite_mode_search_result.json
+--exec $BINSRV search_by_gtid_set $binsrv_config_file_path "$split_workload_gtids" > $read_from_file
+--source include/read_file_to_var.inc
+--assert(`SELECT JSON_EXTRACT('$result', '$.status') = 'success'`)
+--assert(`SELECT JSON_LENGTH(JSON_EXTRACT('$result', '$.result')) >= 2`)
+--assert(`SELECT JSON_UNQUOTE(JSON_EXTRACT('$result', '$.result[0].name')) LIKE '$rewrite_base_file_name.%'`)
+--assert(`SELECT JSON_UNQUOTE(JSON_EXTRACT('$result', '$.result[1].name')) LIKE '$rewrite_base_file_name.%'`)
+--assert(`SELECT JSON_EXTRACT('$result', '$.result[0].name') != '$original_first_binlog'`)
+--assert(`SELECT JSON_CONTAINS_PATH('$result', 'one', '$.result[0].previous_gtids')`)
+--assert(`SELECT JSON_CONTAINS_PATH('$result', 'one', '$.result[0].added_gtids')`)
+
+--echo
+--echo *** Generating more data after the first fetch to verify rewrite resume.
+--disable_query_log
+--let $transaction_idx = 0
+while ($transaction_idx < 10)
+{
+  eval INSERT INTO t1(val) VALUES(SHA2(CONCAT('rewrite-resume-', $transaction_idx), 256));
+  --inc $transaction_idx
+}
+--enable_query_log
+--let $gtid_executed_after_resume_workload = `SELECT @@global.gtid_executed`
+--let $resume_workload_gtids = `SELECT GTID_SUBTRACT(@@global.gtid_executed, '$gtid_executed_after_split_workload')`
+
+--echo
+--echo *** Test 3: Fetching again should resume rewritten storage.
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+--remove_file $storage_index_file
+if ($storage_backend == file)
+{
+  --copy_file $binsrv_storage_path/binlog.index $storage_index_file
+}
+if ($storage_backend == s3)
+{
+  --exec $aws_cli s3 cp s3://$aws_s3_bucket/$binsrv_storage_path/binlog.index $storage_index_file > /dev/null
+}
+
+--let $assert_text = Rewrite resume should preserve the configured base file name
+--let $assert_file = $storage_index_file
+--let $assert_count = 0
+--let $assert_select = $original_first_binlog
+--source include/assert_grep.inc
+
+--exec $BINSRV search_by_gtid_set $binsrv_config_file_path "$resume_workload_gtids" > $read_from_file
+--source include/read_file_to_var.inc
+--assert(`SELECT JSON_EXTRACT('$result', '$.status') = 'success'`)
+--assert(`SELECT JSON_LENGTH(JSON_EXTRACT('$result', '$.result')) >= 1`)
+--assert(`SELECT JSON_UNQUOTE(JSON_EXTRACT('$result', '$.result[0].name')) LIKE '$rewrite_base_file_name.%'`)
+
+--echo
+--echo *** Test 4: Timestamp search should also expose rewritten file names.
+--let $future_timestamp = `SELECT DATE_FORMAT(CONVERT_TZ(NOW() + INTERVAL 1 DAY, @@session.time_zone, '+00:00'),'%Y-%m-%dT%H:%i:%s')`
+--exec $BINSRV search_by_timestamp $binsrv_config_file_path $future_timestamp > $read_from_file
+--source include/read_file_to_var.inc
+--assert(`SELECT JSON_EXTRACT('$result', '$.status') = 'success'`)
+--assert(`SELECT JSON_LENGTH(JSON_EXTRACT('$result', '$.result')) >= 2`)
+--assert(`SELECT JSON_EXTRACT('$result', '$.result[0].name') = '$rewrite_base_file_name.000001'`)
+--assert(`SELECT JSON_UNQUOTE(JSON_EXTRACT('$result', '$.result[1].name')) LIKE '$rewrite_base_file_name.%'`)
+
+--echo
+--echo *** Removing temporary files.
+--remove_file $storage_index_file
+--remove_file $read_from_file
+
+--source ../include/tear_down_binsrv_environment.inc
+
+--echo
+--echo *** Testing rewrite mode with large file size across source rotations.
+--disable_query_log
+eval $stmt_reset_binary_logs_and_gtids;
+--enable_query_log
+
+--let $large_gtid_executed_initial = `SELECT @@global.gtid_executed`
+
+--echo
+--echo *** Creating a table and generating transactions in the first source binlog.
+CREATE TABLE t2(
+  id SERIAL,
+  val CHAR(64) CHARACTER SET ascii NOT NULL,
+  PRIMARY KEY(id)
+) ENGINE=InnoDB;
+
+--disable_query_log
+--let $transaction_idx = 0
+while ($transaction_idx < 5)
+{
+  eval INSERT INTO t2(val) VALUES(SHA2(CONCAT('large-rewrite-first-', $transaction_idx), 256));
+  --inc $transaction_idx
+}
+--enable_query_log
+
+--echo
+--echo *** Rotating source binlog and generating more transactions.
+FLUSH BINARY LOGS;
+
+--disable_query_log
+--let $transaction_idx = 0
+while ($transaction_idx < 5)
+{
+  eval INSERT INTO t2(val) VALUES(SHA2(CONCAT('large-rewrite-second-', $transaction_idx), 256));
+  --inc $transaction_idx
+}
+--enable_query_log
+
+--echo
+--echo *** Rotating source binlog again and generating final transactions.
+FLUSH BINARY LOGS;
+--disable_query_log
+--let $transaction_idx = 0
+while ($transaction_idx < 5)
+{
+  eval INSERT INTO t2(val) VALUES(SHA2(CONCAT('large-rewrite-third-', $transaction_idx), 256));
+  --inc $transaction_idx
+}
+--enable_query_log
+--let $large_workload_gtids = `SELECT GTID_SUBTRACT(@@global.gtid_executed, '$large_gtid_executed_initial')`
+
+--echo
+--echo *** Setting up rewrite mode with a large file size.
+--let $binsrv_connect_timeout = 20
+--let $binsrv_read_timeout = 60
+--let $binsrv_idle_time = 10
+--let $binsrv_verify_checksum = TRUE
+--let $binsrv_replication_mode = gtid
+--let $binsrv_checkpoint_size = 1
+--let $binsrv_rewrite_file_size = 1M
+--source ../include/set_up_binsrv_environment.inc
+
+--let $large_rewrite_base_file_name = large_rewrite
+eval SET @binsrv_config_json = JSON_SET(@binsrv_config_json, '$.replication.rewrite.base_file_name', '$large_rewrite_base_file_name');
+--let $write_var = `SELECT @binsrv_config_json`
+--let $write_to_file = $binsrv_config_file_path
+--source include/write_var_to_file.inc
+
+--echo
+--echo *** Test 5: Large rewrite file size should keep all source rotations in one rewritten binlog.
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+--let $storage_index_file = $MYSQL_TMP_DIR/rewrite_mode_large_binlog.index
+if ($storage_backend == file)
+{
+  --copy_file $binsrv_storage_path/binlog.index $storage_index_file
+}
+if ($storage_backend == s3)
+{
+  --exec $aws_cli s3 cp s3://$aws_s3_bucket/$binsrv_storage_path/binlog.index $storage_index_file > /dev/null
+}
+
+--let $assert_text = Large rewrite file size should create the first rewritten binlog
+--let $assert_file = $storage_index_file
+--let $assert_count = 1
+--let $assert_select = ./$large_rewrite_base_file_name.000001
+--source include/assert_grep.inc
+
+--let $assert_text = Large rewrite file size should not rotate to a second rewritten binlog
+--let $assert_file = $storage_index_file
+--let $assert_count = 0
+--let $assert_select = ./$large_rewrite_base_file_name.000002
+--source include/assert_grep.inc
+
+--echo
+--echo *** Test 6: GTID search across source rotations should return one rewritten binlog.
+--let $read_from_file = $MYSQL_TMP_DIR/rewrite_mode_large_search_result.json
+--exec $BINSRV search_by_gtid_set $binsrv_config_file_path "$large_workload_gtids" > $read_from_file
+--source include/read_file_to_var.inc
+--assert(`SELECT JSON_EXTRACT('$result', '$.status') = 'success'`)
+--assert(`SELECT JSON_LENGTH(JSON_EXTRACT('$result', '$.result')) = 1`)
+--assert(`SELECT JSON_EXTRACT('$result', '$.result[0].name') = '$large_rewrite_base_file_name.000001'`)
+
+--remove_file $storage_index_file
+--remove_file $read_from_file
+
+--source ../include/tear_down_binsrv_environment.inc
+
+--echo
+--echo *** Dropping the tables.
+DROP TABLE t1;
+DROP TABLE t2;
+
+# cleaning up
+

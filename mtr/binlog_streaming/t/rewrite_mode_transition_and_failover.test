@@ -1,0 +1,344 @@
+--source ../include/have_binsrv.inc
+
+--source ../include/v80_v84_compatibility_defines.inc
+
+# This test relies on the standard MTR async replication harness from the
+# MySQL Server mysql-test tree.
+
+--disable_warnings
+--replace_result $init_rpl_inc include/rpl/init_source_replica.inc
+--source $init_rpl_inc
+--enable_warnings
+
+# identifying backend storage type ('file' or 's3')
+--source ../include/identify_storage_backend.inc
+
+--echo
+--echo *** Testing transition from normal GTID fetch to rewrite-mode and failover to replica.
+
+--connection master
+--let $source_port = `SELECT @@global.port`
+--let $gtid_executed_initial = `SELECT @@global.gtid_executed`
+--let $source_first_binlog = query_get_value($stmt_show_binary_log_status, File, 1)
+--let $source_binlog_base_file_name = `SELECT REGEXP_REPLACE('$source_first_binlog', '\\.[0-9]+$', '')`
+
+--echo
+--echo *** Creating initial source workload for a non-rewrite fetch.
+CREATE TABLE t1(
+  id SERIAL,
+  val CHAR(64) CHARACTER SET ascii NOT NULL,
+  PRIMARY KEY(id)
+) ENGINE=InnoDB;
+--let $gtid_executed_after_create = `SELECT @@global.gtid_executed`
+--let $create_table_gtid = `SELECT GTID_SUBTRACT(@@global.gtid_executed, '$gtid_executed_initial')`
+
+--disable_query_log
+--let $transaction_idx = 0
+while ($transaction_idx < 8)
+{
+  eval INSERT INTO t1(val) VALUES(SHA2(CONCAT('normal-source-', $transaction_idx), 256));
+  --inc $transaction_idx
+}
+--enable_query_log
+--let $gtid_executed_after_initial_workload = `SELECT @@global.gtid_executed`
+
+--echo
+--echo *** Rotating source logs before the first fetch.
+FLUSH BINARY LOGS;
+--let $source_second_binlog = query_get_value($stmt_show_binary_log_status, File, 1)
+
+--connection master
+--echo
+--echo *** Setting up normal GTID fetch from source, without rewrite mode.
+--let $binsrv_connection_host = 127.0.0.1
+--let $binsrv_connection_user = root
+--let $binsrv_connection_password =
+--let $binsrv_connect_timeout = 20
+--let $binsrv_read_timeout = 60
+--let $binsrv_idle_time = 10
+--let $binsrv_verify_checksum = TRUE
+--let $binsrv_replication_mode = gtid
+--let $binsrv_checkpoint_size = 1
+--source ../include/set_up_binsrv_environment.inc
+
+--replace_result $source_port SOURCE_PORT
+eval SET @binsrv_config_json = JSON_SET(@binsrv_config_json,
+  '$.connection.port', $source_port
+);
+--let $write_var = `SELECT @binsrv_config_json`
+--let $write_to_file = $binsrv_config_file_path
+--source include/write_var_to_file.inc
+
+--echo
+--echo *** Test 1: First fetch should store source binlog names.
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+--let $storage_index_file = $MYSQL_TMP_DIR/rewrite_transition_binlog.index
+if ($storage_backend == file)
+{
+  --copy_file $binsrv_storage_path/binlog.index $storage_index_file
+}
+if ($storage_backend == s3)
+{
+  --exec $aws_cli s3 cp s3://$aws_s3_bucket/$binsrv_storage_path/binlog.index $storage_index_file > /dev/null
+}
+
+--let $assert_text = Fetch should keep the source first binlog name
+--let $assert_file = $storage_index_file
+--let $assert_count = 1
+--let $assert_select = ./$source_first_binlog
+--source include/assert_grep.inc
+
+--let $assert_text = Fetch should keep the source second binlog name
+--let $assert_file = $storage_index_file
+--let $assert_count = 1
+--let $assert_select = ./$source_second_binlog
+--source include/assert_grep.inc
+
+--remove_file $storage_index_file
+
+--echo
+--echo *** Generating workload for transition scenario from normal to rewrite mode.
+--disable_query_log
+--let $transaction_idx = 0
+while ($transaction_idx < 14)
+{
+  eval INSERT INTO t1(val) VALUES(SHA2(CONCAT('rewrite-transition-', $transaction_idx), 256));
+  --inc $transaction_idx
+}
+--enable_query_log
+--let $gtid_executed_after_transition_workload = `SELECT @@global.gtid_executed`
+--let $transition_workload_gtids = `SELECT GTID_SUBTRACT(@@global.gtid_executed, '$gtid_executed_after_initial_workload')`
+
+--echo
+--echo *** Rotating source and syncing replica.
+FLUSH BINARY LOGS;
+
+--save_master_pos
+--connection slave
+--sync_with_master
+
+--let $replica_port = `SELECT @@global.port`
+--let $replica_first_binlog = query_get_value($stmt_show_binary_log_status, File, 1)
+
+--echo
+--echo *** Rotating replica logs independently from source.
+FLUSH BINARY LOGS;
+FLUSH BINARY LOGS;
+--let $replica_rotated_binlog = query_get_value($stmt_show_binary_log_status, File, 1)
+
+--connection master
+--echo
+--echo *** Test 2: Enabling rewrite mode.
+--let $rewrite_base_file_name = transition_rewrite
+
+eval SET @binsrv_config_json = JSON_INSERT(@binsrv_config_json,
+  '$.replication.rewrite',
+  JSON_OBJECT('base_file_name', '$rewrite_base_file_name', 'file_size', '1K')
+);
+--let $write_var = `SELECT @binsrv_config_json`
+--source include/write_var_to_file.inc
+
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+if ($storage_backend == file)
+{
+  --copy_file $binsrv_storage_path/binlog.index $storage_index_file
+}
+if ($storage_backend == s3)
+{
+  --exec $aws_cli s3 cp s3://$aws_s3_bucket/$binsrv_storage_path/binlog.index $storage_index_file > /dev/null
+}
+
+--let $assert_text =  Fetch should create binlogs with the rewrite file_size
+--let $assert_file = $storage_index_file
+--let $assert_count = 6
+--let $assert_select = ./$source_binlog_base_file_name.
+--source include/assert_grep.inc
+
+--echo
+--echo *** Test 3: The new events fetched should be searchable.
+
+--let $read_from_file = $MYSQL_TMP_DIR/rewrite_transition_search_result.json
+--exec $BINSRV search_by_gtid_set $binsrv_config_file_path "$transition_workload_gtids" > $read_from_file
+--source include/read_file_to_var.inc
+--assert(`SELECT JSON_EXTRACT('$result', '$.status') = 'success'`)
+--assert(`SELECT JSON_LENGTH(JSON_EXTRACT('$result', '$.result')) >= 1`)
+
+--echo
+--echo *** Test 4: GTIDs fetched before rewrite mode was enabled remain searchable.
+--exec $BINSRV search_by_gtid_set $binsrv_config_file_path "$create_table_gtid" > $read_from_file
+--source include/read_file_to_var.inc
+--assert(`SELECT JSON_EXTRACT('$result', '$.status') = 'success'`)
+--assert(`SELECT JSON_LENGTH(JSON_EXTRACT('$result', '$.result')) = 1`)
+--assert(`SELECT JSON_EXTRACT('$result', '$.result[0].name') = '$source_first_binlog'`)
+
+--remove_file $storage_index_file
+--remove_file $read_from_file
+
+--echo
+--echo *** Generating extra load before changing rewrite base name and file size.
+--connection master
+--disable_query_log
+--let $transaction_idx = 0
+while ($transaction_idx < 18)
+{
+  eval INSERT INTO t1(val) VALUES(SHA2(CONCAT('rewrite-config-change-', $transaction_idx), 256));
+  --inc $transaction_idx
+}
+--enable_query_log
+--let $gtid_executed_after_config_change = `SELECT @@global.gtid_executed`
+--let $config_change_workload_gtids = `SELECT GTID_SUBTRACT(@@global.gtid_executed, '$gtid_executed_after_transition_workload')`
+
+--echo
+--echo *** Test 5: Changing rewrite base name and file size before fetch.
+--let $changed_rewrite_base_file_name = changed_rewrite
+eval SET @binsrv_config_json = JSON_SET(@binsrv_config_json,
+  '$.replication.rewrite.base_file_name', '$changed_rewrite_base_file_name',
+  '$.replication.rewrite.file_size', '2K'
+);
+--let $write_var = `SELECT @binsrv_config_json`
+--source include/write_var_to_file.inc
+
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+if ($storage_backend == file)
+{
+  --copy_file $binsrv_storage_path/binlog.index $storage_index_file
+}
+if ($storage_backend == s3)
+{
+  --exec $aws_cli s3 cp s3://$aws_s3_bucket/$binsrv_storage_path/binlog.index $storage_index_file > /dev/null
+}
+
+--let $assert_text = Fetch should keep using the existing binlog base name
+--let $assert_file = $storage_index_file
+--let $assert_count = 0
+--let $assert_select = ./$changed_rewrite_base_file_name.
+--source include/assert_grep.inc
+
+--let $assert_text =  Fetch should create binlogs with new rewrite file_size
+--let $assert_file = $storage_index_file
+--let $assert_count = 9
+--let $assert_select = ./$source_binlog_base_file_name.
+--source include/assert_grep.inc
+
+--exec $BINSRV search_by_gtid_set $binsrv_config_file_path "$config_change_workload_gtids" > $read_from_file
+--source include/read_file_to_var.inc
+--assert(`SELECT JSON_EXTRACT('$result', '$.status') = 'success'`)
+--assert(`SELECT JSON_LENGTH(JSON_EXTRACT('$result', '$.result')) >= 1`)
+
+--echo
+--remove_file $storage_index_file
+--remove_file $read_from_file
+
+--echo
+--echo *** Generating additional workload for source to replica failover
+--connection master
+--disable_query_log
+--let $transaction_idx = 0
+while ($transaction_idx < 10)
+{
+  eval INSERT INTO t1(val) VALUES(SHA2(CONCAT('source-after-failover-', $transaction_idx), 256));
+  --inc $transaction_idx
+}
+--enable_query_log
+--let $gtid_executed_after_failover_workload = `SELECT @@global.gtid_executed`
+--let $failover_workload_gtids = `SELECT GTID_SUBTRACT(@@global.gtid_executed, '$gtid_executed_after_config_change')`
+
+--echo
+--echo *** Rotating source logs differently from replica before failover fetch.
+FLUSH BINARY LOGS;
+
+--save_master_pos
+--connection slave
+--sync_with_master
+--echo
+--echo *** Rotating replica logs after it receives the new GTIDs.
+FLUSH BINARY LOGS;
+--let $replica_post_workload_binlog = query_get_value($stmt_show_binary_log_status, File, 1)
+
+--connection master
+--echo
+--echo *** Test 6: Repointing existing storage config from source to replica.
+--replace_result $replica_port REPLICA_PORT
+eval SET @binsrv_config_json = JSON_SET(@binsrv_config_json,
+  '$.connection.port', $replica_port
+);
+--let $write_var = `SELECT @binsrv_config_json`
+--source include/write_var_to_file.inc
+
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+if ($storage_backend == file)
+{
+  --copy_file $binsrv_storage_path/binlog.index $storage_index_file
+}
+if ($storage_backend == s3)
+{
+  --exec $aws_cli s3 cp s3://$aws_s3_bucket/$binsrv_storage_path/binlog.index $storage_index_file > /dev/null
+}
+
+--let $assert_text = Rewrite mode should not store replica pre-existing binlog names
+--let $assert_file = $storage_index_file
+--let $assert_count = 0
+--let $assert_select = $replica_first_binlog
+--source include/assert_grep.inc
+
+--let $assert_text = Rewrite mode should not store independently rotated replica binlog names
+--let $assert_file = $storage_index_file
+--let $assert_count = 0
+--let $assert_select = $replica_rotated_binlog
+--source include/assert_grep.inc
+
+--let $assert_text = Rewrite mode should not store replica post-workload binlog names
+--let $assert_file = $storage_index_file
+--let $assert_count = 0
+--let $assert_select = $replica_post_workload_binlog
+--source include/assert_grep.inc
+
+--let $assert_text = Rewrite mode should keep using source binlog base name after replica fetch
+--let $assert_file = $storage_index_file
+--let $assert_count = 1
+--let $assert_select = ./$source_binlog_base_file_name.000008
+--source include/assert_grep.inc
+
+--echo
+--echo *** Test 7: New GTIDs fetched from replica should be searchable in rewritten files.
+--let $read_from_file = $MYSQL_TMP_DIR/rewrite_replica_failover_search_result.json
+--exec $BINSRV search_by_gtid_set $binsrv_config_file_path "$failover_workload_gtids" > $read_from_file
+--source include/read_file_to_var.inc
+--assert(`SELECT JSON_EXTRACT('$result', '$.status') = 'success'`)
+--assert(`SELECT JSON_LENGTH(JSON_EXTRACT('$result', '$.result')) >= 1`)
+--assert(`SELECT JSON_UNQUOTE(JSON_EXTRACT('$result', '$.result[0].name')) LIKE '$source_binlog_base_file_name.%'`)
+--assert(`SELECT LOCATE('$source_binlog_base_file_name.', JSON_UNQUOTE(JSON_EXTRACT('$result', '$.result[0].uri'))) > 0`)
+
+--echo
+--echo *** Test 8: Previously fetched GTIDs should remain searchable after failover.
+--exec $BINSRV search_by_gtid_set $binsrv_config_file_path "$create_table_gtid" > $read_from_file
+--source include/read_file_to_var.inc
+--assert(`SELECT JSON_EXTRACT('$result', '$.status') = 'success'`)
+--assert(`SELECT JSON_LENGTH(JSON_EXTRACT('$result', '$.result')) = 1`)
+--assert(`SELECT JSON_EXTRACT('$result', '$.result[0].name') = '$source_binlog_base_file_name.000001'`)
+
+--echo
+--remove_file $storage_index_file
+--remove_file $read_from_file
+
+--connection master
+--echo
+--echo *** Dropping test table on source.
+DROP TABLE t1;
+--save_master_pos
+
+--connection slave
+--sync_with_master
+
+--connection master
+# cleaning up
+--source ../include/tear_down_binsrv_environment.inc
+
+--replace_result $deinit_rpl_inc include/rpl/deinit.inc
+--source $deinit_rpl_inc
+
+

@@ -1,0 +1,66 @@
+*** Resetting replication at the very beginning of the test.
+
+*** Determining the first binary log name.
+
+*** Creating a table and capturing an untagged GTID.
+CREATE TABLE t1(id INT UNSIGNED NOT NULL AUTO_INCREMENT, PRIMARY KEY(id)) ENGINE=InnoDB;
+INSERT INTO t1 VALUES();
+
+*** Creating tagged GTIDs with varied tag lengths in separate binlogs.
+
+*** Writing a short-tagged GTID into the second binlog.
+FLUSH BINARY LOGS;
+START TRANSACTION;
+INSERT INTO t1 VALUES();
+COMMIT;
+
+*** Writing a medium-tagged GTID range into the third binlog.
+FLUSH BINARY LOGS;
+START TRANSACTION;
+INSERT INTO t1 VALUES();
+COMMIT;
+START TRANSACTION;
+INSERT INTO t1 VALUES();
+COMMIT;
+
+*** Writing a max-length-tagged GTID into the fourth binlog.
+FLUSH BINARY LOGS;
+START TRANSACTION;
+INSERT INTO t1 VALUES();
+COMMIT;
+
+*** Setting up GTID-mode Binlog Server storage.
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+
+*** Test 1: Tagged GTID search should find a short tag in its binlog.
+include/read_file_to_var.inc
+
+*** Test 2: Tagged GTID range should be covered by a single binlog.
+include/read_file_to_var.inc
+
+*** Test 3: Mixed tagged GTIDs should be returned in binlog order.
+include/read_file_to_var.inc
+
+*** Test 4: Tagged and untagged GTIDs should be searchable together.
+include/read_file_to_var.inc
+
+*** Test 5: A missing tag should not be covered by matching gtid with other tag.
+include/read_file_to_var.inc
+
+*** Removing the search result file.
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.
+
+*** Dropping the table.
+DROP TABLE t1;

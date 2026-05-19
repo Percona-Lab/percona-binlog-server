@@ -1,0 +1,160 @@
+--source ../include/have_binsrv.inc
+
+--source ../include/v80_v84_compatibility_defines.inc
+if ($lts_series != v84)
+{
+  --skip This test must be run on a MySQL Server 8.4
+}
+
+# in case of --repeat=N, we need to start from a fresh binary log to make
+# this test deterministic
+--echo *** Resetting replication at the very beginning of the test.
+--disable_query_log
+eval $stmt_reset_binary_logs_and_gtids;
+--enable_query_log
+
+--echo
+--echo *** Determining the first binary log name.
+--let $first_binlog = query_get_value($stmt_show_binary_log_status, File, 1)
+
+# identifying backend storage type ('file' or 's3')
+--source ../include/identify_storage_backend.inc
+
+--let $read_from_file = $MYSQL_TMP_DIR/search_tagged_gtid_result.json
+
+--let $gtid_executed_initial = `SELECT @@global.gtid_executed`
+
+--echo
+--echo *** Creating a table and capturing an untagged GTID.
+CREATE TABLE t1(id INT UNSIGNED NOT NULL AUTO_INCREMENT, PRIMARY KEY(id)) ENGINE=InnoDB;
+--let $gtid_executed_after_create_table = `SELECT @@global.gtid_executed`
+
+INSERT INTO t1 VALUES();
+--let $first_insert_gtid = `SELECT GTID_SUBTRACT(@@global.gtid_executed, '$gtid_executed_after_create_table')`
+
+--echo
+--echo *** Creating tagged GTIDs with varied tag lengths in separate binlogs.
+
+--echo
+--echo *** Writing a short-tagged GTID into the second binlog.
+FLUSH BINARY LOGS;
+--let $tag_short_binlog = query_get_value($stmt_show_binary_log_status, File, 1)
+--let $tag_short_gtid = `SELECT CONCAT(@@server_uuid, ':a:900001')`
+--disable_query_log
+eval SET @@SESSION.GTID_NEXT = '$tag_short_gtid';
+--enable_query_log
+START TRANSACTION;
+INSERT INTO t1 VALUES();
+COMMIT;
+--disable_query_log
+SET @@SESSION.GTID_NEXT = 'AUTOMATIC';
+--enable_query_log
+
+--echo
+--echo *** Writing a medium-tagged GTID range into the third binlog.
+FLUSH BINARY LOGS;
+--let $tag_medium_binlog = query_get_value($stmt_show_binary_log_status, File, 1)
+--let $tag_medium_first_gtid = `SELECT CONCAT(@@server_uuid, ':tag_medium_12:900002')`
+--let $tag_medium_second_gtid = `SELECT CONCAT(@@server_uuid, ':tag_medium_12:900003')`
+--let $tag_medium_range = `SELECT CONCAT(@@server_uuid, ':tag_medium_12:900002-900003')`
+--disable_query_log
+eval SET @@SESSION.GTID_NEXT = '$tag_medium_first_gtid';
+--enable_query_log
+START TRANSACTION;
+INSERT INTO t1 VALUES();
+COMMIT;
+--disable_query_log
+eval SET @@SESSION.GTID_NEXT = '$tag_medium_second_gtid';
+--enable_query_log
+START TRANSACTION;
+INSERT INTO t1 VALUES();
+COMMIT;
+--disable_query_log
+SET @@SESSION.GTID_NEXT = 'AUTOMATIC';
+--enable_query_log
+
+--echo
+--echo *** Writing a max-length-tagged GTID into the fourth binlog.
+FLUSH BINARY LOGS;
+--let $tag_max_binlog = query_get_value($stmt_show_binary_log_status, File, 1)
+--let $tag_max_gtid = `SELECT CONCAT(@@server_uuid, ':t_abcdefghijklmnopqrstuvwxyz1234:900004')`
+--disable_query_log
+eval SET @@SESSION.GTID_NEXT = '$tag_max_gtid';
+--enable_query_log
+START TRANSACTION;
+INSERT INTO t1 VALUES();
+COMMIT;
+--disable_query_log
+SET @@SESSION.GTID_NEXT = 'AUTOMATIC';
+--enable_query_log
+
+--echo
+--echo *** Setting up GTID-mode Binlog Server storage.
+--let $binsrv_connect_timeout = 20
+--let $binsrv_read_timeout = 60
+--let $binsrv_idle_time = 10
+--let $binsrv_verify_checksum = TRUE
+--let $binsrv_replication_mode = gtid
+--let $binsrv_checkpoint_size = 1
+--source ../include/set_up_binsrv_environment.inc
+
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+--echo
+--echo *** Test 1: Tagged GTID search should find a short tag in its binlog.
+--exec $BINSRV search_by_gtid_set $binsrv_config_file_path "$tag_short_gtid" > $read_from_file
+--source include/read_file_to_var.inc
+--assert(`SELECT JSON_EXTRACT('$result', '$.status') = 'success'`)
+--assert(`SELECT JSON_LENGTH(JSON_EXTRACT('$result', '$.result')) = 1`)
+--assert(`SELECT JSON_EXTRACT('$result', '$.result[0].name') = '$tag_short_binlog'`)
+--assert(`SELECT LOCATE('$tag_short_gtid', JSON_UNQUOTE(JSON_EXTRACT('$result', '$.result[0].added_gtids'))) > 0`)
+
+--echo
+--echo *** Test 2: Tagged GTID range should be covered by a single binlog.
+--exec $BINSRV search_by_gtid_set $binsrv_config_file_path "$tag_medium_range" > $read_from_file
+--source include/read_file_to_var.inc
+--assert(`SELECT JSON_EXTRACT('$result', '$.status') = 'success'`)
+--assert(`SELECT JSON_LENGTH(JSON_EXTRACT('$result', '$.result')) = 1`)
+--assert(`SELECT JSON_EXTRACT('$result', '$.result[0].name') = '$tag_medium_binlog'`)
+--assert(`SELECT LOCATE('tag_medium_12', JSON_UNQUOTE(JSON_EXTRACT('$result', '$.result[0].added_gtids'))) > 0`)
+
+--echo
+--echo *** Test 3: Mixed tagged GTIDs should be returned in binlog order.
+--let $mixed_tagged_gtids = $tag_max_gtid, $tag_short_gtid, $tag_medium_range
+--exec $BINSRV search_by_gtid_set $binsrv_config_file_path "$mixed_tagged_gtids" > $read_from_file
+--source include/read_file_to_var.inc
+--assert(`SELECT JSON_EXTRACT('$result', '$.status') = 'success'`)
+--assert(`SELECT JSON_LENGTH(JSON_EXTRACT('$result', '$.result')) = 3`)
+--assert(`SELECT JSON_EXTRACT('$result', '$.result[0].name') = '$tag_short_binlog'`)
+--assert(`SELECT JSON_EXTRACT('$result', '$.result[1].name') = '$tag_medium_binlog'`)
+--assert(`SELECT JSON_EXTRACT('$result', '$.result[2].name') = '$tag_max_binlog'`)
+
+--echo
+--echo *** Test 4: Tagged and untagged GTIDs should be searchable together.
+--let $mixed_tagged_and_untagged_gtids = $tag_short_gtid, $first_insert_gtid
+--exec $BINSRV search_by_gtid_set $binsrv_config_file_path "$mixed_tagged_and_untagged_gtids" > $read_from_file
+--source include/read_file_to_var.inc
+--assert(`SELECT JSON_EXTRACT('$result', '$.status') = 'success'`)
+--assert(`SELECT JSON_LENGTH(JSON_EXTRACT('$result', '$.result')) = 2`)
+--assert(`SELECT JSON_EXTRACT('$result', '$.result[0].name') = '$first_binlog'`)
+--assert(`SELECT JSON_EXTRACT('$result', '$.result[1].name') = '$tag_short_binlog'`)
+
+--echo
+--echo *** Test 5: A missing tag should not be covered by matching gtid with other tag.
+--let $missing_tag_gtid = `SELECT CONCAT(@@server_uuid, ':missing_tag:900001')`
+--error 1
+--exec $BINSRV search_by_gtid_set $binsrv_config_file_path "$missing_tag_gtid" > $read_from_file
+--source include/read_file_to_var.inc
+--assert(`SELECT JSON_EXTRACT('$result', '$.status') = 'error'`)
+--assert(`SELECT JSON_EXTRACT('$result', '$.message') = 'The specified GTID set cannot be covered'`)
+
+--echo
+--echo *** Removing the search result file.
+--remove_file $read_from_file
+
+--source ../include/tear_down_binsrv_environment.inc
+
+--echo
+--echo *** Dropping the table.
+DROP TABLE t1;
+

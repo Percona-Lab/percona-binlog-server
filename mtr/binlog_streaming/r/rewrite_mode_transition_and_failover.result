@@ -1,0 +1,99 @@
+include/rpl/init_source_replica.inc
+[connection master]
+
+*** Testing transition from normal GTID fetch to rewrite-mode and failover to replica.
+
+*** Creating initial source workload for a non-rewrite fetch.
+CREATE TABLE t1(
+id SERIAL,
+val CHAR(64) CHARACTER SET ascii NOT NULL,
+PRIMARY KEY(id)
+) ENGINE=InnoDB;
+
+*** Rotating source logs before the first fetch.
+FLUSH BINARY LOGS;
+
+*** Setting up normal GTID fetch from source, without rewrite mode.
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+SET @binsrv_config_json = JSON_SET(@binsrv_config_json,
+'$.connection.port', SOURCE_PORT
+);
+
+*** Test 1: First fetch should store source binlog names.
+include/assert_grep.inc [Fetch should keep the source first binlog name]
+include/assert_grep.inc [Fetch should keep the source second binlog name]
+
+*** Generating workload for transition scenario from normal to rewrite mode.
+
+*** Rotating source and syncing replica.
+FLUSH BINARY LOGS;
+
+*** Rotating replica logs independently from source.
+FLUSH BINARY LOGS;
+FLUSH BINARY LOGS;
+
+*** Test 2: Enabling rewrite mode.
+SET @binsrv_config_json = JSON_INSERT(@binsrv_config_json,
+'$.replication.rewrite',
+JSON_OBJECT('base_file_name', 'transition_rewrite', 'file_size', '1K')
+);
+include/assert_grep.inc [Fetch should create binlogs with the rewrite file_size]
+
+*** Test 3: The new events fetched should be searchable.
+include/read_file_to_var.inc
+
+*** Test 4: GTIDs fetched before rewrite mode was enabled remain searchable.
+include/read_file_to_var.inc
+
+*** Generating extra load before changing rewrite base name and file size.
+
+*** Test 5: Changing rewrite base name and file size before fetch.
+SET @binsrv_config_json = JSON_SET(@binsrv_config_json,
+'$.replication.rewrite.base_file_name', 'changed_rewrite',
+'$.replication.rewrite.file_size', '2K'
+);
+include/assert_grep.inc [Fetch should keep using the existing binlog base name]
+include/assert_grep.inc [Fetch should create binlogs with new rewrite file_size]
+include/read_file_to_var.inc
+
+
+*** Generating additional workload for source to replica failover
+
+*** Rotating source logs differently from replica before failover fetch.
+FLUSH BINARY LOGS;
+
+*** Rotating replica logs after it receives the new GTIDs.
+FLUSH BINARY LOGS;
+
+*** Test 6: Repointing existing storage config from source to replica.
+SET @binsrv_config_json = JSON_SET(@binsrv_config_json,
+'$.connection.port', REPLICA_PORT
+);
+include/assert_grep.inc [Rewrite mode should not store replica pre-existing binlog names]
+include/assert_grep.inc [Rewrite mode should not store independently rotated replica binlog names]
+include/assert_grep.inc [Rewrite mode should not store replica post-workload binlog names]
+include/assert_grep.inc [Rewrite mode should keep using source binlog base name after replica fetch]
+
+*** Test 7: New GTIDs fetched from replica should be searchable in rewritten files.
+include/read_file_to_var.inc
+
+*** Test 8: Previously fetched GTIDs should remain searchable after failover.
+include/read_file_to_var.inc
+
+
+*** Dropping test table on source.
+DROP TABLE t1;
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.
+include/rpl/deinit.inc

@@ -1,0 +1,117 @@
+
+*** Testing configuration parsing and validation failures
+
+*** Test 1: Empty configuration file
+include/assert_grep.inc [Empty config file should be rejected]
+
+*** Test 2: Malformed JSON configuration file
+include/assert_grep.inc [Malformed JSON config should be rejected]
+
+*** Test 3: Oversized configuration file
+include/assert_grep.inc [Oversized config file should be rejected]
+
+*** Preparing reusable local storage directory and config values
+SET @config_validation_log_path = 'MYSQL_TMP_DIR/binsrv_config_validation.log';
+SET @config_validation_storage_uri = CONCAT('file://', 'MYSQL_TMP_DIR/config_validation_storage');
+
+*** Test 4: Rewrite mode cannot be used with position replication
+SET @binsrv_config_json = JSON_OBJECT(
+'logger', JSON_OBJECT('level', 'error', 'file', @config_validation_log_path),
+'connection', JSON_OBJECT(
+'host', '127.0.0.1',
+'port', @@global.port,
+'user', 'root',
+'password', '',
+'connect_timeout', 20,
+'read_timeout', 60,
+'write_timeout', 60
+),
+'replication', JSON_OBJECT(
+'server_id', @@server_id + 1,
+'idle_time', 10,
+'verify_checksum', TRUE,
+'mode', 'position',
+'rewrite', JSON_OBJECT('base_file_name', 'rewritten', 'file_size', '1K')
+),
+'storage', JSON_OBJECT(
+'backend', 'file',
+'uri', @config_validation_storage_uri
+)
+);
+include/assert_grep.inc [Rewrite mode in position replication should fail validation]
+
+*** Test 5: Rewrite file size below minimum
+SET @binsrv_config_json = JSON_SET(@binsrv_config_json,
+'$.replication.mode', 'gtid',
+'$.replication.rewrite.file_size', '1023'
+);
+include/assert_grep.inc [Rewrite file size below 1024 bytes should fail validation]
+
+*** Test 6: Invalid checkpoint_size unit
+SET @binsrv_config_json = JSON_REMOVE(@binsrv_config_json, '$.replication.rewrite');
+SET @binsrv_config_json = JSON_SET(@binsrv_config_json,
+'$.replication.mode', 'position',
+'$.storage.checkpoint_size', 'abc'
+);
+include/assert_grep.inc [Invalid checkpoint size should fail parsing]
+
+*** Test 7: Invalid checkpoint_interval unit
+SET @binsrv_config_json = JSON_REMOVE(@binsrv_config_json, '$.storage.checkpoint_size');
+SET @binsrv_config_json = JSON_SET(@binsrv_config_json,
+'$.storage.checkpoint_interval', '5w'
+);
+include/assert_grep.inc [Invalid checkpoint interval should fail parsing]
+
+*** Test 8: Connection config without host/port or DNS SRV name
+SET @binsrv_config_json = JSON_REMOVE(@binsrv_config_json, '$.storage.checkpoint_interval');
+SET @binsrv_config_json = JSON_REMOVE(@binsrv_config_json, '$.connection.host');
+SET @binsrv_config_json = JSON_REMOVE(@binsrv_config_json, '$.connection.port');
+include/assert_grep.inc [Connection config must specify DNS SRV or host and port]
+
+*** Test 9: File URI with userinfo
+SET @file_uri_with_userinfo = CONCAT('file://user:pass@', 'MYSQL_TMP_DIR/config_validation_storage');
+SET @binsrv_config_json = JSON_SET(@binsrv_config_json,
+'$.connection.host', '127.0.0.1',
+'$.connection.port', @@global.port,
+'$.storage.uri', @file_uri_with_userinfo
+);
+include/assert_grep.inc [File URI with userinfo should be rejected]
+
+*** Test 10: File URI with query string
+SET @file_uri_with_query = CONCAT('file://', 'MYSQL_TMP_DIR/config_validation_storage', '?x=1');
+SET @binsrv_config_json = JSON_SET(@binsrv_config_json,
+'$.storage.uri', @file_uri_with_query
+);
+include/assert_grep.inc [File URI with query string should be rejected]
+
+*** Test 11: File URI with missing path
+SET @binsrv_config_json = JSON_SET(@binsrv_config_json,
+'$.storage.uri', 'file://'
+);
+include/assert_grep.inc [File URI with missing path should be rejected]
+
+*** Test 12: File URI with host
+SET @binsrv_config_json = JSON_SET(@binsrv_config_json,
+'$.storage.uri', 'file://host/path'
+);
+include/assert_grep.inc [File URI with host should be rejected]
+
+*** Test 13: Storage directory does not exist
+SET @missing_file_uri = CONCAT('file://', 'MYSQL_TMP_DIR/nonexistent_config_validation_storage');
+SET @binsrv_config_json = JSON_SET(@binsrv_config_json,
+'$.storage.uri', @missing_file_uri
+);
+include/assert_grep.inc [Missing storage directory should be rejected]
+
+*** Test 14: Storage path is a file, not a directory
+SET @storage_file_uri = CONCAT('file://', 'MYSQL_TMP_DIR/config_validation_storage_file');
+SET @binsrv_config_json = JSON_SET(@binsrv_config_json,
+'$.storage.uri', @storage_file_uri
+);
+include/assert_grep.inc [Storage path that is a file should be rejected]
+
+*** Test 15: Storage directory containing a subdirectory
+SET @binsrv_config_json = JSON_SET(@binsrv_config_json,
+'$.storage.uri', @config_validation_storage_uri
+);
+include/assert_grep.inc [Storage directory entries must be regular files]

@@ -1,0 +1,12 @@
+!include suite/rpl/my.cnf
+
+[mysqld.1]
+gtid-mode=ON
+enforce-gtid-consistency
+log-slave-updates
+
+[mysqld.2]
+gtid-mode=ON
+enforce-gtid-consistency
+log-slave-updates
+

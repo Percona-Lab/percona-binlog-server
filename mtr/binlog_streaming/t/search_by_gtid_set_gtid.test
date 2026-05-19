@@ -164,6 +164,37 @@ INSERT INTO t1 VALUES();
 --assert(`SELECT JSON_EXTRACT('$result', '$.message') = 'The specified GTID set cannot be covered'`)
 
 --echo
+--echo *** 12. Executing the Binlog Server utility in the 'search_by_gtid_set'
+--echo ***     mode with GTIDs listed in reverse order
+--let $reverse_order_gtids = $second_insert_gtid, $first_insert_gtid
+--exec $BINSRV search_by_gtid_set $binsrv_config_file_path "$reverse_order_gtids" > $read_from_file
+--source include/read_file_to_var.inc
+--assert(`SELECT JSON_EXTRACT('$result', '$.status') = 'success'`)
+--assert(`SELECT JSON_LENGTH(JSON_EXTRACT('$result', '$.result')) = 2`)
+--assert(`SELECT JSON_EXTRACT('$result', '$.result[0].name') = '$first_binlog'`)
+--assert(`SELECT JSON_EXTRACT('$result', '$.result[1].name') = '$second_binlog'`)
+
+--echo
+--echo *** 13. Executing the Binlog Server utility in the 'search_by_gtid_set'
+--echo ***     mode with overlapping requested GTID sets
+--let $overlapping_gtids = $first_insert_gtid, $gtid_executed_after_first_insert
+--exec $BINSRV search_by_gtid_set $binsrv_config_file_path "$overlapping_gtids" > $read_from_file
+--source include/read_file_to_var.inc
+--assert(`SELECT JSON_EXTRACT('$result', '$.status') = 'success'`)
+--assert(`SELECT JSON_LENGTH(JSON_EXTRACT('$result', '$.result')) = 1`)
+--assert(`SELECT JSON_EXTRACT('$result', '$.result[0].name') = '$first_binlog'`)
+
+--echo
+--echo *** 14. Executing the Binlog Server utility in the 'search_by_gtid_set'
+--echo ***     mode with the full stored GTID set
+--exec $BINSRV search_by_gtid_set $binsrv_config_file_path "$gtid_executed_after_second_insert" > $read_from_file
+--source include/read_file_to_var.inc
+--assert(`SELECT JSON_EXTRACT('$result', '$.status') = 'success'`)
+--assert(`SELECT JSON_LENGTH(JSON_EXTRACT('$result', '$.result')) = 2`)
+--assert(`SELECT JSON_EXTRACT('$result', '$.result[0].name') = '$first_binlog'`)
+--assert(`SELECT JSON_EXTRACT('$result', '$.result[1].name') = '$second_binlog'`)
+
+--echo
 --echo *** Removing the search result file.
 --remove_file $read_from_file
 

@@ -1,0 +1,64 @@
+
+*** Testing command line argument validation
+
+*** Test 1: No arguments (should fail)
+
+*** Test 2: Invalid operation mode (should fail)
+
+*** Test 3: Version mode without config file (should succeed)
+
+*** Test 3a: Verify version output format (semantic version)
+include/assert_grep.inc [Version output should match semantic version format (e.g., 0.1.0)]
+
+*** Test 3b: Verify version output is only on stdout (not stderr)
+include/read_file_to_var.inc
+
+*** Test 3c: Verify version output is a single line
+include/read_file_to_var.inc
+
+*** Test 4: Fetch mode without config file (should fail)
+
+*** Test 5: Pull mode without config file (should fail)
+
+*** Test 6: Fetch mode with non-existent config file (should fail)
+include/assert_grep.inc [Fetch failed since the config file specified doesn't exist.]
+
+*** Test 7: Pull mode with non-existent config file (should fail)
+include/assert_grep.inc [Pull failed since the config file specified doesn't exist.]
+
+*** Test 8: Too many arguments (should fail)
+
+*** Test 9: Version mode with extra argument (should fail)
+
+*** Test 10: Version mode with multiple extra arguments (should fail)
+
+*** Test 11: Version mode case sensitivity - uppercase (should fail)
+
+*** Test 12: Version mode case sensitivity - mixed case (should fail)
+
+*** Test 13: Version mode case sensitivity - VeRsIoN (should fail)
+
+*** Test 14: Verify version command exit code is 0
+include/read_file_to_var.inc
+
+*** Test 15: Invalid replication mode value (should fail)
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+include/assert_grep.inc [Config validation should fail with invalid replication mode]
+
+*** Test 16: Missing replication mode (should fail)
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+include/assert_grep.inc [Config validation should fail with missing replication mode]

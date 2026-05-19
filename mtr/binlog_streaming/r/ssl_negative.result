@@ -1,0 +1,111 @@
+
+*** Testing SSL/TLS negative scenarios
+
+*** Creating test user without SSL requirement
+CREATE USER IF NOT EXISTS 'test_ssl_user'@'127.0.0.1' IDENTIFIED BY 'test_password';
+GRANT REPLICATION SLAVE ON *.* TO 'test_ssl_user'@'127.0.0.1';
+
+*** Test 1: SSL mode verify_ca without CA certificate (should fail)
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+include/assert_grep.inc [verify_ca without CA certificate should fail while establishing MySQL connection]
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.
+
+*** Test 2: SSL mode verify_identity without CA certificate (should fail)
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+include/assert_grep.inc [verify_identity without CA certificate should fail while establishing MySQL connection]
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.
+
+*** Test 3: SSL mode verify_ca with non-existent CA file (should fail)
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+include/assert_grep.inc [verify_ca with non-existent CA file should fail while establishing MySQL connection]
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.
+
+*** Test 4: SSL mode verify_identity with invalid certificate (should fail)
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+include/assert_grep.inc [verify_identity with invalid certificate should fail while establishing MySQL connection]
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.
+
+*** Test 5: TLS version mismatch (if server doesn't support requested version)
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+include/assert_grep.inc [Invalid TLS version should fail while setting MySQL TLS version]
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.
+
+*** Test 6: SSL cert without key (should fail)
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+include/assert_grep.inc [SSL certificate without key should fail while establishing MySQL connection]
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.
+
+*** Dropping test user
+DROP USER IF EXISTS 'test_ssl_user'@'127.0.0.1';

@@ -1,0 +1,4 @@
+--gtid-mode=on
+--enforce-gtid-consistency
+--log-slave-updates
+
