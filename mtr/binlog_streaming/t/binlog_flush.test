@@ -1,0 +1,115 @@
+# The purpose of the test is to validate that PBS doesn't flush its internal binlog buffer
+# to the file every time the whole transaction is replicated.
+
+--source ../include/have_binsrv.inc
+
+--source ../include/v80_v84_compatibility_defines.inc
+--source include/count_sessions.inc
+
+# identifying backend storage type ('file' or 's3')
+--source ../include/identify_storage_backend.inc
+
+--echo
+--echo *** Resetting replication at the very beginning of the test.
+--disable_query_log
+eval $stmt_reset_binary_logs_and_gtids;
+--enable_query_log
+
+--echo
+--echo *** Creating non-GTID transactions in one open binlog.
+CREATE TABLE t1(id INT UNSIGNED NOT NULL AUTO_INCREMENT, PRIMARY KEY(id)) ENGINE=InnoDB;
+FLUSH BINARY LOGS;
+--let $binlog_name = query_get_value($stmt_show_binary_log_status, File, 1)
+
+--disable_query_log
+--let $transaction_idx = 0
+while ($transaction_idx < 20)
+{
+  INSERT INTO t1 VALUES(DEFAULT);
+  --inc $transaction_idx
+}
+--enable_query_log
+
+--echo
+--echo *** Starting pull mode without checkpointing and before any source binlog rotation.
+--let $binsrv_connect_timeout = 10
+--let $binsrv_read_timeout = 100
+--let $binsrv_idle_time = 1
+--let $binsrv_verify_checksum = TRUE
+--let $binsrv_replication_mode = position
+--let $binsrv_checkpoint_size =
+--let $binsrv_checkpoint_interval =
+--source ../include/set_up_binsrv_environment.inc
+
+--let $binsrv_pid_file = $MYSQL_TMP_DIR/binsrv_non_gtid_flush_bug.pid
+--let $binsrv_spawn_cmd_line = $BINSRV pull $binsrv_config_file_path > $binsrv_log_path 2>&1 & echo \$! > $binsrv_pid_file
+--let EXPORTED_BINSRV_SPAWN_CMD_LINE = $binsrv_spawn_cmd_line
+--perl
+  use strict;
+  use warnings;
+  my $cmd = $ENV{'EXPORTED_BINSRV_SPAWN_CMD_LINE'};
+  system("$cmd");
+EOF
+
+--let $read_from_file = $binsrv_pid_file
+--source include/read_file_to_var.inc
+--let $binsrv_pid = $result
+
+--echo
+--echo *** Waiting for the source-side Binlog Dump thread to report that all
+--echo *** currently available events have been streamed to the Binlog Server
+--echo *** utility.
+# We deliberately avoid waiting for PBS to log "entering
+# idle mode for" because that pattern fires only after the MySQL
+# read timeout, and the read-timeout path itself flushes the event
+# buffer (see receive_binlog_events()) - which would invalidate the
+# "storage stayed empty before any flush trigger" invariant this
+# test asserts.
+let $wait_condition = SELECT COUNT(*) FROM performance_schema.processlist
+                      WHERE COMMAND = 'Binlog Dump'
+                      AND STATE LIKE '%sent all binlog to%';
+--let $wait_timeout = 60
+--source include/wait_condition.inc
+
+--echo
+--echo *** Capturing storage object size before checkpoint, rotate, timeout, or graceful shutdown.
+--let $size_file = $MYSQL_TMP_DIR/non_gtid_flush_bug_size
+if ($storage_backend == file)
+{
+  --exec /bin/sh -c "wc -c < '$binsrv_storage_path/$binlog_name' > '$size_file'"
+}
+if ($storage_backend == s3)
+{
+  --exec $aws_cli s3api head-object --bucket $MTR_BINSRV_AWS_S3_BUCKET --key $binsrv_storage_path/$binlog_name --query ContentLength --output text > $size_file 2>/dev/null || echo 0 > $size_file
+}
+--let $read_from_file = $size_file
+--source include/read_file_to_var.inc
+--let $storage_object_size_before_flush = $result
+--remove_file $size_file
+
+--echo
+--echo *** Terminating pull mode without giving it a chance to flush on graceful shutdown.
+--exec kill -9 $binsrv_pid
+--remove_file $binsrv_pid_file
+
+# Clean up any remaining binlog dump connection left by the killed pull process.
+--let $binlog_dump_connection_id = `SELECT ID FROM performance_schema.processlist WHERE COMMAND = 'Binlog Dump'`
+if ($binlog_dump_connection_id != '')
+{
+  --disable_query_log
+  --replace_result $binlog_dump_connection_id <CONNECTION_ID>
+  eval KILL CONNECTION $binlog_dump_connection_id;
+  --enable_query_log
+}
+--source include/wait_until_count_sessions.inc
+
+--source ../include/tear_down_binsrv_environment.inc
+
+DROP TABLE t1;
+
+--echo
+--echo *** Verifying storage stayed at magic payload size before any valid flush trigger.
+if ($storage_object_size_before_flush != 4)
+{
+  --die storage object grew before checkpoint, rotate, timeout, or close; non-GTID transaction boundary flushed storage
+}
