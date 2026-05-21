@@ -76,6 +76,9 @@ public:
   void set_last_committed_raw(std::int64_t last_committed) noexcept {
     last_committed_ = last_committed;
   }
+  void set_last_committed(events::seq_no_t last_committed) noexcept {
+    last_committed_ = static_cast<std::int64_t>(last_committed);
+  }
 
   [[nodiscard]] std::int64_t get_sequence_number_raw() const noexcept {
     return sequence_number_;
@@ -85,6 +88,9 @@ public:
   }
   void set_sequence_number_raw(std::int64_t sequence_number) noexcept {
     sequence_number_ = sequence_number;
+  }
+  void set_sequence_number(events::seq_no_t sequence_number) noexcept {
+    sequence_number_ = static_cast<std::int64_t>(sequence_number);
   }
 
   [[nodiscard]] static std::size_t calculate_encoded_size() noexcept {

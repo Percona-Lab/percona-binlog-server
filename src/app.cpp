@@ -66,6 +66,7 @@
 #include "binsrv/events/event_view.hpp"
 #include "binsrv/events/protocol_traits_fwd.hpp"
 #include "binsrv/events/reader_context.hpp"
+#include "binsrv/events/rewriter.hpp"
 
 #include "easymysql/connection.hpp"
 #include "easymysql/connection_config.hpp"
@@ -756,16 +757,9 @@ void rewrite_and_process_binlog_event(
   // in rewrite mode we need to update next_event_position (and optional
   // checksum in the footer) in the received event data portion
   binsrv::events::event_storage buffer{};
-  const auto event_copy_uv{binsrv::events::materialize(
-      current_event_v, buffer,
-      binsrv::events::materialization_type::force_add_checksum)};
-  {
-    // TODO: optimize redundant checksum recalculation
-    const auto proxy{event_copy_uv.get_write_proxy()};
-    proxy.get_common_header_updatable_view().set_next_event_position_raw(
-        static_cast<std::uint32_t>(storage.get_current_position() +
-                                   event_copy_uv.get_total_size()));
-  }
+  const auto event_copy_uv{binsrv::events::rewriter::rewrite(
+      storage.get_last_transaction_sequence_number(), current_event_v, buffer,
+      storage.get_current_position())};
   process_binlog_event(event_copy_uv, logger, context, storage);
 }
 

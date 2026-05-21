@@ -162,8 +162,8 @@ generic_body_impl<code_type::gtid_tagged_log>::generic_body_impl(
 
   // https://github.com/mysql/mysql-server/blob/mysql-8.4.6/libs/mysql/serialization/readme.md?plain=1#L113
   // <message_format> ::= <serializable_field_size>
-  // <last_non_ignorable_field_id> { <type_field> } Extracting
-  // <serializable_field_size>
+  // <last_non_ignorable_field_id> { <type_field> }
+  // Extracting <serializable_field_size>
   std::size_t serializable_field_size{};
   if (!util::extract_varlen_int_from_byte_span_checked(
           remainder, serializable_field_size)) {
