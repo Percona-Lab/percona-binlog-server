@@ -33,7 +33,7 @@ if ($storage_backend == file)
 if ($storage_backend == s3)
 {
   --let $downloaded_file_path = $MYSQL_TMP_DIR/diff_with_storage_object.downloaded
-  --exec $aws_cli s3 cp s3://$aws_s3_bucket$storage_object $downloaded_file_path > /dev/null
+  --exec $aws_cli s3 cp s3://$aws_s3_bucket/$storage_object $downloaded_file_path > /dev/null
   --diff_files $local_file $downloaded_file_path
   --remove_file $downloaded_file_path
 }

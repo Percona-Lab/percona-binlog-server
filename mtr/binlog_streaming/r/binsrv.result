@@ -29,9 +29,13 @@ INSERT INTO t1 VALUES(DEFAULT);
 *** Checking that the Binlog Server utility detected an empty storage
 include/assert_grep.inc [Binlog storage must be initialized on an empty directory]
 
+*** Verifying that binlog files were written to storage
+include/assert_grep.inc [First binlog should exist in storage]
+include/assert_grep.inc [Second binlog also hould exist in storage]
+
 *** Comparing server and downloaded versions of the first binlog file.
 
-*** Patching the server version of the second binlog file to clear the
+*** Patching the server version of the binlog file to clear the
 *** LOG_EVENT_BINLOG_IN_USE_F (currently in use) flag.
 
 *** Comparing server and downloaded versions of the second binlog file.

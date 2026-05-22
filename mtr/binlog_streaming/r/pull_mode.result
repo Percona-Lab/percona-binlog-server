@@ -60,4 +60,61 @@ FLUSH BINARY LOGS;
 *** Removing the Binlog Server utility log file.
 
 *** Removing the Binlog Server utility configuration file.
-KILL CONNECTION <CONNECTION_ID>;
+
+*** Pull mode: zero idle_time
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+
+*** Starting Binlog Server Utility in background in pull mode with zero idle time
+include/read_file_to_var.inc
+
+*** Creating data.
+CREATE TABLE t1(id INT UNSIGNED NOT NULL AUTO_INCREMENT, PRIMARY KEY(id)) ENGINE=InnoDB;
+INSERT INTO t1 VALUES(DEFAULT);
+*** Waiting for read timeout to trigger reconnection.
+INSERT INTO t1 VALUES(DEFAULT);
+
+*** Terminating the utility
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.
+
+*** Pull mode: very short timeouts and rapid reconnection
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+
+*** Starting Binlog Server Utility in background
+include/read_file_to_var.inc
+
+*** Creating data and restarting server multiple times
+INSERT INTO t1 VALUES(DEFAULT);
+FLUSH BINARY LOGS;
+# restart
+INSERT INTO t1 VALUES(DEFAULT);
+FLUSH BINARY LOGS;
+# restart
+INSERT INTO t1 VALUES(DEFAULT);
+
+*** Terminating the utility
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.
+DROP TABLE t1;

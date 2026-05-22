@@ -27,13 +27,7 @@ eval $stmt_reset_binary_logs_and_gtids;
 --let $binsrv_pid_file = $MYSQL_TMP_DIR/binsrv_utility.pid
 --let $binsrv_spawn_cmd_line = $BINSRV pull $binsrv_config_file_path > /dev/null & echo \$! > $binsrv_pid_file
 
---let EXPORTED_BINSRV_SPAWN_CMD_LINE = $binsrv_spawn_cmd_line
---perl
-  use strict;
-  use warnings;
-  my $cmd = $ENV{'EXPORTED_BINSRV_SPAWN_CMD_LINE'};
-  system("$cmd");
-EOF
+--source ../include/trigger_binsrv_pull.inc
 
 --let $read_from_file = $binsrv_pid_file
 --source include/read_file_to_var.inc
@@ -122,21 +116,7 @@ if ($grep_status != 0)
 --echo
 --echo *** Sending SIGTERM signal to the Binlog Server Utility and waiting for
 --echo *** the process to terminate
---replace_result $binsrv_pid <BINSRV_PID>
---exec kill -s TERM $binsrv_pid
---let EXPORTED_BINSRV_PID = $binsrv_pid
-
---perl
-  use strict;
-  use warnings;
-  use Errno;
-  my $pid = $ENV{'EXPORTED_BINSRV_PID'};
-  my $not_present = (!kill(0, $pid) && $! == Errno::ESRCH);
-  while (!$not_present) {
-    sleep(1);
-    $not_present = (!kill(0, $pid) && $! == Errno::ESRCH);
-  }
-EOF
+--source ../include/terminate_binsrv.inc
 
 --remove_file $binsrv_pid_file
 
@@ -161,12 +141,99 @@ EOF
 # cleaning up
 --source ../include/tear_down_binsrv_environment.inc
 
+--echo
+--echo *** Pull mode: zero idle_time
+--let $binsrv_connect_timeout = 3
+--let $binsrv_read_timeout = 3
+--let $binsrv_idle_time = 0
+--let $binsrv_verify_checksum = TRUE
+--let $binsrv_replication_mode = position
+--source ../include/set_up_binsrv_environment.inc
+
+--echo
+--echo *** Starting Binlog Server Utility in background in pull mode with zero idle time
+--let $binsrv_pid_file = $MYSQL_TMP_DIR/binsrv_pull_zero_idle.pid
+--let $binsrv_spawn_cmd_line = $BINSRV pull $binsrv_config_file_path > /dev/null & echo \$! > $binsrv_pid_file
+
+--source ../include/trigger_binsrv_pull.inc
+
+--let $read_from_file = $binsrv_pid_file
+--source include/read_file_to_var.inc
+--let $binsrv_pid = $result
+
+--echo
+--echo *** Creating data.
+CREATE TABLE t1(id INT UNSIGNED NOT NULL AUTO_INCREMENT, PRIMARY KEY(id)) ENGINE=InnoDB;
+INSERT INTO t1 VALUES(DEFAULT);
+
+--echo *** Waiting for read timeout to trigger reconnection.
+--sleep 4
+INSERT INTO t1 VALUES(DEFAULT);
+
+--echo
+--echo *** Terminating the utility
+--source ../include/terminate_binsrv.inc
+
+--remove_file $binsrv_pid_file
+
+--source ../include/tear_down_binsrv_environment.inc
+
+--echo
+--echo *** Pull mode: very short timeouts and rapid reconnection
+--let $binsrv_connect_timeout = 1
+--let $binsrv_read_timeout = 1
+--let $binsrv_idle_time = 1
+--let $binsrv_verify_checksum = TRUE
+--let $binsrv_replication_mode = position
+--source ../include/set_up_binsrv_environment.inc
+
+--echo
+--echo *** Starting Binlog Server Utility in background
+--let $binsrv_pid_file = $MYSQL_TMP_DIR/binsrv_pull_short_timeout.pid
+--let $binsrv_spawn_cmd_line = $BINSRV pull $binsrv_config_file_path > /dev/null & echo \$! > $binsrv_pid_file
+
+--source ../include/trigger_binsrv_pull.inc
+
+--let $read_from_file = $binsrv_pid_file
+--source include/read_file_to_var.inc
+--let $binsrv_pid = $result
+
+--echo
+--echo *** Creating data and restarting server multiple times
+INSERT INTO t1 VALUES(DEFAULT);
+FLUSH BINARY LOGS;
+
+--source include/restart_mysqld.inc
+
+INSERT INTO t1 VALUES(DEFAULT);
+FLUSH BINARY LOGS;
+
+--source include/restart_mysqld.inc
+
+INSERT INTO t1 VALUES(DEFAULT);
+
+--echo
+--echo *** Terminating the utility
+--source ../include/terminate_binsrv.inc
+
+--remove_file $binsrv_pid_file
+
+--source ../include/tear_down_binsrv_environment.inc
+
+DROP TABLE t1;
+
 # As the Binlog Server Utility interrupts the connection upon timeout, here we
 # need to close it on the MySQL server side as well in order to make sure that
 # MTR 'check-test' before and after the test produces the same output.
 --let $binlog_dump_connection_id = `SELECT ID FROM performance_schema.processlist WHERE COMMAND = 'Binlog Dump'`
---replace_result $binlog_dump_connection_id <CONNECTION_ID>
-eval KILL CONNECTION $binlog_dump_connection_id;
+if ($binlog_dump_connection_id != '')
+{
+  --disable_query_log
+  --disable_result_log
+  eval KILL CONNECTION $binlog_dump_connection_id;
+  --enable_result_log
+  --enable_query_log
+}
 
 # Also, we use 'count_sessions' include files to make sure that 'Binlog Dump'
 # connection is indeed closed.

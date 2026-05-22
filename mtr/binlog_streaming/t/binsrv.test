@@ -60,6 +60,38 @@ INSERT INTO t1 VALUES(DEFAULT);
 --let $assert_select = binlog storage initialized on an empty directory
 --source include/assert_grep.inc
 
+--echo
+--echo *** Verifying that binlog files were written to storage
+--let $assert_text = First binlog should exist in storage
+--let $assert_file = $MYSQL_TMP_DIR/storage_check.log
+if ($storage_backend == file)
+{
+  --exec ls -la $binsrv_storage_path/$first_binlog* > $assert_file 2>&1 || true
+}
+if ($storage_backend == s3)
+{
+  --exec $aws_cli s3 ls s3://$aws_s3_bucket/$binsrv_storage_path/$first_binlog > $assert_file 2>&1 || true
+}
+--let $assert_count = 2
+--let $assert_select = $first_binlog
+--source include/assert_grep.inc
+--remove_file $assert_file
+
+--let $assert_text = Second binlog also hould exist in storage
+--let $assert_file = $MYSQL_TMP_DIR/storage_check.log
+if ($storage_backend == file)
+{
+  --exec ls -la $binsrv_storage_path/$second_binlog* > $assert_file 2>&1 || true
+}
+if ($storage_backend == s3)
+{
+  --exec $aws_cli s3 ls s3://$aws_s3_bucket/$binsrv_storage_path/$second_binlog > $assert_file 2>&1 || true
+}
+--let $assert_count = 2
+--let $assert_select = $second_binlog
+--source include/assert_grep.inc
+--remove_file $assert_file
+
 # At this point we have 2 binlog files $first_binlog (already closed/rotated
 # by the server) and $second_binlog (currently open).
 
@@ -77,32 +109,9 @@ INSERT INTO t1 VALUES(DEFAULT);
 # "\xFEbin" + 17, the offset of the 'flags' field in the common header).
 # So, here we create a copy of the second binlog file, patch this byte and
 # perform diff on this patched copy.
-
---echo
---echo *** Patching the server version of the second binlog file to clear the
---echo *** LOG_EVENT_BINLOG_IN_USE_F (currently in use) flag.
+--let $binlog_file_to_patch = $binlog_base_dir/$second_binlog
 --let PATCHED_BINLOG_FILE = $MYSQL_TMP_DIR/$second_binlog.patched
---copy_file $binlog_base_dir/$second_binlog $PATCHED_BINLOG_FILE
-
---perl
-  use strict;
-  use warnings;
-  use constant MAGIC_OFFSET => 21;
-  my $binlog_file_perl = $ENV{'PATCHED_BINLOG_FILE'};
-
-  open(my $fh, '+<:raw', $binlog_file_perl) or die "Failed to open file: $!";
-
-  seek($fh, MAGIC_OFFSET, 0);
-  my $byte;
-  read($fh, $byte, 1);
-
-  $byte = ord($byte) & 0xFE;
-
-  seek($fh, MAGIC_OFFSET, 0);
-  print $fh pack('C', $byte);
-
-  close($fh);
-EOF
+--source ../include/patch_binlog_in_use_flag.inc
 
 --echo
 --echo *** Comparing server and downloaded versions of the second binlog file.
