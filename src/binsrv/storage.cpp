@@ -250,34 +250,27 @@ void storage::write_event(util::const_byte_span event_data,
   }
 
   // now we are writing data from the event buffer to the storage backend if
-  // event buffer has some data in it that can be considered a complete
+  // the event buffer has some data in it that can be considered a complete
   // transaction and a checkpoint event (either size-based or time-based)
-  // occurred or we are processing the very last event in the binlog file
+  // occurred. The file-boundary flush is handled separately, in
+  // close_binlog().
 
   if (has_event_data_to_flush()) {
     const auto ready_to_flush_position{get_ready_to_flush_position()};
     const auto now_ts{std::chrono::steady_clock::now()};
 
-    bool needs_flush{false};
-    if (at_transaction_boundary && transaction_gtid.is_empty()) {
-      // a special combination of parameters when at_transaction_boundary is
-      // true and transaction_gtid is empty means that we received either ROTATE
-      // or STOP event at the very end of a binary log file - in this case we
-      // need to flush the event data buffer immediately regardless of whether
-      // one of the checkpointing events occurred or not
-      needs_flush = true;
-    } else {
-      // here we perform size-based checkpointing calculations based on
-      // calculated "ready_to_flush_position" instead of
-      // "get_current_position()" directly to take into account that some event
-      // data may remain buffered
-      needs_flush = (size_checkpointing_enabled() &&
-                     (ready_to_flush_position >=
-                      last_checkpoint_position_ + checkpoint_size_bytes_)) ||
-                    (interval_checkpointing_enabled() &&
-                     (now_ts >= last_checkpoint_timestamp_ +
-                                    checkpoint_interval_seconds_));
-    }
+    // here we perform size-based checkpointing calculations based on the
+    // calculated "ready_to_flush_position" instead of
+    // "get_current_position()" directly to take into account that some event
+    // data may remain buffered
+    const bool needs_flush{
+        (size_checkpointing_enabled() &&
+         (ready_to_flush_position >=
+          last_checkpoint_position_ + checkpoint_size_bytes_)) ||
+        (interval_checkpointing_enabled() &&
+         (now_ts >=
+          last_checkpoint_timestamp_ + checkpoint_interval_seconds_))};
+
     if (needs_flush) {
       flush_event_buffer_internal();
 
@@ -290,6 +283,8 @@ void storage::write_event(util::const_byte_span event_data,
 void storage::close_binlog() {
   ensure_streaming_mode();
 
+  // This flush is the only path that guarantees the file-final ROTATE/STOP
+  // event lands on the backend.
   flush_event_buffer();
   event_buffer_.clear();
   event_buffer_.shrink_to_fit();

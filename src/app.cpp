@@ -542,7 +542,9 @@ void process_binlog_event(const binsrv::events::event_view &current_event_v,
   }
 
   // processing the very last event in the sequence - either a non-artificial
-  // ROTATE event or a STOP event
+  // ROTATE event or a STOP event. This is the path that closes the local
+  // binlog file and (via storage::close_binlog -> flush_event_buffer) is
+  // what guarantees the terminator event itself lands on the backend
   if ((code == binsrv::events::code_type::rotate && !is_artificial) ||
       code == binsrv::events::code_type::stop) {
     process_rotate_or_stop_event(logger, storage);
