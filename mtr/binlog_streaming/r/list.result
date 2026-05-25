@@ -1,0 +1,51 @@
+*** Resetting replication at the very beginning of the test.
+
+*** Determining the first binary log name.
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+
+*** 1. Executing the Binlog Server utility in the 'list' mode on an
+***    empty storage and expecting an empty result array
+include/read_file_to_var.inc
+
+*** Creating a simple table.
+CREATE TABLE t1(id INT UNSIGNED NOT NULL AUTO_INCREMENT, PRIMARY KEY(id)) ENGINE=InnoDB;
+
+*** Filling the table with some data.
+INSERT INTO t1 VALUES();
+
+*** Flushing the first binary log and switching to the second one.
+FLUSH BINARY LOGS;
+
+*** Determining the second binary log name.
+
+*** Filling the table with more data.
+INSERT INTO t1 VALUES();
+
+*** Executing the Binlog Server utility and fetching all events.
+
+*** 2. Executing the Binlog Server utility in the 'list' mode on a
+***    non-empty storage and expecting both binlog files to be returned
+***    in chronological order
+include/read_file_to_var.inc
+
+*** 3. Executing the Binlog Server utility in the 'list' mode with a
+***    nonexistent configuration file path
+include/read_file_to_var.inc
+
+*** Removing the list result file.
+
+*** Dropping the table.
+DROP TABLE t1;
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.

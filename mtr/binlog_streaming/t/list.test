@@ -1,0 +1,94 @@
+--source ../include/have_binsrv.inc
+
+--source ../include/v80_v84_compatibility_defines.inc
+
+# in case of --repeat=N, we need to start from a fresh binary log to make
+# this test deterministic
+--echo *** Resetting replication at the very beginning of the test.
+--disable_query_log
+eval $stmt_reset_binary_logs_and_gtids;
+--enable_query_log
+
+--echo
+--echo *** Determining the first binary log name.
+--let $first_binlog = query_get_value($stmt_show_binary_log_status, File, 1)
+
+# identifying backend storage type ('file' or 's3')
+--source ../include/identify_storage_backend.inc
+
+# creating data directory, configuration file, etc.
+--let $binsrv_connect_timeout = 20
+--let $binsrv_read_timeout = 60
+--let $binsrv_idle_time = 10
+--let $binsrv_verify_checksum = TRUE
+--let $binsrv_replication_mode = `SELECT IF(@@global.gtid_mode = 'ON', 'gtid', 'position')`
+--let $binsrv_checkpoint_size = 1
+--source ../include/set_up_binsrv_environment.inc
+
+--let $read_from_file = $MYSQL_TMP_DIR/list_result.json
+
+--echo
+--echo *** 1. Executing the Binlog Server utility in the 'list' mode on an
+--echo ***    empty storage and expecting an empty result array
+--exec $BINSRV list $binsrv_config_file_path > $read_from_file
+--source include/read_file_to_var.inc
+--assert(`SELECT JSON_EXTRACT('$result', '$.status') = 'success'`)
+--assert(`SELECT JSON_LENGTH(JSON_EXTRACT('$result', '$.result')) = 0`)
+
+--echo
+--echo *** Creating a simple table.
+CREATE TABLE t1(id INT UNSIGNED NOT NULL AUTO_INCREMENT, PRIMARY KEY(id)) ENGINE=InnoDB;
+
+--echo
+--echo *** Filling the table with some data.
+INSERT INTO t1 VALUES();
+
+--echo
+--echo *** Flushing the first binary log and switching to the second one.
+FLUSH BINARY LOGS;
+
+--echo
+--echo *** Determining the second binary log name.
+--let $second_binlog = query_get_value($stmt_show_binary_log_status, File, 1)
+
+--echo
+--echo *** Filling the table with more data.
+INSERT INTO t1 VALUES();
+
+--echo
+--echo *** Executing the Binlog Server utility and fetching all events.
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+--echo
+--echo *** 2. Executing the Binlog Server utility in the 'list' mode on a
+--echo ***    non-empty storage and expecting both binlog files to be returned
+--echo ***    in chronological order
+--exec $BINSRV list $binsrv_config_file_path > $read_from_file
+--source include/read_file_to_var.inc
+--assert(`SELECT JSON_EXTRACT('$result', '$.status') = 'success'`)
+--assert(`SELECT JSON_LENGTH(JSON_EXTRACT('$result', '$.result')) = 2`)
+--assert(`SELECT JSON_EXTRACT('$result', '$.result[0].name') = '$first_binlog'`)
+--assert(`SELECT JSON_EXTRACT('$result', '$.result[1].name') = '$second_binlog'`)
+--assert(`SELECT JSON_EXTRACT('$result', '$.result[0].size') > 0`)
+--assert(`SELECT JSON_EXTRACT('$result', '$.result[1].size') > 0`)
+--assert(`SELECT JSON_EXTRACT('$result', '$.result[0].uri') IS NOT NULL`)
+--assert(`SELECT JSON_EXTRACT('$result', '$.result[1].uri') IS NOT NULL`)
+
+--echo
+--echo *** 3. Executing the Binlog Server utility in the 'list' mode with a
+--echo ***    nonexistent configuration file path
+--error 1
+--exec $BINSRV list $MYSQL_TMP_DIR/no_such_config.json > $read_from_file
+--source include/read_file_to_var.inc
+--assert(`SELECT JSON_EXTRACT('$result', '$.status') = 'error'`)
+
+--echo
+--echo *** Removing the list result file.
+--remove_file $read_from_file
+
+--echo
+--echo *** Dropping the table.
+DROP TABLE t1;
+
+# cleaning up
+--source ../include/tear_down_binsrv_environment.inc

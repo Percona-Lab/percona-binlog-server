@@ -115,6 +115,7 @@ check_cmd_args(const util::command_line_arg_view &cmd_args,
   switch (operation_mode) {
   case binsrv::operation_mode_type::fetch:
   case binsrv::operation_mode_type::pull:
+  case binsrv::operation_mode_type::list:
     if (number_of_cmd_args != expected_number_of_cmd_args_with_config) {
       return false;
     }
@@ -952,6 +953,47 @@ bool handle_version() {
   return true;
 }
 
+// shared by all 'handle_*' subcommands that build a 'search_response':
+// translates a binlog record kept inside 'binsrv::storage' into
+// a record of the response model
+void append_record_to_response(binsrv::models::search_response &response,
+                               const binsrv::storage &storage,
+                               const auto &record) {
+  response.add_record(record.name.str(), record.size,
+                      storage.get_binlog_uri(record.name),
+                      record.previous_gtids, record.added_gtids,
+                      record.timestamps.get_min_timestamp().get_value(),
+                      record.timestamps.get_max_timestamp().get_value());
+}
+
+bool handle_list(std::string_view config_file_path) {
+  bool operation_successful{false};
+  std::string result;
+
+  try {
+    const binsrv::main_config config{config_file_path};
+    const auto &storage_config = config.root().get<"storage">();
+    const auto &replication_config = config.root().get<"replication">();
+    const auto replication_mode{replication_config.get<"mode">()};
+
+    const binsrv::storage storage{
+        storage_config, binsrv::storage_construction_mode_type::querying_only,
+        replication_mode};
+
+    binsrv::models::search_response response;
+    for (const auto &record : storage.get_binlog_records()) {
+      append_record_to_response(response, storage, record);
+    }
+    result = response.str();
+    operation_successful = true;
+  } catch (const std::exception &e) {
+    const binsrv::models::error_response response{e.what()};
+    result = response.str();
+  }
+  std::cout << result << '\n';
+  return operation_successful;
+}
+
 // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 bool handle_search_by_timestamp(std::string_view config_file_path,
                                 std::string_view subcommand_value) {
@@ -984,11 +1026,7 @@ bool handle_search_by_timestamp(std::string_view config_file_path,
       if (record.timestamps.get_min_timestamp() > timestamp) {
         break;
       }
-      response.add_record(record.name.str(), record.size,
-                          storage.get_binlog_uri(record.name),
-                          record.previous_gtids, record.added_gtids,
-                          record.timestamps.get_min_timestamp().get_value(),
-                          record.timestamps.get_max_timestamp().get_value());
+      append_record_to_response(response, storage, record);
     }
     if (response.root().get<"result">().empty()) {
       throw std::runtime_error("Timestamp is too old");
@@ -1044,11 +1082,7 @@ bool handle_search_by_gtid_set(std::string_view config_file_path,
       }
       remaining_gtids.subtract(*record.added_gtids);
 
-      response.add_record(record.name.str(), record.size,
-                          storage.get_binlog_uri(record.name),
-                          record.previous_gtids, record.added_gtids,
-                          record.timestamps.get_min_timestamp().get_value(),
-                          record.timestamps.get_max_timestamp().get_value());
+      append_record_to_response(response, storage, record);
     }
     if (!remaining_gtids.is_empty()) {
       throw std::runtime_error("The specified GTID set cannot be covered");
@@ -1061,6 +1095,27 @@ bool handle_search_by_gtid_set(std::string_view config_file_path,
   }
   std::cout << result << '\n';
   return operation_successful;
+}
+
+// dispatcher for the read-only subcommands that do not need logger / signal
+// handler / replication setup; returns std::nullopt for streaming modes
+// ('fetch' and 'pull') and the handler's success flag otherwise
+std::optional<bool>
+dispatch_stateless_command(binsrv::operation_mode_type operation_mode,
+                           std::string_view config_file_path,
+                           std::string_view subcommand_value) {
+  switch (operation_mode) {
+  case binsrv::operation_mode_type::version:
+    return handle_version();
+  case binsrv::operation_mode_type::list:
+    return handle_list(config_file_path);
+  case binsrv::operation_mode_type::search_by_timestamp:
+    return handle_search_by_timestamp(config_file_path, subcommand_value);
+  case binsrv::operation_mode_type::search_by_gtid_set:
+    return handle_search_by_gtid_set(config_file_path, subcommand_value);
+  default:
+    return std::nullopt;
+  }
 }
 
 // since c++20 it is no longer needed to initialize std::atomic_flag with
@@ -1090,6 +1145,7 @@ int main(int argc, char *argv[]) {
   if (!cmd_args_checked) {
     std::cerr << "usage: " << executable_name
               << " (fetch|pull)) <json_config_file>\n"
+              << "       " << executable_name << " list <json_config_file>\n"
               << "       " << executable_name
               << " search_by_timestamp <json_config_file> <timestamp>\n"
               << "       " << executable_name
@@ -1098,23 +1154,11 @@ int main(int argc, char *argv[]) {
     return EXIT_FAILURE;
   }
 
-  // handling the 'version' command
-  if (operation_mode == binsrv::operation_mode_type::version) {
-    return handle_version() ? EXIT_SUCCESS : EXIT_FAILURE;
-  }
-
-  // handling the 'search_by_timestamp' command
-  if (operation_mode == binsrv::operation_mode_type::search_by_timestamp) {
-    return handle_search_by_timestamp(config_file_path, subcommand_value)
-               ? EXIT_SUCCESS
-               : EXIT_FAILURE;
-  }
-
-  // handling the 'search_by_gtid_set' command
-  if (operation_mode == binsrv::operation_mode_type::search_by_gtid_set) {
-    return handle_search_by_gtid_set(config_file_path, subcommand_value)
-               ? EXIT_SUCCESS
-               : EXIT_FAILURE;
+  // handling the read-only subcommands ('version', 'list', 'search_by_*')
+  if (const auto stateless_result{dispatch_stateless_command(
+          operation_mode, config_file_path, subcommand_value)};
+      stateless_result.has_value()) {
+    return *stateless_result ? EXIT_SUCCESS : EXIT_FAILURE;
   }
 
   int exit_code = EXIT_FAILURE;
