@@ -34,6 +34,7 @@ namespace binsrv {
 #define BINSRV_OPERATION_MODE_TYPE_X_SEQUENCE() \
   BINSRV_OPERATION_MODE_TYPE_X_MACRO(fetch              ),  \
   BINSRV_OPERATION_MODE_TYPE_X_MACRO(pull               ),  \
+  BINSRV_OPERATION_MODE_TYPE_X_MACRO(list               ),  \
   BINSRV_OPERATION_MODE_TYPE_X_MACRO(search_by_timestamp),  \
   BINSRV_OPERATION_MODE_TYPE_X_MACRO(search_by_gtid_set ),  \
   BINSRV_OPERATION_MODE_TYPE_X_MACRO(version            )
