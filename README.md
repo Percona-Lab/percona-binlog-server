@@ -57,8 +57,9 @@ export BUILD_PRESET=release_gcc14
 
 ```bash
 git clone --recurse-submodules -b boost-1.90.0 --jobs=8 https://github.com/boostorg/boost.git
-cd boost
+pushd boost
 git switch -c required_release
+popd
 ```
 
 ###### Copying CMake presets for Boost Libraries
@@ -91,8 +92,9 @@ cmake --install ./boost-build-${BUILD_PRESET}
 
 ```bash
 git clone --recurse-submodules -b 1.11.774 --jobs=8 https://github.com/aws/aws-sdk-cpp
-cd aws-sdk-cpp
+pushd aws-sdk-cpp
 git switch -c required_release
+popd
 ```
 
 ###### Copying CMake presets for AWS SDK CPP Libraries
@@ -175,7 +177,7 @@ For instance,
 ```
 may print
 ```
-0.2.3
+0.3.0
 ```
 
 #### 'search_by_timestamp' operation mode
