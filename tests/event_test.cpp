@@ -44,6 +44,7 @@
 #include "binsrv/events/gtid_log_post_header.hpp"
 #include "binsrv/events/protocol_traits_fwd.hpp"
 #include "binsrv/events/reader_context.hpp"
+#include "binsrv/events/rewriter.hpp"
 
 #include "util/byte_span_fwd.hpp"
 #include "util/semantic_version.hpp"
@@ -308,7 +309,7 @@ BOOST_AUTO_TEST_CASE(EventMaterialization) {
 
   // checking materialization of an event that has checksum
   const binsrv::events::event_view checksum_as_is_generated_v{
-      binsrv::events::materialize(
+      binsrv::events::rewriter::materialize(
           generated_event_v, materialization_buffer,
           binsrv::events::materialization_type::leave_checksum_as_is)};
   BOOST_CHECK(checksum_as_is_generated_v.has_footer());
@@ -321,7 +322,7 @@ BOOST_AUTO_TEST_CASE(EventMaterialization) {
       context_with_checksum, util::const_byte_span{materialization_buffer}};
 
   const binsrv::events::event_view force_add_checksum_generated_v{
-      binsrv::events::materialize(
+      binsrv::events::rewriter::materialize(
           generated_event_v, materialization_buffer,
           binsrv::events::materialization_type::force_add_checksum)};
   BOOST_CHECK(force_add_checksum_generated_v.has_footer());
@@ -334,7 +335,7 @@ BOOST_AUTO_TEST_CASE(EventMaterialization) {
       context_with_checksum, util::const_byte_span{materialization_buffer}};
 
   const binsrv::events::event_view force_remove_checksum_generated_v{
-      binsrv::events::materialize(
+      binsrv::events::rewriter::materialize(
           generated_event_v, materialization_buffer,
           binsrv::events::materialization_type::force_remove_checksum)};
   BOOST_CHECK(!force_remove_checksum_generated_v.has_footer());
@@ -351,7 +352,7 @@ BOOST_AUTO_TEST_CASE(EventMaterialization) {
       context_wo_checksum, util::const_byte_span{event_wo_footer_buffer}};
 
   const binsrv::events::event_view checksum_as_is_copied_v{
-      binsrv::events::materialize(
+      binsrv::events::rewriter::materialize(
           copied_event_v, materialization_buffer,
           binsrv::events::materialization_type::leave_checksum_as_is)};
   BOOST_CHECK(!checksum_as_is_copied_v.has_footer());
@@ -362,7 +363,7 @@ BOOST_AUTO_TEST_CASE(EventMaterialization) {
       context_wo_checksum, util::const_byte_span{materialization_buffer}};
 
   const binsrv::events::event_view force_add_checksum_copied_v{
-      binsrv::events::materialize(
+      binsrv::events::rewriter::materialize(
           copied_event_v, materialization_buffer,
           binsrv::events::materialization_type::force_add_checksum)};
   BOOST_CHECK(force_add_checksum_copied_v.has_footer());
@@ -375,7 +376,7 @@ BOOST_AUTO_TEST_CASE(EventMaterialization) {
       context_with_checksum, util::const_byte_span{materialization_buffer}};
 
   const binsrv::events::event_view force_remove_checksum_copied_v{
-      binsrv::events::materialize(
+      binsrv::events::rewriter::materialize(
           copied_event_v, materialization_buffer,
           binsrv::events::materialization_type::force_remove_checksum)};
   BOOST_CHECK(!force_remove_checksum_copied_v.has_footer());

@@ -47,7 +47,7 @@ set(gtid_set_source_files
   ${PROJECT_SOURCE_DIR}/src/binsrv/gtids/gtid_set.cpp
 )
 
-set(event_set_source_files
+set(event_source_files
   ${PROJECT_SOURCE_DIR}/src/binsrv/ctime_timestamp.cpp
 
   ${PROJECT_SOURCE_DIR}/src/binsrv/composite_binlog_name_fwd.hpp
@@ -154,6 +154,10 @@ set(event_set_source_files
   ${PROJECT_SOURCE_DIR}/src/binsrv/events/reader_context.hpp
   ${PROJECT_SOURCE_DIR}/src/binsrv/events/reader_context.cpp
 
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/rewriter_fwd.hpp
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/rewriter.hpp
+  ${PROJECT_SOURCE_DIR}/src/binsrv/events/rewriter.cpp
+
   ${PROJECT_SOURCE_DIR}/src/binsrv/events/rotate_body_impl_fwd.hpp
   ${PROJECT_SOURCE_DIR}/src/binsrv/events/rotate_body_impl.hpp
   ${PROJECT_SOURCE_DIR}/src/binsrv/events/rotate_body_impl.cpp
@@ -243,7 +247,7 @@ set_target_properties(gtid_set_test PROPERTIES
   CXX_EXTENSIONS NO
 )
 
-add_executable(event_test event_test.cpp ${uuid_source_files} ${tag_source_files} ${gtid_source_files} ${gtid_set_source_files} ${event_set_source_files})
+add_executable(event_test event_test.cpp ${uuid_source_files} ${tag_source_files} ${gtid_source_files} ${gtid_set_source_files} ${event_source_files})
 target_include_directories(event_test PRIVATE "${PROJECT_SOURCE_DIR}/src")
 target_link_libraries(event_test
   PRIVATE

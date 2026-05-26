@@ -188,6 +188,10 @@ set(source_files
   src/binsrv/events/reader_context.hpp
   src/binsrv/events/reader_context.cpp
 
+  src/binsrv/events/rewriter_fwd.hpp
+  src/binsrv/events/rewriter.hpp
+  src/binsrv/events/rewriter.cpp
+
   src/binsrv/events/rotate_body_impl_fwd.hpp
   src/binsrv/events/rotate_body_impl.hpp
   src/binsrv/events/rotate_body_impl.cpp
