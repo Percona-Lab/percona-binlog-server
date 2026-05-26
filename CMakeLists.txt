@@ -494,6 +494,7 @@ set(binsrv_source_files
 
   src/binsrv/storage_config_fwd.hpp
   src/binsrv/storage_config.hpp
+  src/binsrv/storage_config.cpp
 
   src/binsrv/storage_metadata_fwd.hpp
   src/binsrv/storage_metadata.hpp

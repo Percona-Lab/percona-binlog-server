@@ -249,7 +249,9 @@ void log_storage_config_info(binsrv::basic_logger &logger,
 
   log_config_param<"backend">(logger, storage_config,
                               "binlog storage backend type");
-  // not printing "uri" here deliberately to avoid credentials leaking
+  logger.log(binsrv::log_severity::info,
+             "binlog storage backend URI (masked): " +
+                 storage_config.get_masked_uri());
   log_config_param<"fs_buffer_directory">(
       logger, storage_config,
       "binlog storage backend filesystem buffer directory");
@@ -420,14 +422,17 @@ void process_artificial_rotate_event(
         storage.get_current_binlog_name()) {
       // in addition, in position-based replication mode we also need to check
       // the position
-      const binsrv::events::generic_post_header<
-          binsrv::events::code_type::rotate>
-          current_rotate_post_header{current_event_v.get_post_header_raw()};
+      if (storage.get_replication_mode() ==
+          binsrv::replication_mode_type::position) {
+        const binsrv::events::generic_post_header<
+            binsrv::events::code_type::rotate>
+            current_rotate_post_header{current_event_v.get_post_header_raw()};
 
-      if (current_rotate_post_header.get_position_raw() !=
-          storage.get_current_position()) {
-        util::exception_location().raise<std::logic_error>(
-            "unexpected binlog position in artificial rotate event");
+        if (current_rotate_post_header.get_position_raw() !=
+            storage.get_current_position()) {
+          util::exception_location().raise<std::logic_error>(
+              "unexpected binlog position in artificial rotate event");
+        }
       }
 
       binlog_opening_needed = false;
@@ -773,7 +778,7 @@ bool open_connection_and_switch_to_replication(
     if (operation_mode == binsrv::operation_mode_type::fetch) {
       throw;
     }
-    logger.log(binsrv::log_severity::info,
+    logger.log(binsrv::log_severity::error,
                "unable to establish connection to mysql server");
     return false;
   }
@@ -790,7 +795,20 @@ bool open_connection_and_switch_to_replication(
 
   try {
     if (storage.is_in_gtid_replication_mode()) {
-      const auto &gtids{storage.get_gtids()};
+      if (storage.is_empty()) {
+        static constexpr std::string_view select_gtid_purged_query{
+            "SELECT @@GLOBAL.gtid_purged"};
+        storage.set_purged_gtids(binsrv::gtids::gtid_set{
+            connection.execute_select_query_string_result(
+                select_gtid_purged_query)});
+        logger.log(
+            binsrv::log_severity::info,
+            "extracted purged GTIDs from the mysql server for an empty "
+            "storage: " +
+                boost::lexical_cast<std::string>(storage.get_purged_gtids()));
+      }
+
+      const auto gtids{storage.get_gtids()};
       const auto encoded_size{gtids.calculate_encoded_size()};
 
       binsrv::gtids::gtid_set_storage encoded_gtids_buffer(encoded_size);
@@ -814,7 +832,7 @@ bool open_connection_and_switch_to_replication(
     if (operation_mode == binsrv::operation_mode_type::fetch) {
       throw;
     }
-    logger.log(binsrv::log_severity::info, "unable to switch to replication");
+    logger.log(binsrv::log_severity::error, "unable to switch to replication");
     return false;
   }
 
@@ -1073,7 +1091,9 @@ int main(int argc, char *argv[]) {
     std::cerr << "usage: " << executable_name
               << " (fetch|pull)) <json_config_file>\n"
               << "       " << executable_name
-              << " search_by_timestamp <json_config_file> <iso_utc_timestamp>\n"
+              << " search_by_timestamp <json_config_file> <timestamp>\n"
+              << "       " << executable_name
+              << " search_by_gtid_set <json_config_file> <gtid_set>\n"
               << "       " << executable_name << " version\n";
     return EXIT_FAILURE;
   }

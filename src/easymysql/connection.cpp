@@ -429,8 +429,62 @@ void connection::execute_generic_query_noresult(std::string_view query) {
 
   auto *casted_impl = mysql_deimpl::get(mysql_impl_);
   if (mysql_real_query(casted_impl, std::data(query), std::size(query)) != 0) {
-    raise_core_error_from_connection("cannot execute query", *this);
+    raise_core_error_from_connection("cannot execute noresult query", *this);
   }
+}
+
+[[nodiscard]] std::string
+connection::execute_select_query_string_result(std::string_view query) {
+  assert(!is_empty());
+  if (is_in_replication_mode()) {
+    util::exception_location().raise<std::logic_error>(
+        "cannot execute query in replication mode");
+  }
+
+  auto *casted_impl = mysql_deimpl::get(mysql_impl_);
+  if (mysql_real_query(casted_impl, std::data(query), std::size(query)) != 0) {
+    raise_core_error_from_connection("cannot execute string result query",
+                                     *this);
+  }
+
+  const auto mysql_res_deleter = [](MYSQL_RES *result_raw) {
+    if (result_raw != nullptr) {
+      mysql_free_result(result_raw);
+    }
+  };
+  using mysql_res_ptr = std::unique_ptr<MYSQL_RES, decltype(mysql_res_deleter)>;
+
+  const mysql_res_ptr result{mysql_store_result(casted_impl),
+                             mysql_res_deleter};
+  if (!result) {
+    raise_core_error_from_connection("cannot store query result", *this);
+  }
+  if (mysql_num_rows(result.get()) != 1U) {
+    raise_core_error_from_connection("query did not return exactly one row",
+                                     *this);
+  }
+
+  static constexpr std::size_t expected_num_fields{1U};
+  if (mysql_num_fields(result.get()) != expected_num_fields) {
+    raise_core_error_from_connection("query did not return exactly one column",
+                                     *this);
+  }
+
+  MYSQL_ROW row_raw{mysql_fetch_row(result.get())};
+  assert(row_raw != nullptr);
+
+  const std::span<const char *const, expected_num_fields> row{
+      row_raw, expected_num_fields};
+  if (row.front() == nullptr) {
+    raise_core_error_from_connection("query returned NULL value", *this);
+  }
+
+  const auto *const lengths_raw{mysql_fetch_lengths(result.get())};
+  assert(lengths_raw != nullptr);
+  const std::span<const unsigned long, expected_num_fields> lengths{
+      lengths_raw, expected_num_fields};
+
+  return std::string{row.front(), lengths.front()};
 }
 
 bool connection::ping() {

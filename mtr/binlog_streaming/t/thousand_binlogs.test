@@ -1,0 +1,90 @@
+--source ../include/have_binsrv.inc
+--source include/big_test.inc
+
+--source ../include/v80_v84_compatibility_defines.inc
+
+# in case of --repeat=N, we need to start from a fresh binary log to make
+# this test deterministic
+--echo *** Resetting replication at the very beginning of the test.
+--disable_query_log
+eval $stmt_reset_binary_logs_and_gtids;
+--enable_query_log
+
+# identifying backend storage type ('file' or 's3')
+--source ../include/identify_storage_backend.inc
+
+# creating data directory, configuration file, etc.
+--let $binsrv_connect_timeout = 20
+--let $binsrv_read_timeout = 60
+--let $binsrv_idle_time = 10
+--let $binsrv_verify_checksum = TRUE
+--let $binsrv_replication_mode = position
+--let $binsrv_checkpoint_size = 1
+--source ../include/set_up_binsrv_environment.inc
+
+--let $read_from_file = $MYSQL_TMP_DIR/search_result.json
+
+--echo
+--echo *** Creating a simple table.
+CREATE TABLE t1(id INT UNSIGNED NOT NULL AUTO_INCREMENT, PRIMARY KEY(id)) ENGINE=InnoDB;
+
+--let $number_of_binlogs = 1000
+--echo
+--echo *** Generating $number_of_binlogs binlogs
+--let $index = 0
+
+--disable_query_log
+while($index < $number_of_binlogs)
+{
+  INSERT INTO t1 VALUES();
+  FLUSH BINARY LOGS;
+  --inc $index
+}
+INSERT INTO t1 VALUES();
+--enable_query_log
+
+--echo
+--echo *** Executing the Binlog Server utility and fetching all events.
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+--let $current_timestamp = `SELECT DATE_FORMAT(CONVERT_TZ(NOW(), @@session.time_zone, '+00:00'),'%Y-%m-%dT%H:%i:%s')`
+
+--echo
+--echo *** Executing the Binlog Server utility in the 'search_by_timestamp'
+--exec $BINSRV search_by_timestamp $binsrv_config_file_path $current_timestamp > $read_from_file
+
+--source include/read_file_to_var.inc
+# the result will be too big, so storing it in a session variable
+--disable_query_log
+eval SET @search_result = '$result';
+--enable_query_log
+--assert(`SELECT JSON_EXTRACT(@search_result, '$.status') = 'success'`)
+--assert(`SELECT JSON_LENGTH(JSON_EXTRACT(@search_result, '$.result')) = $number_of_binlogs + 1`)
+
+--echo
+--echo *** Executing the Binlog Server utility one more time (fetching nothing)
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+--echo
+--echo *** Executing the Binlog Server utility in the 'search_by_timestamp'
+--echo *** one more time (expecting the same results)
+--exec $BINSRV search_by_timestamp $binsrv_config_file_path $current_timestamp > $read_from_file
+
+--source include/read_file_to_var.inc
+# the result will be too big, so storing it in a session variable
+--disable_query_log
+eval SET @search_result = '$result';
+--enable_query_log
+--assert(`SELECT JSON_EXTRACT('$result', '$.status') = 'success'`)
+--assert(`SELECT JSON_LENGTH(JSON_EXTRACT('$result', '$.result')) = $number_of_binlogs + 1`)
+
+--echo
+--echo *** Removing the search result file.
+--remove_file $read_from_file
+
+--echo
+--echo *** Dropping the table.
+DROP TABLE t1;
+
+# cleaning up
+--source ../include/tear_down_binsrv_environment.inc

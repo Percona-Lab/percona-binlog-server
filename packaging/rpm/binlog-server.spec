@@ -134,8 +134,22 @@ install -D -m 0644  main_config.json %{buildroot}/%{_sysconfdir}/percona-binlog-
 
 
 %changelog
-* Fri Jan 16 2026 Vadim Yalovets <vadim.yalovets@percona.com> - 1.0.0-1
-- PKG-1208 Prepare packages for Percona Binlog Server
+* Fri Apr 24 2026 Yura Sorokin <yura.sorokin@percona.com> - 0.2.3-1
+- PS-11033 Crash when S3 bucket accumulates large number of objects; recovery requires manual intervention.
+
+* Tue Apr 21 2026 Yura Sorokin <yura.sorokin@percona.com> - 0.2.2-1
+- PS-11054 Cannot replicate because the source purged required binary logs.
+
+* Fri Apr 10 2026 Yura Sorokin <yura.sorokin@percona.com> - 0.2.1-1
+- PS-10910 Bucket name is missing in search_* outputs.
+- PS-11002 Changing storage prefix fails.
+- PS-10911 Unexpected binlog position in artificial rotate event.
+
+* Mon Mar 16 2026 Yura Sorokin <yura.sorokin@percona.com> - 0.2.0-1
+- Percona Binlog Server with GTID replication support.
+
+* Fri Jan 16 2026 Vadim Yalovets <vadim.yalovets@percona.com> - 0.1.0-2
+- PKG-1208 Prepare packages for Percona Binlog Server.
 
 * Mon Aug 26 2024 Surabhi Bhat <surabhi.bhat@percona.com> - 0.1.0-1
 - Initial package with separate builds for Debug and RelWithDebInfo versions.

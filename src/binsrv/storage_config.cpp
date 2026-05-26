@@ -13,11 +13,20 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef APP_VERSION_HPP
-#define APP_VERSION_HPP
+#include "binsrv/storage_config.hpp"
 
-#include "util/semantic_version.hpp"
+#include <string>
 
-static constexpr util::semantic_version app_version{0U, 2U, 3U};
+#include <boost/url/url.hpp>
 
-#endif // APP_VERSION_HPP
+namespace binsrv {
+
+[[nodiscard]] std::string storage_config::get_masked_uri() const {
+  boost::urls::url masked_uri{get<"uri">()};
+  if (masked_uri.has_userinfo()) {
+    masked_uri.set_userinfo("***:***");
+  }
+  return masked_uri.c_str();
+}
+
+} // namespace binsrv
