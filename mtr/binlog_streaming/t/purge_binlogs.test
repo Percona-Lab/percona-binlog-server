@@ -2,14 +2,7 @@
 
 --source ../include/v80_v84_compatibility_defines.inc
 
-# identifying backend storage type ('file' or 's3') early - 'purge_binlogs'
-# is supported only on the local filesystem backend
 --source ../include/identify_storage_backend.inc
-
-if ($storage_backend == s3)
-{
-  --skip purge_binlogs is supported only on the local filesystem backend
-}
 
 # in case of --repeat=N, we need to start from a fresh binary log to make
 # this test deterministic
