@@ -1,0 +1,224 @@
+--source ../include/have_binsrv.inc
+
+--source include/have_debug_sync.inc
+
+--source ../include/v80_v84_compatibility_defines.inc
+
+# Companion to gtid_renumbering_resume.test exercising the
+# DURABILITY of the persisted renumberer recovery snapshot under a
+# mid-transaction disconnect in rewrite mode.
+#
+# In rewrite mode the renumberer's per-file sequence_number counter
+# is bumped speculatively the moment a GTID event is rewritten, but
+# it is only "committed" (and mirrored into the per-binlog .json
+# metadata) at the corresponding transaction boundary. If a connection
+# drops between a GTID rewrite and the matching transaction boundary,
+# the partial transaction is discarded and the renumberer must be
+# rolled back to the previously committed state - otherwise the
+# snapshot persisted alongside the durable bytes would point past the
+# end of those bytes, and the next binsrv invocation would re-allocate
+# a sequence_number for the resent transaction, leaving a permanent
+# gap in the local sequence_number stream.
+#
+# The scenario:
+#   1. binsrv processes T_first (CREATE TABLE t1) cleanly. Disk:
+#      bnlg.000001 contains the GTID event with sequence_number=1
+#      and the metadata records next_local_seq=1.
+#   2. The source-side dump thread is armed with
+#      'dump_thread_wait_after_send_write_rows'. From now on it
+#      will pause right after sending the first WRITE_ROWS event
+#      of any transaction.
+#   3. The source produces T_second (CREATE TABLE t2, no
+#      Write_rows) and T_third (INSERT INTO t1, has Write_rows).
+#   4. The second binsrv invocation absorbs T_second in full but
+#      freezes mid-T_third (after T_third's GTID has already
+#      advanced the renumberer's speculative counter from 2 to 3).
+#      It then hits read_timeout and exits with a non-zero code.
+#      The storage destructor flushes whatever was complete in the
+#      in-memory buffer - i.e. T_second - and writes the per-binlog
+#      .json metadata.
+#   5. The persisted snapshot at this point MUST carry
+#      next_local_seq=2 (the committed value, matching T_second
+#      which is the last GTID actually flushed to disk). With a
+#      regression of the commit/rollback semantics the snapshot
+#      would instead carry the speculative next_local_seq=3 - a
+#      value that points past the durable bytes.
+#   6. The third binsrv invocation re-reads the metadata, seeds
+#      the renumberer accordingly and re-receives T_third (which
+#      the source resends because binsrv never acknowledged it).
+#      With the fix T_third lands as sequence_number=3 and
+#      bnlg.000001 ends up with the contiguous sequence
+#      1, 2, 3. Without the fix it lands as sequence_number=4 and
+#      the perl validator at the end of this test catches the gap.
+
+--echo *** Resetting replication at the very beginning of the test.
+--disable_query_log
+eval $stmt_reset_binary_logs_and_gtids;
+--enable_query_log
+
+# identifying backend storage type ('file' or 's3')
+--source ../include/identify_storage_backend.inc
+
+# creating data directory, configuration file, etc.
+--let $binsrv_connect_timeout = 20
+# Short read_timeout to make the second binsrv invocation exit
+# quickly once the source dump thread freezes mid-transaction.
+--let $binsrv_read_timeout = 5
+--let $binsrv_idle_time = 10
+--let $binsrv_verify_checksum = TRUE
+--let $binsrv_replication_mode = gtid
+# Large checkpoint_size so flushes happen only at end-of-stream
+# (storage destructor). With this configuration multiple complete
+# transactions can stay buffered alongside an in-flight one - the
+# layout that exposes the stale-snapshot bug when the disconnect
+# happens mid-transaction.
+--let $binsrv_checkpoint_size = 1G
+# Single local file for the entire test - the property under test
+# is the in-file recovery snapshot, not local rotation.
+--let $binsrv_rewrite_file_size = 1G
+--source ../include/set_up_binsrv_environment.inc
+
+--echo
+--echo *** Phase 1: T_first = CREATE TABLE t1 (1 GTID event, no
+--echo *** Write_rows).
+CREATE TABLE t1(id INT UNSIGNED NOT NULL AUTO_INCREMENT, PRIMARY KEY(id)) ENGINE=InnoDB;
+
+--echo
+--echo *** First binsrv invocation: writes T_first with
+--echo *** sequence_number=1 to bnlg.000001 and persists
+--echo *** next_local_seq=1 in the per-binlog metadata.
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+--echo
+--echo *** Phase 2: arm the source dump thread to pause AFTER
+--echo *** sending the first WRITE_ROWS event of any transaction.
+--echo *** Combined with the short binsrv read_timeout, this freezes
+--echo *** the second binsrv invocation mid-T_third (after T_third's
+--echo *** GTID has been processed by binsrv but before T_third's
+--echo *** XID can be received).
+SET @old_global_debug = @@global.debug;
+SET GLOBAL DEBUG = '+d,dump_thread_wait_after_send_write_rows';
+
+--echo
+--echo *** Workload that the second binsrv invocation will read:
+--echo *** T_second (CREATE TABLE t2, no Write_rows; will be
+--echo *** absorbed in full) and T_third (INSERT INTO t1, has
+--echo *** Write_rows; binsrv will receive its GTID and prefix
+--echo *** events and then time out waiting for the rest).
+CREATE TABLE t2(id INT UNSIGNED NOT NULL AUTO_INCREMENT, PRIMARY KEY(id)) ENGINE=InnoDB;
+INSERT INTO t1 VALUES(DEFAULT);
+
+--echo
+--echo *** Second binsrv invocation: expected to exit with non-zero
+--echo *** status after read_timeout. The storage destructor flushes
+--echo *** the COMMITTED transaction (T_second) and persists the
+--echo *** per-binlog metadata. The renumberer recovery snapshot
+--echo *** persisted here MUST be next_local_seq=2 (committed, in
+--echo *** lockstep with the flushed bytes) and not the speculative
+--echo *** next_local_seq=3 produced by T_third's GTID rewrite.
+--error 1
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+--echo
+--echo *** Releasing the paused source dump thread: SIGNAL wakes it
+--echo *** from the debug_sync wait, after which its first attempt
+--echo *** to send the next event fails on the half-closed socket
+--echo *** and the dump thread exits. DEBUG flag is then restored so
+--echo *** the new dump thread spawned by binsrv 3 does not pause.
+SET DEBUG_SYNC = 'now SIGNAL signal.continue';
+SET GLOBAL DEBUG = @old_global_debug;
+
+let $wait_condition = SELECT COUNT(*) = 0 FROM information_schema.processlist WHERE COMMAND IN ('Binlog Dump', 'Binlog Dump GTID');
+--source include/wait_condition.inc
+
+SET DEBUG_SYNC = 'RESET';
+
+--echo
+--echo *** Third binsrv invocation: the source resends T_third
+--echo *** (binsrv never acknowledged it), and the renumberer
+--echo *** continues from the persisted committed snapshot. T_third
+--echo *** must land as sequence_number=3 so bnlg.000001 ends up
+--echo *** gap-free.
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+--echo
+--echo *** Materializing bnlg.000001 produced across all three
+--echo *** invocations and dumping it via mysqlbinlog for textual
+--echo *** inspection.
+if ($storage_backend == file)
+{
+  --let $local_binlog_path = $binsrv_storage_path/bnlg.000001
+}
+if ($storage_backend == s3)
+{
+  --let $local_binlog_path = $MYSQL_TMP_DIR/gtid_renumbering_resume_after_partial.bnlg.000001
+  --exec $aws_cli s3 cp s3://$aws_s3_bucket$binsrv_storage_path/bnlg.000001 $local_binlog_path > /dev/null
+}
+
+--let GTID_DUMP = $MYSQL_TMP_DIR/gtid_renumbering_resume_after_partial.dump
+--exec $MYSQL_BINLOG --base64-output=DECODE-ROWS $local_binlog_path > $GTID_DUMP
+
+--echo
+--echo *** Validating that bnlg.000001 contains exactly 3 GTID
+--echo *** events with contiguous sequence_numbers 1, 2, 3 and
+--echo *** that every last_committed value references an in-file
+--echo *** sequence_number. Aborts with --die on any invariant
+--echo *** violation; produces no output otherwise.
+
+--perl
+  use strict;
+  use warnings;
+
+  my $dump_path = $ENV{'GTID_DUMP'};
+  open(my $fh, '<', $dump_path) or die "Failed to open $dump_path: $!";
+  my @events;
+  while (my $line = <$fh>) {
+    if ($line =~ /last_committed=(\d+).*?sequence_number=(\d+)/) {
+      push @events, { lc => $1 + 0, sn => $2 + 0 };
+    }
+  }
+  close($fh);
+
+  # T_first (CREATE TABLE t1), T_second (CREATE TABLE t2), and the
+  # resent T_third (INSERT INTO t1) - 3 GTID events in total, all
+  # in bnlg.000001.
+  my $expected_count = 3;
+  die "expected exactly $expected_count GTID events in the local "
+      . "binlog file, got " . scalar @events
+    unless @events == $expected_count;
+
+  # Property: sequence_number must be gap-free across the
+  # mid-transaction disconnect. A regression of the commit/rollback
+  # of the renumberer's recovery snapshot would surface as
+  # sequence_number=4 (instead of 3) at index 2 - the persisted
+  # snapshot would have advanced past the discarded T_third and
+  # caused the resent T_third to be allocated next_local_seq+1
+  # twice.
+  for my $i (0 .. $#events) {
+    my $expected_sn = $i + 1;
+    die "sequence_number gap or duplicate at event index $i: "
+        . "expected sequence_number=$expected_sn, got "
+        . "$events[$i]{sn} (regression: persisted recovery info "
+        . "advanced past the discarded transaction's bytes)"
+      unless $events[$i]{sn} == $expected_sn;
+
+    die "last_committed out of range at sequence_number="
+        . "$events[$i]{sn}: got last_committed=$events[$i]{lc}"
+      unless $events[$i]{lc} >= 0 && $events[$i]{lc} < $events[$i]{sn};
+  }
+EOF
+
+--echo
+--echo *** Removing temporary files.
+--remove_file $GTID_DUMP
+if ($storage_backend == s3)
+{
+  --remove_file $local_binlog_path
+}
+
+--echo
+--echo *** Dropping the tables.
+DROP TABLE t1, t2;
+
+# cleaning up
+--source ../include/tear_down_binsrv_environment.inc
