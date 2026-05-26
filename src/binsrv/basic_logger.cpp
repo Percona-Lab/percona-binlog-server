@@ -15,6 +15,7 @@
 
 #include "binsrv/basic_logger.hpp"
 
+#include <cstddef>
 #include <string>
 #include <string_view>
 
@@ -31,17 +32,22 @@ basic_logger::basic_logger(log_severity min_level) noexcept
 
 void basic_logger::log(log_severity level, std::string_view message) {
   if (level >= min_level_) {
-    static constexpr auto timestamp_length{
+    // the length of the longest log severity label
+    // ('trace' / 'debug' / 'info' / 'warning' / 'error' / 'fatal')
+    static constexpr std::size_t padded_label_length{7U};
+    static constexpr std::size_t timestamp_length{
         std::size("YYYY-MM-DDTHH:MM:SS.fffffffff") - 1U};
     const auto timestamp = boost::posix_time::microsec_clock::universal_time();
-    ;
     const auto level_label = to_string_view(level);
+    const std::string label_padding(
+        padded_label_length - std::size(level_label), ' ');
     std::string buf;
-    buf.reserve(1 + timestamp_length + 1 + 1 + 1 + std::size(level_label) + 1 +
-                1 + std::size(message));
+    buf.reserve(1U + timestamp_length + 1U + 1U + 1U + padded_label_length +
+                1U + 1U + std::size(message));
     buf += '[';
     buf += boost::posix_time::to_iso_extended_string(timestamp);
     buf += "] [";
+    buf += label_padding;
     buf += level_label;
     buf += "] ";
     buf += message;

@@ -83,6 +83,13 @@ storage::storage(const storage_config &config,
   load_metadata();
   validate_metadata(replication_mode);
 
+  // if after metadata erasure 'storage_objects' is empty, then this mean
+  // that it has only metadata in it that passes validation and we can
+  // consider it as an initialized empty storage, so just return
+  if (storage_objects.empty()) {
+    return;
+  }
+
   const auto binlog_index_it{storage_objects.find(default_binlog_index_name)};
   if (binlog_index_it == std::cend(storage_objects)) {
     util::exception_location().raise<std::logic_error>(
@@ -108,6 +115,8 @@ storage::storage(const storage_config &config,
 
   load_and_validate_binlog_metadata_set(storage_objects,
                                         storage_metadata_objects);
+  assert(!binlog_records_.front().added_gtids.has_value() ||
+         purged_gtids_ == binlog_records_.front().added_gtids);
 }
 
 storage::~storage() {
@@ -118,6 +127,18 @@ storage::~storage() {
     } catch (...) { // NOLINT(bugprone-empty-catch)
     }
   }
+}
+
+void storage::set_purged_gtids(const gtids::gtid_set &purged_gtids) {
+  if (!is_in_gtid_replication_mode()) {
+    util::exception_location().raise<std::logic_error>(
+        "cannot set purged GTIDs in position-based replication mode");
+  }
+  if (!is_empty()) {
+    util::exception_location().raise<std::logic_error>(
+        "cannot set purged GTIDs in a non-empty storage");
+  }
+  purged_gtids_ = purged_gtids;
 }
 
 [[nodiscard]] std::string storage::get_backend_description() const {
@@ -532,6 +553,13 @@ void storage::load_and_validate_binlog_metadata_set(
   if (std::size(object_metadata_names) != std::size(binlog_records_)) {
     util::exception_location().raise<std::logic_error>(
         "found metadata for a non-existing binlog");
+  }
+
+  // if we are in GTID replication mode, then we can consider GTIDs from the
+  // first binlog metadata as purged GTIDs for the whole storage
+  const auto &optional_added_gtids{binlog_records_.front().added_gtids};
+  if (optional_added_gtids.has_value()) {
+    purged_gtids_ = *optional_added_gtids;
   }
 }
 
