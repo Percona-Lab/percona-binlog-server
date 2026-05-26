@@ -1058,13 +1058,6 @@ bool handle_purge_binlogs(std::string_view config_file_path,
     const auto &replication_config = config.root().get<"replication">();
     const auto replication_mode{replication_config.get<"mode">()};
 
-    // for now, only file backend supported
-    if (storage_config.get<"backend">() != binsrv::storage_backend_type::file) {
-      throw std::runtime_error(
-          "purge_binlogs is only supported on the local filesystem storage "
-          "backend");
-    }
-
     binsrv::storage storage{storage_config,
                             binsrv::storage_construction_mode_type::purging,
                             replication_mode};

@@ -33,7 +33,6 @@
 #include "binsrv/binlog_file_metadata.hpp"
 #include "binsrv/replication_mode_type.hpp"
 #include "binsrv/storage_backend_factory.hpp"
-#include "binsrv/storage_backend_type.hpp"
 #include "binsrv/storage_config.hpp"
 #include "binsrv/storage_metadata.hpp"
 
@@ -54,13 +53,6 @@ storage::storage(const storage_config &config,
                  replication_mode_type replication_mode)
     : construction_mode_{construction_mode}, backend_{},
       replication_mode_{replication_mode} {
-  if (construction_mode_ == storage_construction_mode_type::purging &&
-      config.get<"backend">() != storage_backend_type::file) {
-    util::exception_location().raise<std::runtime_error>(
-        "purge_binlogs is only supported on the local filesystem storage "
-        "backend");
-  }
-
   const auto &checkpoint_size_opt{config.get<"checkpoint_size">()};
   if (checkpoint_size_opt.has_value()) {
     checkpoint_size_bytes_ = checkpoint_size_opt->get_value();

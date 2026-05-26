@@ -53,6 +53,7 @@
 #include <aws/s3-crt/S3CrtClient.h>
 
 #include <aws/s3-crt/model/BucketLocationConstraint.h>
+#include <aws/s3-crt/model/DeleteObjectRequest.h>
 #include <aws/s3-crt/model/GetBucketLocationRequest.h>
 #include <aws/s3-crt/model/GetBucketLocationResult.h>
 #include <aws/s3-crt/model/GetObjectRequest.h>
@@ -170,6 +171,8 @@ public:
 
   void put_object_from_span(const qualified_object_path &dest,
                             util::const_byte_span content) const;
+
+  void delete_object(const qualified_object_path &target) const;
 
   [[nodiscard]] storage_object_name_container
   list_objects(const qualified_object_path &prefix);
@@ -344,6 +347,23 @@ void s3_storage_backend::aws_context::put_object_from_span(
                                    std::ios_base::in | std::ios_base::out |
                                        std::ios_base::binary};
   put_object_from_stream(dest, content_stream);
+}
+
+// TODO: Consider deleting several objects in one request by using
+// `DeleteObjects()` AWS SDK C++ API call
+void s3_storage_backend::aws_context::delete_object(
+    const qualified_object_path &target) const {
+  Aws::S3Crt::Model::DeleteObjectRequest delete_object_request;
+  delete_object_request.SetBucket(target.bucket);
+  delete_object_request.SetKey(target.object_path.generic_string());
+
+  const auto delete_object_outcome{
+      client_->DeleteObject(delete_object_request)};
+
+  if (!delete_object_outcome.IsSuccess()) {
+    raise_s3_error_from_outcome("cannot delete object from S3 bucket",
+                                delete_object_outcome.GetError());
+  }
 }
 
 [[nodiscard]] storage_object_name_container
@@ -679,10 +699,9 @@ void s3_storage_backend::do_put_object(std::string_view name,
       {.bucket = bucket_, .object_path = get_object_path(name)}, content);
 }
 
-void s3_storage_backend::do_remove_object(
-    [[maybe_unused]] std::string_view name) {
-  util::exception_location().raise<std::logic_error>(
-      "remove_object is not supported on the S3 storage backend");
+void s3_storage_backend::do_remove_object(std::string_view name) {
+  impl_->delete_object(
+      {.bucket = bucket_, .object_path = get_object_path(name)});
 }
 
 void s3_storage_backend::do_fsync() {
