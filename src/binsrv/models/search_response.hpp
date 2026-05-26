@@ -29,6 +29,7 @@
 #include "binsrv/models/binlog_file_record_fwd.hpp"
 #include "binsrv/models/response_status_type_fwd.hpp"
 
+#include "util/common_optional_types.hpp"
 #include "util/nv_tuple.hpp"
 
 namespace binsrv::models {
@@ -40,13 +41,17 @@ private:
   using impl_type = util::nv_tuple<
       // clang-format off
       util::nv<"version", std::uint32_t>,
-      util::nv<"status", response_status_type>,
-      util::nv<"result", binlog_file_record_container>
+      util::nv<"status" , response_status_type>,
+      util::nv<"result" , binlog_file_record_container>,
+      util::nv<"message", util::optional_string>
       // clang-format on
       >;
 
 public:
   explicit search_response();
+  // Constructs a response with the given 'status' and a non-empty
+  // diagnostic 'message' attached to it.
+  search_response(response_status_type status, std::string_view message);
   search_response(const search_response &);
   search_response(search_response &&) noexcept;
   search_response &operator=(const search_response &);

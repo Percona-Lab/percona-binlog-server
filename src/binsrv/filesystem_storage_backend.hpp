@@ -47,6 +47,8 @@ private:
   [[nodiscard]] std::string do_get_object(std::string_view name) override;
   void do_put_object(std::string_view name,
                      util::const_byte_span content) override;
+  void do_remove_object(std::string_view name) override;
+  void do_fsync() override;
 
   [[nodiscard]] std::uint64_t
   do_open_stream(std::string_view name,

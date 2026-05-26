@@ -19,6 +19,7 @@
 #include <cassert>
 #include <chrono>
 #include <cstddef>
+#include <exception>
 #include <filesystem>
 #include <iterator>
 #include <sstream>
@@ -26,11 +27,13 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 #include "binsrv/basic_storage_backend.hpp"
 #include "binsrv/binlog_file_metadata.hpp"
 #include "binsrv/replication_mode_type.hpp"
 #include "binsrv/storage_backend_factory.hpp"
+#include "binsrv/storage_backend_type.hpp"
 #include "binsrv/storage_config.hpp"
 #include "binsrv/storage_metadata.hpp"
 
@@ -51,6 +54,13 @@ storage::storage(const storage_config &config,
                  replication_mode_type replication_mode)
     : construction_mode_{construction_mode}, backend_{},
       replication_mode_{replication_mode} {
+  if (construction_mode_ == storage_construction_mode_type::purging &&
+      config.get<"backend">() != storage_backend_type::file) {
+    util::exception_location().raise<std::runtime_error>(
+        "purge_binlogs is only supported on the local filesystem storage "
+        "backend");
+  }
+
   const auto &checkpoint_size_opt{config.get<"checkpoint_size">()};
   if (checkpoint_size_opt.has_value()) {
     checkpoint_size_bytes_ = checkpoint_size_opt->get_value();
@@ -313,6 +323,101 @@ void storage::flush_event_buffer() {
   }
 }
 
+[[nodiscard]] std::pair<storage::binlog_record_container, std::string>
+storage::purge_binlogs(const events::composite_binlog_name &target) {
+  ensure_purging_mode();
+
+  if (is_empty()) {
+    util::exception_location().raise<std::runtime_error>(
+        "cannot purge: binlog storage is empty");
+  }
+  const auto &front_base_name{binlog_records_.front().name.get_base_name()};
+  if (target.get_base_name() != front_base_name) {
+    util::exception_location().raise<std::runtime_error>(
+        "cannot purge: target binlog name has a different base name than "
+        "the binlog records in the storage");
+  }
+  const auto target_it{std::ranges::find(std::as_const(binlog_records_), target,
+                                         &binlog_record::name)};
+  if (target_it == std::cend(binlog_records_)) {
+    util::exception_location().raise<std::runtime_error>(
+        "cannot purge: target binlog name is not present in the storage");
+  }
+  // refuse to purge the current tail: emptying the storage would lose
+  // the resume position (current binlog name / position in position
+  // mode, executed GTID set in GTID mode) and force the next 'fetch' /
+  // 'pull' to re-stream from the very beginning of the source's
+  // retained binlog history.
+  if (target_it == std::prev(std::cend(binlog_records_))) {
+    util::exception_location().raise<std::runtime_error>(
+        "cannot purge: target is the current tail binlog file; at least "
+        "one binlog file must remain in the storage to preserve the "
+        "resume position");
+  }
+
+  // step 1: extract the prefix [begin, target_it + 1) - this
+  // becomes the set of records we are going to drop on disk; the
+  // returned vector preserves the original order so the caller can
+  // use it directly to produce a response
+  const auto victim_count{static_cast<std::size_t>(
+      std::distance(std::cbegin(binlog_records_), target_it) + 1)};
+  binlog_record_container removed_records;
+  removed_records.reserve(victim_count);
+  std::move(std::begin(binlog_records_),
+            std::begin(binlog_records_) +
+                static_cast<std::ptrdiff_t>(victim_count),
+            std::back_inserter(removed_records));
+  binlog_records_.erase(std::begin(binlog_records_),
+                        std::begin(binlog_records_) +
+                            static_cast<std::ptrdiff_t>(victim_count));
+
+  // step 2: rewrite the binlog index from the surviving records left
+  // in 'binlog_records_' after step 1 (always non-empty thanks to the
+  // tail-refusal guard above). 'save_binlog_index' goes through the
+  // backend's atomic-overwrite 'put_object', so from this point on
+  // the purge is considered committed - any subsequent failure
+  // leaves the storage in an inconsistent state (leftover payload /
+  // metadata files no longer referenced by the index) that the
+  // constructor's existing validators will refuse to open on next
+  // startup.
+  save_binlog_index();
+
+  // step 3: best-effort removal of the victim payload + metadata
+  // objects; any failure here is intentionally swallowed - the index
+  // has already been committed and reporting a "file could not be
+  // removed" error to the caller would falsely suggest that the
+  // purge itself failed; the resulting leftovers will trip the
+  // constructor's validators on next startup.
+  // We materialise the (metadata + payload) names for every victim
+  // into a single batch and hand it to 'basic_storage_backend::
+  // remove_objects', which runs the backend's durability barrier
+  // exactly once at the end of the batch - so the whole batch
+  // amortises to a single fsync(2) on the local filesystem backend
+  // (and a no-op on S3) instead of O(N) syncs.
+  std::vector<std::string> victim_object_names;
+  victim_object_names.reserve(std::size(removed_records) * 2U);
+  for (const auto &victim : removed_records) {
+    victim_object_names.emplace_back(
+        generate_binlog_metadata_name(victim.name));
+    victim_object_names.emplace_back(victim.name.str());
+  }
+  std::string cleanup_warning_message;
+  try {
+    backend_->remove_objects(victim_object_names);
+  } catch (const std::exception &e) {
+    // 'remove_objects' re-raises the first per-name failure (if any)
+    // after running the durability barrier; we do not propagate it
+    // to the caller because the index has already been committed
+    // and any leftover payload/metadata files will be picked up by
+    // the constructor's validators on the next startup. We just
+    // capture the underlying message so the caller can surface it
+    // under a 'warning' status in the JSON response.
+    cleanup_warning_message = e.what();
+  }
+
+  return {std::move(removed_records), std::move(cleanup_warning_message)};
+}
+
 [[nodiscard]] std::string storage::get_binlog_uri(
     const events::composite_binlog_name &binlog_name) const {
   return backend_->get_object_uri(binlog_name.str());
@@ -322,6 +427,13 @@ void storage::ensure_streaming_mode() const {
   if (construction_mode_ != storage_construction_mode_type::streaming) {
     util::exception_location().raise<std::logic_error>(
         "operation requires storage to be constructed in streaming mode");
+  }
+}
+
+void storage::ensure_purging_mode() const {
+  if (construction_mode_ != storage_construction_mode_type::purging) {
+    util::exception_location().raise<std::logic_error>(
+        "operation requires storage to be constructed in purging mode");
   }
 }
 

@@ -56,6 +56,7 @@
 #include "binsrv/gtids/gtid_set.hpp"
 
 #include "binsrv/models/error_response.hpp"
+#include "binsrv/models/response_status_type.hpp"
 #include "binsrv/models/search_response.hpp"
 
 #include "binsrv/events/checksum_algorithm_type.hpp"
@@ -123,6 +124,7 @@ check_cmd_args(const util::command_line_arg_view &cmd_args,
     return true;
   case binsrv::operation_mode_type::search_by_timestamp:
   case binsrv::operation_mode_type::search_by_gtid_set:
+  case binsrv::operation_mode_type::purge_binlogs:
     if (number_of_cmd_args !=
         expected_number_of_cmd_args_with_config_and_value) {
       return false;
@@ -1042,6 +1044,62 @@ bool handle_search_by_timestamp(std::string_view config_file_path,
 }
 
 // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+bool handle_purge_binlogs(std::string_view config_file_path,
+                          std::string_view subcommand_value) {
+  bool operation_successful{false};
+  std::string result;
+
+  try {
+    const auto target_name{
+        binsrv::events::composite_binlog_name::parse(subcommand_value)};
+
+    const binsrv::main_config config{config_file_path};
+    const auto &storage_config = config.root().get<"storage">();
+    const auto &replication_config = config.root().get<"replication">();
+    const auto replication_mode{replication_config.get<"mode">()};
+
+    // for now, only file backend supported
+    if (storage_config.get<"backend">() != binsrv::storage_backend_type::file) {
+      throw std::runtime_error(
+          "purge_binlogs is only supported on the local filesystem storage "
+          "backend");
+    }
+
+    binsrv::storage storage{storage_config,
+                            binsrv::storage_construction_mode_type::purging,
+                            replication_mode};
+
+    const auto [removed_records, cleanup_warning_message] =
+        storage.purge_binlogs(target_name);
+
+    // The step-2 index rewrite has already committed by the time
+    // 'purge_binlogs' returns normally; if its best-effort step-3
+    // cleanup left orphan payload/metadata objects on disk, the
+    // call reports it via a non-empty 'cleanup_warning_message' and
+    // we surface that as a 'warning' status (instead of plain
+    // 'success'), with the underlying error message attached, so the
+    // operator knows the storage will need attention before the next
+    // 'fetch' / 'pull' run.
+    binsrv::models::search_response response;
+    if (!cleanup_warning_message.empty()) {
+      response = binsrv::models::search_response{
+          binsrv::models::response_status_type::warning,
+          cleanup_warning_message};
+    }
+    for (const auto &record : removed_records) {
+      append_record_to_response(response, storage, record);
+    }
+    result = response.str();
+    operation_successful = true;
+  } catch (const std::exception &e) {
+    const binsrv::models::error_response response{e.what()};
+    result = response.str();
+  }
+  std::cout << result << '\n';
+  return operation_successful;
+}
+
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 bool handle_search_by_gtid_set(std::string_view config_file_path,
                                std::string_view subcommand_value) {
   bool operation_successful{false};
@@ -1113,6 +1171,8 @@ dispatch_stateless_command(binsrv::operation_mode_type operation_mode,
     return handle_search_by_timestamp(config_file_path, subcommand_value);
   case binsrv::operation_mode_type::search_by_gtid_set:
     return handle_search_by_gtid_set(config_file_path, subcommand_value);
+  case binsrv::operation_mode_type::purge_binlogs:
+    return handle_purge_binlogs(config_file_path, subcommand_value);
   default:
     return std::nullopt;
   }
@@ -1150,6 +1210,8 @@ int main(int argc, char *argv[]) {
               << " search_by_timestamp <json_config_file> <timestamp>\n"
               << "       " << executable_name
               << " search_by_gtid_set <json_config_file> <gtid_set>\n"
+              << "       " << executable_name
+              << " purge_binlogs <json_config_file> <binlog_name>\n"
               << "       " << executable_name << " version\n";
     return EXIT_FAILURE;
   }

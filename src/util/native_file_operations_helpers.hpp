@@ -13,28 +13,21 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef BINSRV_STORAGE_FWD_HPP
-#define BINSRV_STORAGE_FWD_HPP
+#ifndef UTIL_NATIVE_FILE_OPERATIONS_HELPERS_HPP
+#define UTIL_NATIVE_FILE_OPERATIONS_HELPERS_HPP
 
-#include <cstdint>
+#include <filesystem>
 
-namespace binsrv {
+namespace util {
 
-enum class storage_construction_mode_type : std::uint8_t {
-  querying_only,
-  streaming,
-  purging
-};
+// Forces a previously-completed change to the contents of the
+// regular file or directory at 'path' to stable storage so it
+// survives a power-loss / hard crash on return.
+//
+// Raises 'std::runtime_error' if the path cannot be opened, fsync'd,
+// or closed.
+void fsync(const std::filesystem::path &path);
 
-enum class open_binlog_status : std::uint8_t {
-  created,
-  opened_empty,
-  opened_at_magic_payload_offset,
-  opened_with_data_present
-};
+} // namespace util
 
-class storage;
-
-} // namespace binsrv
-
-#endif // BINSRV_STORAGE_FWD_HPP
+#endif // UTIL_NATIVE_FILE_OPERATIONS_HELPERS_HPP
