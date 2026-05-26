@@ -19,6 +19,7 @@
 #include <cassert>
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <iterator>
 #include <sstream>
@@ -36,6 +37,7 @@
 #include "binsrv/storage_config.hpp"
 #include "binsrv/storage_metadata.hpp"
 
+#include "binsrv/events/common_types.hpp"
 #include "binsrv/events/protocol_traits_fwd.hpp"
 
 #include "binsrv/gtids/gtid.hpp"
@@ -184,38 +186,16 @@ storage::open_binlog(const composite_binlog_name &binlog_name) {
                                 : storage_backend_open_stream_mode::create};
   const auto open_stream_offset{backend_->open_stream(binlog_name.str(), mode)};
 
-  if (!binlog_exists) {
-    // writing the magic binlog footprint only if this is a newly
-    // created file
-    backend_->write_data_to_stream(events::magic_binlog_payload);
-
-    gtids::optional_gtid_set previous_binlog_gtids{};
-    gtids::optional_gtid_set added_binlog_gtids{};
-    if (is_in_gtid_replication_mode()) {
-      previous_binlog_gtids = get_gtids();
-      added_binlog_gtids = gtids::gtid_set{};
-    }
-
-    binlog_records_.emplace_back(binlog_name, events::magic_binlog_offset,
-                                 std::move(previous_binlog_gtids),
-                                 std::move(added_binlog_gtids),
-                                 ctime_timestamp_range{});
-    save_binlog_metadata(get_current_binlog_record());
-    save_binlog_index();
-    result = open_binlog_status::created;
+  if (binlog_exists) {
+    result = open_existing_binlog_file_internal(open_stream_offset);
+    ready_to_flush_last_sequence_number_ =
+        binlog_records_.back().last_sequence_number;
+    incomplete_transaction_last_sequence_number_ =
+        ready_to_flush_last_sequence_number_;
   } else {
-    assert(get_current_position() == open_stream_offset);
-    if (open_stream_offset == 0ULL) {
-      backend_->write_data_to_stream(events::magic_binlog_payload);
-      get_current_binlog_record().size = events::magic_binlog_offset;
-      result = open_binlog_status::opened_empty;
-    } else if (open_stream_offset == events::magic_binlog_offset) {
-      result = open_binlog_status::opened_at_magic_payload_offset;
-    } else {
-      // position is beyond magic payload offset
-      assert(open_stream_offset > events::magic_binlog_offset);
-      result = open_binlog_status::opened_with_data_present;
-    }
+    result = open_new_binlog_file_internal(binlog_name);
+    ready_to_flush_last_sequence_number_ = 0ULL;
+    incomplete_transaction_last_sequence_number_ = 0ULL;
   }
   update_last_checkpoint_info();
 
@@ -232,12 +212,16 @@ storage::open_binlog(const composite_binlog_name &binlog_name) {
 void storage::write_event(util::const_byte_span event_data,
                           bool at_transaction_boundary,
                           const gtids::gtid &transaction_gtid,
-                          const ctime_timestamp &event_timestamp) {
+                          const ctime_timestamp &event_timestamp,
+                          events::seq_no_t transaction_sequence_number) {
   ensure_streaming_mode();
 
   event_buffer_.insert(std::end(event_buffer_), std::cbegin(event_data),
                        std::cend(event_data));
   incomplete_transaction_timestamps_.add_timestamp(event_timestamp);
+  if (transaction_sequence_number != 0ULL) {
+    incomplete_transaction_last_sequence_number_ = transaction_sequence_number;
+  }
 
   if (at_transaction_boundary) {
     last_transaction_boundary_position_in_event_buffer_ =
@@ -247,6 +231,9 @@ void storage::write_event(util::const_byte_span event_data,
     }
     ready_to_flush_timestamps_.add_range(incomplete_transaction_timestamps_);
     incomplete_transaction_timestamps_.clear();
+
+    ready_to_flush_last_sequence_number_ =
+        incomplete_transaction_last_sequence_number_;
   }
 
   // now we are writing data from the event buffer to the storage backend if
@@ -298,6 +285,8 @@ void storage::discard_incomplete_transaction_events() {
 
   event_buffer_.resize(last_transaction_boundary_position_in_event_buffer_);
   incomplete_transaction_timestamps_.clear();
+  incomplete_transaction_last_sequence_number_ =
+      ready_to_flush_last_sequence_number_;
 }
 
 void storage::flush_event_buffer() {
@@ -329,6 +318,41 @@ void storage::update_last_checkpoint_info() {
   }
 }
 
+[[nodiscard]] open_binlog_status storage::open_new_binlog_file_internal(
+    const composite_binlog_name &binlog_name) {
+  // writing the magic binlog footprint only if this is a newly
+  // created file
+  backend_->write_data_to_stream(events::magic_binlog_payload);
+
+  gtids::optional_gtid_set previous_binlog_gtids{};
+  gtids::optional_gtid_set added_binlog_gtids{};
+  if (is_in_gtid_replication_mode()) {
+    previous_binlog_gtids = get_gtids();
+    added_binlog_gtids = gtids::gtid_set{};
+  }
+
+  binlog_records_.emplace_back(binlog_name, events::magic_binlog_offset,
+                               std::move(previous_binlog_gtids),
+                               std::move(added_binlog_gtids),
+                               ctime_timestamp_range{});
+  save_binlog_metadata(get_current_binlog_record());
+  save_binlog_index();
+  return open_binlog_status::created;
+}
+[[nodiscard]] open_binlog_status
+storage::open_existing_binlog_file_internal(std::uint64_t open_stream_offset) {
+  assert(get_current_position() == open_stream_offset);
+  if (open_stream_offset >= events::magic_binlog_offset) {
+    return open_stream_offset == events::magic_binlog_offset
+               ? open_binlog_status::opened_at_magic_payload_offset
+               : open_binlog_status::opened_with_data_present;
+  }
+  assert(open_stream_offset == 0ULL);
+  backend_->write_data_to_stream(events::magic_binlog_payload);
+  get_current_binlog_record().size = events::magic_binlog_offset;
+  return open_binlog_status::opened_empty;
+}
+
 void storage::flush_event_buffer_internal() {
   assert(!event_buffer_.empty());
   assert(last_transaction_boundary_position_in_event_buffer_ <=
@@ -349,6 +373,8 @@ void storage::flush_event_buffer_internal() {
     }
   }
   get_current_binlog_record().timestamps.add_range(ready_to_flush_timestamps_);
+  get_current_binlog_record().last_sequence_number =
+      ready_to_flush_last_sequence_number_;
 
   save_binlog_metadata(get_current_binlog_record());
 
@@ -471,13 +497,14 @@ storage::load_binlog_metadata(const composite_binlog_name &binlog_name) const {
       backend_->get_object(generate_binlog_metadata_name(binlog_name))};
   binlog_file_metadata metadata{content};
 
-  return binlog_record{.name = binlog_name,
-                       .size = metadata.root().get<"size">(),
-                       .previous_gtids =
-                           metadata.root().get<"previous_gtids">(),
-                       .added_gtids = metadata.root().get<"added_gtids">(),
-                       .timestamps = {metadata.root().get<"min_timestamp">(),
-                                      metadata.root().get<"max_timestamp">()}};
+  return binlog_record{
+      .name = binlog_name,
+      .size = metadata.root().get<"size">(),
+      .previous_gtids = metadata.root().get<"previous_gtids">(),
+      .added_gtids = metadata.root().get<"added_gtids">(),
+      .timestamps = {metadata.root().get<"min_timestamp">(),
+                     metadata.root().get<"max_timestamp">()},
+      .last_sequence_number = metadata.root().get<"last_sequence_number">()};
 }
 
 void storage::validate_binlog_metadata(const binlog_record &record) const {
@@ -517,6 +544,7 @@ void storage::save_binlog_metadata(const binlog_record &record) const {
       ctime_timestamp{record.timestamps.get_min_timestamp()};
   metadata.root().get<"max_timestamp">() =
       ctime_timestamp{record.timestamps.get_max_timestamp()};
+  metadata.root().get<"last_sequence_number">() = record.last_sequence_number;
   const auto content{metadata.str()};
   backend_->put_object(generate_binlog_metadata_name(record.name),
                        util::as_const_byte_span(content));
