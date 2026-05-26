@@ -125,6 +125,9 @@ set(util_source_files
 
   src/util/mixin_exception_adapter.hpp
 
+  src/util/native_file_operations_helpers.hpp
+  src/util/native_file_operations_helpers_posix.cpp
+
   src/util/nv_tuple_fwd.hpp
   src/util/nv_tuple.hpp
   src/util/nv_tuple_json_support.hpp

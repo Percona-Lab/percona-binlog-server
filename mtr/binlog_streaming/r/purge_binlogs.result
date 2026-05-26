@@ -1,0 +1,95 @@
+*** Resetting replication at the very beginning of the test.
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+
+*** 1. Executing 'purge_binlogs' on an empty storage and expecting
+***    an error.
+include/read_file_to_var.inc
+
+*** Determining the first binary log name.
+
+*** Creating a simple table.
+CREATE TABLE t1(id INT UNSIGNED NOT NULL AUTO_INCREMENT, PRIMARY KEY(id)) ENGINE=InnoDB;
+
+*** Filling the table with some data.
+INSERT INTO t1 VALUES();
+
+*** Flushing the first binary log and switching to the second one.
+FLUSH BINARY LOGS;
+
+*** Determining the second binary log name.
+
+*** Filling the table with more data.
+INSERT INTO t1 VALUES();
+
+*** Flushing the second binary log and switching to the third one.
+FLUSH BINARY LOGS;
+
+*** Determining the third binary log name.
+
+*** Filling the table with even more data.
+INSERT INTO t1 VALUES();
+
+*** Executing the Binlog Server utility and fetching all events.
+
+*** Sanity check: 'list' returns all three binlog files in chronological
+*** order.
+include/read_file_to_var.inc
+
+*** 2. 'purge_binlogs' with an unparseable target name fails with error.
+include/read_file_to_var.inc
+
+*** 3. 'purge_binlogs' with a target whose base name differs from the
+***    one in storage fails with error.
+include/read_file_to_var.inc
+
+*** 4. 'purge_binlogs' with a target not present in the storage fails
+***    with error.
+include/read_file_to_var.inc
+
+*** 5. 'purge_binlogs' with a nonexistent configuration file path fails
+***    with error.
+include/read_file_to_var.inc
+
+*** 6. 'purge_binlogs' the first binary log removes only that one file;
+***    the response lists the removed record and 'list' shows the two
+***    surviving files.
+include/read_file_to_var.inc
+include/read_file_to_var.inc
+
+*** 6a. Re-opening the purged storage with another 'fetch' must keep the
+***     surviving GTID metadata stable.
+include/read_file_to_var.inc
+
+*** 7. Re-running 'purge_binlogs' with the just-purged target now fails
+***    with the "not present" error - the operation is not idempotent
+***    by design.
+include/read_file_to_var.inc
+
+*** 8. 'purge_binlogs' the second binary log removes only that one (the
+***    first one is already gone); 'list' shows just the third file.
+include/read_file_to_var.inc
+include/read_file_to_var.inc
+
+*** 9. 'purge_binlogs' the last remaining (current tail) file is
+***    refused so that the resume position is preserved for the next
+***    'fetch' / 'pull'; 'list' still shows the third file unchanged.
+include/read_file_to_var.inc
+include/read_file_to_var.inc
+
+*** Removing the purge_binlogs result file.
+
+*** Dropping the table.
+DROP TABLE t1;
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.

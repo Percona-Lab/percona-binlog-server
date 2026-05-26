@@ -18,6 +18,7 @@
 
 #include "binsrv/basic_storage_backend_fwd.hpp" // IWYU pragma: export
 
+#include <span>
 #include <string>
 #include <string_view>
 
@@ -37,7 +38,22 @@ public:
 
   [[nodiscard]] storage_object_name_container list_objects();
   [[nodiscard]] std::string get_object(std::string_view name);
+  // 'put_object' is an atomic overwrite: a concurrent / post-crash
+  // reader either sees the previous bytes in full or the new bytes in
+  // full, never a partial mix.
   void put_object(std::string_view name, util::const_byte_span content);
+  // Single-object remove followed by a durability barrier. On
+  // return the unlink is durable against a power-loss / hard crash.
+  void remove_object(std::string_view name);
+  // Batch remove. Each name is dropped on a best-effort basis -
+  // failures do not abort the loop - and a single durability
+  // barrier runs once for the whole batch. If at least one
+  // per-name removal failed, the very first failure is re-raised
+  // out of this call after the barrier has run, so the caller
+  // learns that the batch was not 100% clean while still benefiting
+  // from the partial cleanup and the durability of whatever did
+  // succeed.
+  void remove_objects(std::span<const std::string> names);
 
   [[nodiscard]] bool is_stream_open() const noexcept { return stream_open_; }
   [[nodiscard]] std::uint64_t
@@ -55,6 +71,9 @@ private:
   [[nodiscard]] virtual std::string do_get_object(std::string_view name) = 0;
   virtual void do_put_object(std::string_view name,
                              util::const_byte_span content) = 0;
+  virtual void do_remove_object(std::string_view name) = 0;
+  // Backend-specific durability barrier.
+  virtual void do_fsync() = 0;
 
   [[nodiscard]] virtual std::uint64_t
   do_open_stream(std::string_view name,

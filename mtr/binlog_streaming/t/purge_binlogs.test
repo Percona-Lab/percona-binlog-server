@@ -1,0 +1,227 @@
+--source ../include/have_binsrv.inc
+
+--source ../include/v80_v84_compatibility_defines.inc
+
+# identifying backend storage type ('file' or 's3') early - 'purge_binlogs'
+# is supported only on the local filesystem backend
+--source ../include/identify_storage_backend.inc
+
+if ($storage_backend == s3)
+{
+  --skip purge_binlogs is supported only on the local filesystem backend
+}
+
+# in case of --repeat=N, we need to start from a fresh binary log to make
+# this test deterministic
+--echo *** Resetting replication at the very beginning of the test.
+--disable_query_log
+eval $stmt_reset_binary_logs_and_gtids;
+--enable_query_log
+
+# creating data directory, configuration file, etc.
+--let $binsrv_connect_timeout = 20
+--let $binsrv_read_timeout = 60
+--let $binsrv_idle_time = 10
+--let $binsrv_verify_checksum = TRUE
+--let $binsrv_replication_mode = `SELECT IF(@@global.gtid_mode = 'ON', 'gtid', 'position')`
+--let $binsrv_checkpoint_size = 1
+--source ../include/set_up_binsrv_environment.inc
+
+--let $read_from_file = $MYSQL_TMP_DIR/purge_binlogs_result.json
+
+--echo
+--echo *** 1. Executing 'purge_binlogs' on an empty storage and expecting
+--echo ***    an error.
+--error 1
+--exec $BINSRV purge_binlogs $binsrv_config_file_path binlog.000001 > $read_from_file
+--source include/read_file_to_var.inc
+--assert(`SELECT JSON_EXTRACT('$result', '$.status') = 'error'`)
+--assert(`SELECT JSON_EXTRACT('$result', '$.message') LIKE '%binlog storage is empty%'`)
+
+--echo
+--echo *** Determining the first binary log name.
+--let $first_binlog = query_get_value($stmt_show_binary_log_status, File, 1)
+
+--echo
+--echo *** Creating a simple table.
+CREATE TABLE t1(id INT UNSIGNED NOT NULL AUTO_INCREMENT, PRIMARY KEY(id)) ENGINE=InnoDB;
+
+--echo
+--echo *** Filling the table with some data.
+INSERT INTO t1 VALUES();
+
+--echo
+--echo *** Flushing the first binary log and switching to the second one.
+FLUSH BINARY LOGS;
+
+if ($binsrv_replication_mode == gtid)
+{
+  --let $gtids_before_second_binlog = `SELECT @@global.gtid_executed`
+}
+
+--echo
+--echo *** Determining the second binary log name.
+--let $second_binlog = query_get_value($stmt_show_binary_log_status, File, 1)
+
+--echo
+--echo *** Filling the table with more data.
+INSERT INTO t1 VALUES();
+
+--echo
+--echo *** Flushing the second binary log and switching to the third one.
+FLUSH BINARY LOGS;
+
+if ($binsrv_replication_mode == gtid)
+{
+  --let $gtids_before_third_binlog = `SELECT @@global.gtid_executed`
+  --let $second_binlog_gtids = `SELECT GTID_SUBTRACT('$gtids_before_third_binlog', '$gtids_before_second_binlog')`
+}
+
+--echo
+--echo *** Determining the third binary log name.
+--let $third_binlog = query_get_value($stmt_show_binary_log_status, File, 1)
+
+--echo
+--echo *** Filling the table with even more data.
+INSERT INTO t1 VALUES();
+
+--echo
+--echo *** Executing the Binlog Server utility and fetching all events.
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+--echo
+--echo *** Sanity check: 'list' returns all three binlog files in chronological
+--echo *** order.
+--exec $BINSRV list $binsrv_config_file_path > $read_from_file
+--source include/read_file_to_var.inc
+--assert(`SELECT JSON_EXTRACT('$result', '$.status') = 'success'`)
+--assert(`SELECT JSON_LENGTH(JSON_EXTRACT('$result', '$.result')) = 3`)
+--assert(`SELECT JSON_EXTRACT('$result', '$.result[0].name') = '$first_binlog'`)
+--assert(`SELECT JSON_EXTRACT('$result', '$.result[1].name') = '$second_binlog'`)
+--assert(`SELECT JSON_EXTRACT('$result', '$.result[2].name') = '$third_binlog'`)
+
+--echo
+--echo *** 2. 'purge_binlogs' with an unparseable target name fails with error.
+--error 1
+--exec $BINSRV purge_binlogs $binsrv_config_file_path notabinlogname > $read_from_file
+--source include/read_file_to_var.inc
+--assert(`SELECT JSON_EXTRACT('$result', '$.status') = 'error'`)
+
+--echo
+--echo *** 3. 'purge_binlogs' with a target whose base name differs from the
+--echo ***    one in storage fails with error.
+--error 1
+--exec $BINSRV purge_binlogs $binsrv_config_file_path other.000001 > $read_from_file
+--source include/read_file_to_var.inc
+--assert(`SELECT JSON_EXTRACT('$result', '$.status') = 'error'`)
+--assert(`SELECT JSON_EXTRACT('$result', '$.message') LIKE '%different base name%'`)
+
+--echo
+--echo *** 4. 'purge_binlogs' with a target not present in the storage fails
+--echo ***    with error.
+--error 1
+--exec $BINSRV purge_binlogs $binsrv_config_file_path binlog.999999 > $read_from_file
+--source include/read_file_to_var.inc
+--assert(`SELECT JSON_EXTRACT('$result', '$.status') = 'error'`)
+--assert(`SELECT JSON_EXTRACT('$result', '$.message') LIKE '%not present%'`)
+
+--echo
+--echo *** 5. 'purge_binlogs' with a nonexistent configuration file path fails
+--echo ***    with error.
+--error 1
+--exec $BINSRV purge_binlogs $MYSQL_TMP_DIR/no_such_config.json $first_binlog > $read_from_file
+--source include/read_file_to_var.inc
+--assert(`SELECT JSON_EXTRACT('$result', '$.status') = 'error'`)
+
+--echo
+--echo *** 6. 'purge_binlogs' the first binary log removes only that one file;
+--echo ***    the response lists the removed record and 'list' shows the two
+--echo ***    surviving files.
+--exec $BINSRV purge_binlogs $binsrv_config_file_path $first_binlog > $read_from_file
+--source include/read_file_to_var.inc
+--assert(`SELECT JSON_EXTRACT('$result', '$.status') = 'success'`)
+--assert(`SELECT JSON_LENGTH(JSON_EXTRACT('$result', '$.result')) = 1`)
+--assert(`SELECT JSON_EXTRACT('$result', '$.result[0].name') = '$first_binlog'`)
+--assert(`SELECT JSON_EXTRACT('$result', '$.result[0].size') > 0`)
+--assert(`SELECT JSON_EXTRACT('$result', '$.result[0].uri') IS NOT NULL`)
+
+--exec $BINSRV list $binsrv_config_file_path > $read_from_file
+--source include/read_file_to_var.inc
+--assert(`SELECT JSON_EXTRACT('$result', '$.status') = 'success'`)
+--assert(`SELECT JSON_LENGTH(JSON_EXTRACT('$result', '$.result')) = 2`)
+--assert(`SELECT JSON_EXTRACT('$result', '$.result[0].name') = '$second_binlog'`)
+--assert(`SELECT JSON_EXTRACT('$result', '$.result[1].name') = '$third_binlog'`)
+if ($binsrv_replication_mode == gtid)
+{
+  --assert(`SELECT JSON_EXTRACT('$result', '$.result[0].previous_gtids') = '$gtids_before_second_binlog'`)
+  --assert(`SELECT JSON_EXTRACT('$result', '$.result[0].added_gtids') = '$second_binlog_gtids'`)
+}
+
+--echo
+--echo *** 6a. Re-opening the purged storage with another 'fetch' must keep the
+--echo ***     surviving GTID metadata stable.
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+--exec $BINSRV list $binsrv_config_file_path > $read_from_file
+--source include/read_file_to_var.inc
+--assert(`SELECT JSON_EXTRACT('$result', '$.status') = 'success'`)
+--assert(`SELECT JSON_LENGTH(JSON_EXTRACT('$result', '$.result')) = 2`)
+--assert(`SELECT JSON_EXTRACT('$result', '$.result[0].name') = '$second_binlog'`)
+--assert(`SELECT JSON_EXTRACT('$result', '$.result[1].name') = '$third_binlog'`)
+if ($binsrv_replication_mode == gtid)
+{
+  --assert(`SELECT JSON_EXTRACT('$result', '$.result[0].previous_gtids') = '$gtids_before_second_binlog'`)
+  --assert(`SELECT JSON_EXTRACT('$result', '$.result[0].added_gtids') = '$second_binlog_gtids'`)
+}
+
+--echo
+--echo *** 7. Re-running 'purge_binlogs' with the just-purged target now fails
+--echo ***    with the "not present" error - the operation is not idempotent
+--echo ***    by design.
+--error 1
+--exec $BINSRV purge_binlogs $binsrv_config_file_path $first_binlog > $read_from_file
+--source include/read_file_to_var.inc
+--assert(`SELECT JSON_EXTRACT('$result', '$.status') = 'error'`)
+--assert(`SELECT JSON_EXTRACT('$result', '$.message') LIKE '%not present%'`)
+
+--echo
+--echo *** 8. 'purge_binlogs' the second binary log removes only that one (the
+--echo ***    first one is already gone); 'list' shows just the third file.
+--exec $BINSRV purge_binlogs $binsrv_config_file_path $second_binlog > $read_from_file
+--source include/read_file_to_var.inc
+--assert(`SELECT JSON_EXTRACT('$result', '$.status') = 'success'`)
+--assert(`SELECT JSON_LENGTH(JSON_EXTRACT('$result', '$.result')) = 1`)
+--assert(`SELECT JSON_EXTRACT('$result', '$.result[0].name') = '$second_binlog'`)
+
+--exec $BINSRV list $binsrv_config_file_path > $read_from_file
+--source include/read_file_to_var.inc
+--assert(`SELECT JSON_EXTRACT('$result', '$.status') = 'success'`)
+--assert(`SELECT JSON_LENGTH(JSON_EXTRACT('$result', '$.result')) = 1`)
+--assert(`SELECT JSON_EXTRACT('$result', '$.result[0].name') = '$third_binlog'`)
+
+--echo
+--echo *** 9. 'purge_binlogs' the last remaining (current tail) file is
+--echo ***    refused so that the resume position is preserved for the next
+--echo ***    'fetch' / 'pull'; 'list' still shows the third file unchanged.
+--error 1
+--exec $BINSRV purge_binlogs $binsrv_config_file_path $third_binlog > $read_from_file
+--source include/read_file_to_var.inc
+--assert(`SELECT JSON_EXTRACT('$result', '$.status') = 'error'`)
+--assert(`SELECT JSON_EXTRACT('$result', '$.message') LIKE '%current tail binlog file%'`)
+
+--exec $BINSRV list $binsrv_config_file_path > $read_from_file
+--source include/read_file_to_var.inc
+--assert(`SELECT JSON_EXTRACT('$result', '$.status') = 'success'`)
+--assert(`SELECT JSON_LENGTH(JSON_EXTRACT('$result', '$.result')) = 1`)
+--assert(`SELECT JSON_EXTRACT('$result', '$.result[0].name') = '$third_binlog'`)
+
+--echo
+--echo *** Removing the purge_binlogs result file.
+--remove_file $read_from_file
+
+--echo
+--echo *** Dropping the table.
+DROP TABLE t1;
+
+# cleaning up
+--source ../include/tear_down_binsrv_environment.inc

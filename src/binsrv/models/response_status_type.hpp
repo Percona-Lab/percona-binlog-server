@@ -34,6 +34,7 @@ namespace binsrv::models {
 // clang-format off
 #define BINSRV_MODELS_RESPONSE_STATUS_TYPE_X_SEQUENCE() \
   BINSRV_MODELS_RESPONSE_STATUS_TYPE_X_MACRO(error  ),  \
+  BINSRV_MODELS_RESPONSE_STATUS_TYPE_X_MACRO(warning),  \
   BINSRV_MODELS_RESPONSE_STATUS_TYPE_X_MACRO(success)
 // clang-format on
 

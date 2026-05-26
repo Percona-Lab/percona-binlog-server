@@ -21,6 +21,7 @@
 #include <chrono>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "binsrv/basic_storage_backend_fwd.hpp"
@@ -133,6 +134,23 @@ public:
   void discard_incomplete_transaction_events();
   void flush_event_buffer();
 
+  // Removes the contiguous prefix of binlog records [front, target]
+  // (inclusive) from the storage and returns a pair:
+  //   .first  - the dropped records in chronological order (oldest
+  //             first), suitable for direct iteration by the caller
+  //             to build a response;
+  //   .second - empty on full success; non-empty when the best-effort
+  //             step-3 cleanup (removal of victim payload + metadata
+  //             objects) failed for at least one object after the
+  //             step-2 index rewrite had already committed. The purge
+  //             itself is considered successful in this case, but the
+  //             storage on disk now contains orphan files that the
+  //             constructor's validators will refuse to open on next
+  //             startup The string carries the underlying cleanup
+  //             error message so the caller.
+  [[nodiscard]] std::pair<binlog_record_container, std::string>
+  purge_binlogs(const events::composite_binlog_name &target);
+
   [[nodiscard]] std::string
   get_binlog_uri(const events::composite_binlog_name &binlog_name) const;
 
@@ -159,6 +177,7 @@ private:
   util::ctime_timestamp_range incomplete_transaction_timestamps_{};
 
   void ensure_streaming_mode() const;
+  void ensure_purging_mode() const;
 
   [[nodiscard]] const binlog_record &
   get_current_binlog_record() const noexcept {

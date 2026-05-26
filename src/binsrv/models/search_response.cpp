@@ -36,7 +36,15 @@ namespace binsrv::models {
 search_response::search_response()
     : impl_{{expected_search_response_version},
             {response_status_type::success},
+            {},
             {}} {}
+
+search_response::search_response(response_status_type status,
+                                 std::string_view message)
+    : impl_{{expected_search_response_version},
+            {status},
+            {},
+            {std::string{message}}} {}
 
 search_response::search_response(const search_response &) = default;
 search_response::search_response(search_response &&) noexcept = default;

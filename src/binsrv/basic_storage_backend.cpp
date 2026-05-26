@@ -16,6 +16,8 @@
 #include "binsrv/basic_storage_backend.hpp"
 
 #include <cstdint>
+#include <exception>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -38,6 +40,33 @@ basic_storage_backend::get_object(std::string_view name) {
 void basic_storage_backend::put_object(std::string_view name,
                                        util::const_byte_span content) {
   do_put_object(name, content);
+}
+
+void basic_storage_backend::remove_object(std::string_view name) {
+  do_remove_object(name);
+  do_fsync();
+}
+
+void basic_storage_backend::remove_objects(std::span<const std::string> names) {
+  // Best-effort batch with delayed failure reporting: try every
+  // 'do_remove_object', remember the first failure (if any), always
+  // run the single 'do_fsync' barrier so the partial cleanup we did
+  // achieve is durable, and finally re-raise the captured failure
+  // so the caller can decide what to do.
+  std::exception_ptr first_error;
+  for (const auto &name : names) {
+    try {
+      do_remove_object(name);
+    } catch (...) {
+      if (!first_error) {
+        first_error = std::current_exception();
+      }
+    }
+  }
+  do_fsync();
+  if (first_error) {
+    std::rethrow_exception(first_error);
+  }
 }
 
 [[nodiscard]] std::uint64_t

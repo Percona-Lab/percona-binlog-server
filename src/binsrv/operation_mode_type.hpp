@@ -37,6 +37,7 @@ namespace binsrv {
   BINSRV_OPERATION_MODE_TYPE_X_MACRO(list               ),  \
   BINSRV_OPERATION_MODE_TYPE_X_MACRO(search_by_timestamp),  \
   BINSRV_OPERATION_MODE_TYPE_X_MACRO(search_by_gtid_set ),  \
+  BINSRV_OPERATION_MODE_TYPE_X_MACRO(purge_binlogs      ),  \
   BINSRV_OPERATION_MODE_TYPE_X_MACRO(version            )
 // clang-format on
 
