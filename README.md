@@ -412,7 +412,7 @@ If this section is present, then the utility will not split binlog events the sa
   - `file` - local filesystem
   - `s3` - `AWS S3` or `S3`-compatible server (MinIO, etc.)
 - `<storage.uri>` - specifies the location (either local or remote) where the received binary logs should be stored
-- `<storage.fs_buffer_directory>` (optional) - specifies the location on the local filesystem where partially downloaded binlog files should be stored. If not specified, the value of the default OS temporary directory will be used (e.g. '/tmp' on Linux). Currently, this parameter is meaningful only for non-`file` storage backends.
+- `<storage.fs_buffer_directory>` (optional) - specifies the location on the local filesystem where partially downloaded binlog files should be stored. If not specified, a unique subdirectory under the default OS temporary directory (e.g. `/tmp` on Linux) will be created and used. This auto-created directory is automatically removed when the server exits. If you set this parameter explicitly, the directory is never deleted automatically. This parameter is meaningful only for non-`file` storage backends.
 - `<storage.checkpoint_size>` (optional) - specifies data portion size after receiving which backend storage should flush its internal buffers and write received binlog data permanently. If not set or set to zero, checkpointing by size will be disabled. The value is expected to be a string containing an integer followed by an optional suffix 'K' / 'M' / 'G' / 'T' / 'P', e.g. /\d+\[KMGTP\]?/:
   - 'no suffix' (e.g. "42") means no multiplier, the size will be interpreted in bytes ('42 * 1' bytes)
   - 'K' (e.g. "42K") means '2^10' multiplier ('42 * 1024' bytes)
