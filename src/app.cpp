@@ -645,6 +645,7 @@ void rewrite_and_process_binlog_event(
     binsrv::basic_logger &logger, binsrv::events::reader_context &context,
     binsrv::storage &storage, std::uint32_t server_id,
     std::string_view base_file_name, std::uint64_t file_size) {
+  assert(storage.is_in_gtid_replication_mode());
   const auto current_common_header_v = current_event_v.get_common_header_view();
   const auto code = current_common_header_v.get_type_code();
 
@@ -655,6 +656,30 @@ void rewrite_and_process_binlog_event(
       code == binsrv::events::code_type::previous_gtids_log ||
       code == binsrv::events::code_type::rotate ||
       code == binsrv::events::code_type::stop) {
+    // making sure that there will be no events without checksums in the rewrite
+    // mode because when recalculating the value of 'transaction_length' field
+    // in GTID events we rely on the fact that upcoming events from the same
+    // transaction will not change their size after rewriting (currently, to
+    // avoid scenarios when one binlog file with checksums enabled is followed
+    // by another file without checksums, and we have to combine them in the
+    // same storage binlog file, we enforce that all events in the rewrite mode
+    // must have checksums)
+
+    // TODO: this restriction can be lifted if we implement whole transaction
+    //       rewrite logic (we do not add incomplete transaction events into
+    //       the storage buffer unless we receive all of them and perform
+    //       necessary checksum addition/removal)
+    if (code == binsrv::events::code_type::format_description) {
+      const auto format_description_body{binsrv::events::generic_body<
+          binsrv::events::code_type::format_description>{
+          current_event_v.get_body_raw()}};
+      if (!format_description_body.has_checksum_algorithm()) {
+        util::exception_location().raise<std::logic_error>(
+            "rewrite is supported in gtid replication mode only when "
+            "all events received from the MySQL server have checksums");
+      }
+    }
+
     const auto readable_flags{current_common_header_v.get_readable_flags()};
     logger.log(
         binsrv::log_severity::info,
