@@ -134,6 +134,12 @@ install -D -m 0644  main_config.json %{buildroot}/%{_sysconfdir}/percona-binlog-
 
 
 %changelog
+* Wed Jun 03 2026 Yura Sorokin <yura.sorokin@percona.com> - 0.2.4-1
+- PS-11137 binlog-server fails to reconnect in position-based replication mode when network timeout interrupts a transaction.
+- PS-11136 non-GTID transactions cause one storage flush per transaction, bypassing size/interval checkpointing.
+- PS-11080 Spoiled logical clock information in rewritten binlog.
+- PS-11205 When fs_buffer_directory is not set the temporary buffer directory is created in the current binary path rather than in /tmp.
+
 * Fri Apr 24 2026 Yura Sorokin <yura.sorokin@percona.com> - 0.2.3-1
 - PS-11033 Crash when S3 bucket accumulates large number of objects; recovery requires manual intervention.
 
