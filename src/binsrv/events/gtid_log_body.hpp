@@ -27,23 +27,33 @@
 #include "util/byte_span_fwd.hpp"
 #include "util/common_optional_types.hpp"
 #include "util/semantic_version_fwd.hpp"
+#include "util/timestamp_helpers.hpp"
 
 namespace binsrv::events {
 
 class [[nodiscard]] gtid_log_body {
 public:
+  gtid_log_body(
+      const util::high_resolution_time_point &immediate_commit_timestamp,
+      const util::optional_high_resolution_time_point
+          &original_commit_timestamp,
+      std::uint64_t transaction_length,
+      const util::optional_semantic_version &immediate_server_version,
+      const util::optional_semantic_version &original_server_version,
+      const util::optional_uint64_t &commit_group_ticket) noexcept;
   explicit gtid_log_body(util::const_byte_span portion);
 
   [[nodiscard]] std::uint64_t
   get_immediate_commit_timestamp_raw() const noexcept {
     return immediate_commit_timestamp_;
   }
-  [[nodiscard]] std::chrono::high_resolution_clock::time_point
+  [[nodiscard]] util::high_resolution_time_point
   get_immediate_commit_timestamp() const noexcept {
-    return std::chrono::high_resolution_clock::time_point{
-        std::chrono::microseconds(get_immediate_commit_timestamp_raw())};
+    return util::microseconds_to_high_resolution_time_point(
+        get_immediate_commit_timestamp_raw());
   }
   [[nodiscard]] std::string get_readable_immediate_commit_timestamp() const;
+
   [[nodiscard]] bool has_original_commit_timestamp() const noexcept {
     return original_commit_timestamp_ != unset_commit_timestamp;
   }
@@ -51,23 +61,19 @@ public:
   get_original_commit_timestamp_raw() const noexcept {
     return original_commit_timestamp_;
   }
-
-  [[nodiscard]] bool has_transaction_length() const noexcept {
-    return transaction_length_ != unset_transaction_length;
+  [[nodiscard]] util::optional_high_resolution_time_point
+  get_original_commit_timestamp() const noexcept {
+    if (!has_original_commit_timestamp()) {
+      return std::nullopt;
+    }
+    return util::microseconds_to_high_resolution_time_point(
+        get_original_commit_timestamp_raw());
   }
+  [[nodiscard]] std::string get_readable_original_commit_timestamp() const;
+
   [[nodiscard]] std::uint64_t get_transaction_length_raw() const noexcept {
     return transaction_length_;
   }
-
-  [[nodiscard]] bool has_original_server_version() const noexcept {
-    return original_server_version_ != unset_server_version;
-  }
-  [[nodiscard]] std::uint32_t get_original_server_version_raw() const noexcept {
-    return original_server_version_;
-  }
-  [[nodiscard]] util::semantic_version
-  get_original_server_version() const noexcept;
-  [[nodiscard]] std::string get_readable_original_server_version() const;
 
   [[nodiscard]] bool has_immediate_server_version() const noexcept {
     return immediate_server_version_ != unset_server_version;
@@ -76,9 +82,19 @@ public:
   get_immediate_server_version_raw() const noexcept {
     return immediate_server_version_;
   }
-  [[nodiscard]] util::semantic_version
+  [[nodiscard]] util::optional_semantic_version
   get_immediate_server_version() const noexcept;
   [[nodiscard]] std::string get_readable_immediate_server_version() const;
+
+  [[nodiscard]] bool has_original_server_version() const noexcept {
+    return original_server_version_ != unset_server_version;
+  }
+  [[nodiscard]] std::uint32_t get_original_server_version_raw() const noexcept {
+    return original_server_version_;
+  }
+  [[nodiscard]] util::optional_semantic_version
+  get_original_server_version() const noexcept;
+  [[nodiscard]] std::string get_readable_original_server_version() const;
 
   [[nodiscard]] bool has_commit_group_ticket() const noexcept {
     return commit_group_ticket_ != unset_commit_group_ticket;
@@ -86,6 +102,16 @@ public:
   [[nodiscard]] std::uint64_t get_commit_group_ticket_raw() const noexcept {
     return commit_group_ticket_;
   }
+  [[nodiscard]] util::optional_uint64_t
+  get_commit_group_ticket() const noexcept {
+    if (!has_commit_group_ticket()) {
+      return std::nullopt;
+    }
+    return commit_group_ticket_;
+  }
+
+  [[nodiscard]] std::size_t calculate_encoded_size() const noexcept;
+  void encode_to(util::byte_span &destination) const;
 
   friend bool operator==(const gtid_log_body & /* first */,
                          const gtid_log_body & /* second */) = default;
@@ -102,13 +128,13 @@ private:
 
   static constexpr std::size_t commit_timestamp_field_length{7U};
   static constexpr std::size_t server_version_field_length{4U};
-  static constexpr std::size_t commit_group_ticket_field_length{8};
+  static constexpr std::size_t commit_group_ticket_field_length{8U};
 
   std::uint64_t immediate_commit_timestamp_{unset_commit_timestamp}; // 0
   std::uint64_t original_commit_timestamp_{unset_commit_timestamp};  // 1
   std::uint64_t transaction_length_{unset_transaction_length};       // 2
-  std::uint32_t original_server_version_{unset_server_version};      // 3
-  std::uint32_t immediate_server_version_{unset_server_version};     // 4
+  std::uint32_t immediate_server_version_{unset_server_version};     // 3
+  std::uint32_t original_server_version_{unset_server_version};      // 4
   std::uint64_t commit_group_ticket_{unset_commit_group_ticket};     // 5
 };
 

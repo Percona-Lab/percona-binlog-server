@@ -1,0 +1,36 @@
+*** Resetting replication at the very beginning of the test.
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+
+*** Creating a simple table and filling it with some data.
+CREATE TABLE t1(id INT UNSIGNED NOT NULL AUTO_INCREMENT, PRIMARY KEY(id)) ENGINE=InnoDB;
+INSERT INTO t1 VALUES(DEFAULT);
+
+*** Inverting the value of the @@global.binlog_checksum system variable.
+*** This must cause server binlog rotation.
+
+*** Filling the table with more data after binlog file rotation.
+INSERT INTO t1 VALUES(DEFAULT);
+
+*** Executing the Binlog Server utility in GTID + rewrite mode.
+*** One of the binlogs generated on the server should not have
+*** checksums in its events, so we should see a dedicated error.
+
+*** Checking that Binlog Server utility reported
+*** "unsupported checksum-less event found" error.
+include/assert_grep.inc [server events must meet the checksum enforcement requirement]
+
+*** Dropping the table.
+DROP TABLE t1;
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.

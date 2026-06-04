@@ -338,7 +338,7 @@ jobs:
       working-directory: ${{github.workspace}}/src-build-${{matrix.config.label}}
       # Execute tests defined by the CMake configuration.
       # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
-      run: ctest --parallel ${{matrix.config.ctest_options}}
+      run: ctest --parallel --output-on-failure ${{matrix.config.ctest_options}}
 
     - name: Info Build artifacts
       run: |

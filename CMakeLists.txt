@@ -139,6 +139,10 @@ set(util_source_files
   src/util/semantic_version_fwd.hpp
   src/util/semantic_version.hpp
   src/util/semantic_version.cpp
+
+  src/util/timestamp_types.hpp
+  src/util/timestamp_helpers.hpp
+  src/util/timestamp_helpers.cpp
 )
 add_library(lib_util STATIC ${util_source_files})
 target_link_libraries(lib_util
@@ -262,6 +266,8 @@ set(events_source_files
   src/binsrv/events/common_header_flag_type_fwd.hpp
   src/binsrv/events/common_header_flag_type.hpp
 
+  src/binsrv/events/common_types.hpp
+
   src/binsrv/events/composite_binlog_name_fwd.hpp
   src/binsrv/events/composite_binlog_name.hpp
   src/binsrv/events/composite_binlog_name.cpp
@@ -342,6 +348,10 @@ set(events_source_files
   src/binsrv/events/reader_context_fwd.hpp
   src/binsrv/events/reader_context.hpp
   src/binsrv/events/reader_context.cpp
+
+  src/binsrv/events/rewriter_fwd.hpp
+  src/binsrv/events/rewriter.hpp
+  src/binsrv/events/rewriter.cpp
 
   src/binsrv/events/rotate_body_impl_fwd.hpp
   src/binsrv/events/rotate_body_impl.hpp

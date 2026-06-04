@@ -13,17 +13,25 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef UTIL_SEMANTIC_VERSION_FWD_HPP
-#define UTIL_SEMANTIC_VERSION_FWD_HPP
+#ifndef UTIL_TIMESTAMP_HELPERS_HPP
+#define UTIL_TIMESTAMP_HELPERS_HPP
 
-#include <optional>
+#include <cstdint>
+#include <string>
+
+#include "util/timestamp_types.hpp" // IWYU pragma: export
 
 namespace util {
 
-class semantic_version;
+[[nodiscard]] std::uint64_t high_resolution_time_point_to_microseconds(
+    const high_resolution_time_point &timestamp) noexcept;
 
-using optional_semantic_version = std::optional<semantic_version>;
+[[nodiscard]] high_resolution_time_point
+microseconds_to_high_resolution_time_point(std::uint64_t microseconds) noexcept;
+
+[[nodiscard]] std::string
+microseconds_to_iso_extended_string(std::uint64_t microseconds);
 
 } // namespace util
 
-#endif // UTIL_SEMANTIC_VERSION_FWD_HPP
+#endif // UTIL_TIMESTAMP_HELPERS_HPP

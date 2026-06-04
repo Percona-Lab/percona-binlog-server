@@ -57,6 +57,7 @@ private:
   std::string current_name_;
   boost::uuids::random_generator uuid_generator_;
   std::filesystem::path tmp_file_directory_;
+  bool owns_tmp_file_directory_{false};
   std::filesystem::path current_tmp_file_path_;
   std::fstream tmp_fstream_;
 

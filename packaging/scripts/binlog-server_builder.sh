@@ -188,12 +188,16 @@ install_deps() {
         if [ "x${RHEL}" != "x2023" ]; then
             if [ "x${RHEL}" = "x10" ]; then
                 dnf install https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm
+                /usr/bin/crb enable
             else
                 yum -y install epel-release
             fi
         fi
         yum -y install git wget
-        yum -y install rpm-build make rpmlint rpmdevtools cmake3 libcurl-devel zlib-devel
+        yum -y install rpm-build make rpmdevtools cmake3 libcurl-devel zlib-devel
+        if [ "${RHEL}" != "10" ]; then
+           yum -y install rpmlint
+        fi
         yum -y install gcc gcc-c++
         yum -y install libatomic
         if [ "x${RHEL}" != "x2023" ]; then
@@ -228,6 +232,7 @@ install_deps() {
         export DIST="$(lsb_release -sc)"
         percona-release enable pdps-84-lts release
         apt-get install -y cmake autotools-dev autoconf automake build-essential devscripts debconf debhelper fakeroot
+        apt-get install -y git
         if [ "${OS_NAME}" == "bullseye" ]; then
             apt-get install -y ca-certificates xz-utils
             wget https://github.com/Kitware/CMake/releases/download/v3.21.7/cmake-3.21.7-linux-x86_64.tar.gz

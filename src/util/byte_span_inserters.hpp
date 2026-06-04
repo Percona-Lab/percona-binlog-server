@@ -164,6 +164,7 @@ template <typename T>
       return false;
     }
     insert_fixed_int_to_byte_span(remainder, value, 1);
+    return true;
   }
   /* 251 is reserved for NULL */
   if (value < packed_int_double_boundary) {
@@ -172,6 +173,7 @@ template <typename T>
     }
     insert_fixed_int_to_byte_span(remainder, packed_int_double_marker);
     insert_fixed_int_to_byte_span(remainder, value, packed_int_double_size);
+    return true;
   }
   if (value < packed_int_triple_boundary) {
     if (std::size(remainder) < 1U + packed_int_triple_size) {
@@ -179,13 +181,14 @@ template <typename T>
     }
     insert_fixed_int_to_byte_span(remainder, packed_int_triple_marker);
     insert_fixed_int_to_byte_span(remainder, value, packed_int_triple_size);
-  } else {
-    if (std::size(remainder) < 1U + packed_int_octuple_size) {
-      return false;
-    }
-    insert_fixed_int_to_byte_span(remainder, packed_int_octuple_marker);
-    insert_fixed_int_to_byte_span(remainder, value, packed_int_octuple_size);
+    return true;
   }
+
+  if (std::size(remainder) < 1U + packed_int_octuple_size) {
+    return false;
+  }
+  insert_fixed_int_to_byte_span(remainder, packed_int_octuple_marker);
+  insert_fixed_int_to_byte_span(remainder, value, packed_int_octuple_size);
 
   return true;
 }

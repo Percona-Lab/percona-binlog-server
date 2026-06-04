@@ -41,6 +41,8 @@ public:
 
   [[nodiscard]] bool is_empty() const noexcept { return data_.empty(); }
 
+  [[nodiscard]] const tag_storage &get_raw() const noexcept { return data_; }
+
   [[nodiscard]] std::size_t get_size() const noexcept {
     return std::size(data_);
   }

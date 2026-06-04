@@ -1,0 +1,7 @@
+[gtid_on]
+enforce-gtid-consistency = ON
+gtid-mode = ON
+
+[gtid_off]
+enforce-gtid-consistency = OFF
+gtid-mode = OFF

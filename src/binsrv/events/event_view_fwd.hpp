@@ -26,15 +26,6 @@ namespace binsrv::events {
 class event_updatable_view;
 class event_view;
 
-enum class materialization_type : std::uint8_t {
-  force_add_checksum,
-  force_remove_checksum,
-  leave_checksum_as_is
-};
-[[nodiscard]] event_updatable_view materialize(const event_view &event_v,
-                                               event_storage &buffer,
-                                               materialization_type mode);
-
 std::ostream &operator<<(std::ostream &output, const event_view &obj);
 
 } // namespace binsrv::events
