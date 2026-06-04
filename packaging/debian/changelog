@@ -1,3 +1,11 @@
+percona-binlog-server (0.3.0-1) unstable; urgency=low
+
+  * PS-10625 Update boost libraries to 1.90.0.
+  * PS-10934 Update AWS SDK C++ libraries to version 1.11.774.
+  * PS-11001 Binlog clean up (purge_binlogs command).
+
+ -- Yura Sorokin <yura.sorokin@percona.com>  Thu, 04 Jun 2026 17:27:43 +0200
+
 percona-binlog-server (0.2.4-1) unstable; urgency=low
 
   * PS-11137 binlog-server fails to reconnect in position-based replication mode when network timeout interrupts a transaction.

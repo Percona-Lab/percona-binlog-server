@@ -134,6 +134,11 @@ install -D -m 0644  main_config.json %{buildroot}/%{_sysconfdir}/percona-binlog-
 
 
 %changelog
+* Thu Jun 04 2026 Yura Sorokin <yura.sorokin@percona.com> - 0.3.0-1
+- PS-10625 Update boost libraries to 1.90.0.
+- PS-10934 Update AWS SDK C++ libraries to version 1.11.774.
+- PS-11001 Binlog clean up (purge_binlogs command).
+
 * Wed Jun 03 2026 Yura Sorokin <yura.sorokin@percona.com> - 0.2.4-1
 - PS-11137 binlog-server fails to reconnect in position-based replication mode when network timeout interrupts a transaction.
 - PS-11136 non-GTID transactions cause one storage flush per transaction, bypassing size/interval checkpointing.
