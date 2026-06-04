@@ -151,22 +151,27 @@ Please run
 ./binlog_server version
 ./binlog_server fetch <json_config_file>
 ./binlog_server pull <json_config_file>
+./binlog_server list <json_config_file>
 ./binlog_server search_by_timestamp <json_config_file> <timestamp>
 ./binlog_server search_by_gtid_set <json_config_file> <gtid_set>
+./binlog_server purge_binlogs <binlog_name>
 ```
 where
 `<json_config_file>` is a path to a JSON configuration file (described below),
 `<timestamp>` is a valid timestamp in ISO format (e.g. `2026-02-10T14:30:00`),
-`<gtid_set>` is a valid gtid set (e.g. `11111111-aaaa-1111-aaaa-111111111111:1:3, 22222222-bbbb-2222-bbbb-222222222222:1-6`).
+`<gtid_set>` is a valid gtid set (e.g. `11111111-aaaa-1111-aaaa-111111111111:1:3, 22222222-bbbb-2222-bbbb-222222222222:1-6`),
+`<binlog_name>` is a valid binlog file name without path (e.g. `binlog.000001`).
 
 ### Operation modes
 
 Percona Binary Log Server utility can operate in five modes:
 - 'version'
+- 'list'
 - 'search_by_timestamp'
 - 'search_by_gtid_set'
 - 'fetch'
 - 'pull'
+- 'purge_binlogs'
 
 #### 'version' operation mode
 
@@ -179,6 +184,49 @@ may print
 ```
 0.3.0
 ```
+
+#### 'list' operation mode
+
+In this mode the utility requires no extra parameters apart from the config file name and will print to the standard output the complete list of binlog files stored in the Binary Log Server data directory in their creation order.
+Along with the file name the output will also return its current size in bytes, timestamps, URI and optional initial / added GTIDs (when the replication is configured to use GTID mode).
+For instance,
+```bash
+./binlog_server list config.json
+```
+may print
+```json
+{
+  "status": "success",
+  "result": [
+    {
+      "name": "binlog.000001",
+      "size": 134217728,
+      "uri": "s3://binsrv-bucket/storage/binlog.000001",
+      "min_timestamp": "2026-02-09T17:22:01",
+      "max_timestamp": "2026-02-09T17:22:08",
+      "previous_gtids": "",
+      "added_gtids": "11111111-aaaa-1111-aaaa-111111111111:1-123456"
+    },
+    {
+      "name": "binlog.000002",
+      "size": 134217728,
+      "uri": "s3://binsrv-bucket/storage/binlog.000002",
+      "min_timestamp": "2026-02-09T17:22:08",
+      "max_timestamp": "2026-02-09T17:22:09",
+      "previous_gtids": "11111111-aaaa-1111-aaaa-111111111111:1-123456",
+      "added_gtids": "11111111-aaaa-1111-aaaa-111111111111:123457-246912"
+    }
+  ]
+}
+```
+If an error occurs,
+```json
+{
+  "status": "error",
+  "message": "<reason>"
+}
+```
+Unlike the `search_by_timestamp` and `search_by_gtid_set` subcommands, instead of reporting an error when the storage is empty, the `list` returns '"status": "success"' with an empty 'result' array.
 
 #### 'search_by_timestamp' operation mode
 
@@ -304,6 +352,99 @@ Any error (network issues, server down, out of space, etc) encountered in this m
 
 In this mode the utility continuously tries to connect to a remote MySQL server / switch to replication mode and read binary log events. After reading the very last one, the utility does not close the connection immediately but instead waits for `<connection.read_timeout>` seconds for the server to generate more events. If this period of time elapses, the utility closes the MySQL connection and enters the `idle` mode. In this mode it just waits for `<replication.idle_time>` seconds in disconnected state. After that another reconnection attempt is made and everything starts from the beginning.
 Any network-related error (network issues, server down, etc) encountered in this mode does not result in immediate termination of the program. Instead, another reconnection attempt is made. More serious errors (like out of space, etc.) cause program termination.
+
+#### 'purge_binlogs' operation mode
+
+In this mode the utility requires one additional command line parameter `<binlog_name>` and will remove every binlog file with sequence number less than or equal to the one extracted from the `<binlog_name>`. Specifying binlog name which is currently being written to (the most recent one) is not allowed.
+For instance, if the storage currently has
+```
+binlog.000001
+binlog.000002
+binlog.000003
+```
+invoking
+```bash
+./binlog_server purge_binlogs config.json binlog.000002
+```
+will delete
+```
+binlog.000001
+binlog.000002
+```
+and only
+```
+binlog.000003
+```
+will remain in the storage.
+The utility will return
+```json
+{
+  "status": "success",
+  "result": [
+    {
+      "name": "binlog.000001",
+      "size": 134217728,
+      "uri": "s3://binsrv-bucket/storage/binlog.000001",
+      "min_timestamp": "2026-02-09T17:22:01",
+      "max_timestamp": "2026-02-09T17:22:08",
+      "previous_gtids": "",
+      "added_gtids": "11111111-aaaa-1111-aaaa-111111111111:1-123456",
+    },
+    {
+      "name": "binlog.000002",
+      "size": 134217728,
+      "uri": "s3://binsrv-bucket/storage/binlog.000002",
+      "min_timestamp": "2026-02-09T17:22:08",
+      "max_timestamp": "2026-02-09T17:22:09",
+      "previous_gtids": "11111111-aaaa-1111-aaaa-111111111111:1-123456",
+      "added_gtids": "11111111-aaaa-1111-aaaa-111111111111:123457-246912"
+    }
+  ]
+}
+```
+
+If an error occurs,
+```json
+{
+  "status": "error",
+  "message": "<reason>"
+}
+```
+The `<reason>` may be one of the following (but not limited to):
+- `binlog composite name is too short`
+- `cannot purge: target binlog name has a different base name than the binlog records in the storage`
+- `cannot purge: target binlog name is not present in the storage`
+- `cannot purge: target is the current tail binlog file; at least one binlog file must remain in the storage to preserve the resume position`
+
+The logic of the `purge_binlogs` will try to do its best and delete all the files in the range. However, if an error occurs in the middle of this group delete operation, already deleted files cannot be restored. In this case we will return a result with the `status` key equal to `warning`, the `result` key that includes all the records of the files we were trying to delete and `message` key set to a description of what went wrong during this group delete operation.
+For instance,
+```json
+{
+  "status": "warning",
+  "result": [
+    {
+      "name": "binlog.000001",
+      "size": 134217728,
+      "uri": "s3://binsrv-bucket/storage/binlog.000001",
+      "min_timestamp": "2026-02-09T17:22:01",
+      "max_timestamp": "2026-02-09T17:22:08",
+      "previous_gtids": "",
+      "added_gtids": "11111111-aaaa-1111-aaaa-111111111111:1-123456",
+    },
+    {
+      "name": "binlog.000002",
+      "size": 134217728,
+      "uri": "s3://binsrv-bucket/storage/binlog.000002",
+      "min_timestamp": "2026-02-09T17:22:08",
+      "max_timestamp": "2026-02-09T17:22:09",
+      "previous_gtids": "11111111-aaaa-1111-aaaa-111111111111:1-123456",
+      "added_gtids": "11111111-aaaa-1111-aaaa-111111111111:123457-246912"
+    }
+  ],
+  "message": "cannot delete binlog.000001"
+}
+```
+These responses with `status` set to `warning` can be considered as an indicator of partial success.
 
 ### JSON Configuration file
 
