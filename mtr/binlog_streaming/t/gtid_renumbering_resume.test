@@ -1,0 +1,205 @@
+--source ../include/have_binsrv.inc
+
+--source ../include/v80_v84_compatibility_defines.inc
+
+# Companion test to gtid_renumbering.test exercising the
+# RESUME / RESTART path of the rewrite-mode renumberer.
+#
+# In rewrite mode the renumberer maintains an in-memory
+# next_local_seq counter that allocates sequence_number values inside
+# the current local binlog file. When the binsrv utility exits while
+# a local file is still open and is later restarted (or when a
+# reconnect drops the in-process state), the counter must continue
+# forward instead of resetting to 1 - otherwise the post-resume
+# events would collide with the sequence_number values already
+# emitted into the same local file.
+#
+# The implementation persists next_local_seq (and last_emitted_offset)
+# in the per-binlog .json metadata file at every checkpoint flush.
+# On the next binsrv invocation, the storage layer hands that
+# snapshot back to the renumberer via resume_in_existing_local_file()
+# right after storage construction.
+#
+# This test verifies the property end-to-end:
+#   1. Run binsrv against a partially-populated source, producing N
+#      GTID events with sequence_number 1..N in bnlg.000001.
+#   2. Generate more transactions on the source, with a FLUSH BINARY
+#      LOGS in between so the second invocation also has to absorb
+#      a source-side rotation right after resume.
+#   3. Run binsrv a second time. Expected: bnlg.000001 now contains
+#      N+M events with sequence_number 1..N+M (gap-free, no
+#      duplicates).
+#   4. Cross-source-file boundary event at index N must carry
+#      last_committed = N (not 0): the segment-boundary fix has to
+#      keep working across a resume.
+#
+# Without the persisted-renumberer-state recovery, step 3 would
+# instead produce sequence_number 1..N followed by 1..M - which the
+# perl validator catches as a sequence_number collision.
+
+--echo *** Resetting replication at the very beginning of the test.
+--disable_query_log
+eval $stmt_reset_binary_logs_and_gtids;
+--enable_query_log
+
+# identifying backend storage type ('file' or 's3')
+--source ../include/identify_storage_backend.inc
+
+# creating data directory, configuration file, etc.
+--let $binsrv_connect_timeout = 20
+--let $binsrv_read_timeout = 60
+--let $binsrv_idle_time = 10
+--let $binsrv_verify_checksum = TRUE
+--let $binsrv_replication_mode = gtid
+# checkpoint_size = 1 forces a metadata flush after every transaction
+# boundary, so the renumberer recovery snapshot persisted to the
+# metadata file is always in lockstep with the binlog content. With a
+# larger checkpoint_size the test would still work for graceful exits
+# but would be racy under abrupt termination - we want the strongest
+# guarantee here.
+--let $binsrv_checkpoint_size = 1
+# rewrite_file_size set high enough that all transactions land in a
+# single local file - the point of this test is that the renumberer's
+# counter MUST continue forward across binsrv invocations within the
+# same local file, not that we exercise local rotation
+# (gtid_renumbering_local_rotation.test covers that).
+--let $binsrv_rewrite_file_size = 1G
+--source ../include/set_up_binsrv_environment.inc
+
+--echo
+--echo *** Phase 1: CREATE TABLE + 4 INSERTs in source binlog A
+--echo *** (5 GTID events).
+CREATE TABLE t1(id INT UNSIGNED NOT NULL AUTO_INCREMENT, PRIMARY KEY(id)) ENGINE=InnoDB;
+--disable_query_log
+--let $i = 1
+while ($i <= 4)
+{
+  INSERT INTO t1 VALUES(DEFAULT);
+  --inc $i
+}
+--enable_query_log
+
+--echo
+--echo *** First binsrv invocation: writes 5 GTID events with
+--echo *** sequence_number 1..5 to bnlg.000001 and persists the
+--echo *** renumberer recovery snapshot (next_local_seq=5) in the
+--echo *** per-binlog metadata file.
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+--echo
+--echo *** Flushing source binary log between invocations so the
+--echo *** second binsrv run also has to absorb a source-side
+--echo *** rotation right after resuming.
+FLUSH BINARY LOGS;
+
+--echo
+--echo *** Phase 2: 5 INSERTs in source binlog B (5 more GTID events).
+--disable_query_log
+--let $i = 1
+while ($i <= 5)
+{
+  INSERT INTO t1 VALUES(DEFAULT);
+  --inc $i
+}
+--enable_query_log
+
+--echo
+--echo *** Second binsrv invocation: must resume the renumberer from
+--echo *** the persisted snapshot (next_local_seq=5) and append
+--echo *** sequence_number 6..10 to bnlg.000001.
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+--echo
+--echo *** Materializing the local binlog file produced across the two
+--echo *** invocations and dumping it via mysqlbinlog for textual
+--echo *** inspection.
+if ($storage_backend == file)
+{
+  --let $local_binlog_path = $binsrv_storage_path/bnlg.000001
+}
+if ($storage_backend == s3)
+{
+  --let $local_binlog_path = $MYSQL_TMP_DIR/gtid_renumbering_resume.bnlg.000001
+  --exec $aws_cli s3 cp s3://$aws_s3_bucket$binsrv_storage_path/bnlg.000001 $local_binlog_path > /dev/null
+}
+
+--let GTID_DUMP = $MYSQL_TMP_DIR/gtid_renumbering_resume.dump
+--exec $MYSQL_BINLOG --base64-output=DECODE-ROWS $local_binlog_path > $GTID_DUMP
+
+--echo
+--echo *** Validating that sequence_number is gap-free across the
+--echo *** binsrv-invocation boundary and that the post-resume
+--echo *** source-binlog-boundary event has last_committed =
+--echo *** sequence_number - 1. Aborts with --die on any invariant
+--echo *** violation; produces no output otherwise.
+
+--perl
+  use strict;
+  use warnings;
+
+  my $dump_path = $ENV{'GTID_DUMP'};
+  open(my $fh, '<', $dump_path) or die "Failed to open $dump_path: $!";
+  my @events;
+  while (my $line = <$fh>) {
+    if ($line =~ /last_committed=(\d+).*?sequence_number=(\d+)/) {
+      push @events, { lc => $1 + 0, sn => $2 + 0 };
+    }
+  }
+  close($fh);
+
+  # Phase 1 contributes 5 GTIDs (CREATE TABLE + 4 INSERTs); phase 2
+  # contributes 5 INSERTs - 10 events in total, all in bnlg.000001.
+  my $expected_count = 10;
+  die "expected exactly $expected_count GTID events in the local "
+      . "binlog file, got " . scalar @events
+    unless @events == $expected_count;
+
+  # Property 1: sequence_number must be gap-free across the
+  # invocation boundary - the renumberer in the second invocation
+  # must start at 6, not at 1. A regression of the persisted-state
+  # recovery would surface as duplicate sequence_number values
+  # (1..5 from each invocation).
+  for my $i (0 .. $#events) {
+    my $expected_sn = $i + 1;
+    die "sequence_number gap or duplicate at event index $i: "
+        . "expected sequence_number=$expected_sn, got "
+        . "$events[$i]{sn} (resume regression: renumberer most "
+        . "likely restarted at 1 instead of resuming from 6)"
+      unless $events[$i]{sn} == $expected_sn;
+
+    # Property 2: last_committed must reference an in-file
+    # sequence_number, i.e. lie in [0, sequence_number - 1].
+    die "last_committed out of range at sequence_number="
+        . "$events[$i]{sn}: got last_committed=$events[$i]{lc}"
+      unless $events[$i]{lc} >= 0 && $events[$i]{lc} < $events[$i]{sn};
+  }
+
+  # Property 3: the very first event of source binlog B (the first
+  # event the SECOND binsrv invocation writes) is the cross-source-
+  # file boundary; its source-side last_committed is 0 by protocol
+  # and the renumberer must replace it with sequence_number - 1 to
+  # preserve the cross-rotation synchronization point. The boundary
+  # event lies at sequence_number = 6 (first event of phase 2).
+  my $boundary_seq = 6;
+  my $idx = $boundary_seq - 1;
+  my $expected_lc = $boundary_seq - 1;
+  die "boundary-fix violation at sequence_number=$boundary_seq "
+      . "(post-resume): expected last_committed=$expected_lc, got "
+      . "last_committed=$events[$idx]{lc}"
+    unless $events[$idx]{lc} == $expected_lc;
+EOF
+
+--echo
+--echo *** Removing temporary files.
+--remove_file $GTID_DUMP
+if ($storage_backend == s3)
+{
+  --remove_file $local_binlog_path
+}
+
+--echo
+--echo *** Dropping the table.
+DROP TABLE t1;
+
+# cleaning up
+--source ../include/tear_down_binsrv_environment.inc

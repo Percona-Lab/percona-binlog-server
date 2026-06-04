@@ -66,6 +66,7 @@
 #include "binsrv/events/event_view.hpp"
 #include "binsrv/events/protocol_traits_fwd.hpp"
 #include "binsrv/events/reader_context.hpp"
+#include "binsrv/events/rewriter.hpp"
 
 #include "easymysql/connection.hpp"
 #include "easymysql/connection_config.hpp"
@@ -538,14 +539,16 @@ void process_binlog_event(const binsrv::events::event_view &current_event_v,
 
   // checking if the event needs to be written to the binlog
   if (!info_only) {
-    storage.write_event(current_event_v.get_portion(),
-                        context.is_at_transaction_boundary(),
-                        context.get_transaction_gtid(),
-                        current_common_header_v.get_timestamp());
+    storage.write_event(
+        current_event_v.get_portion(), context.is_at_transaction_boundary(),
+        context.get_transaction_gtid(), current_common_header_v.get_timestamp(),
+        context.get_transaction_sequence_number());
   }
 
   // processing the very last event in the sequence - either a non-artificial
-  // ROTATE event or a STOP event
+  // ROTATE event or a STOP event. This is the path that closes the local
+  // binlog file and (via storage::close_binlog -> flush_event_buffer) is
+  // what guarantees the terminator event itself lands on the backend
   if ((code == binsrv::events::code_type::rotate && !is_artificial) ||
       code == binsrv::events::code_type::stop) {
     process_rotate_or_stop_event(logger, storage);
@@ -644,6 +647,7 @@ void rewrite_and_process_binlog_event(
     binsrv::basic_logger &logger, binsrv::events::reader_context &context,
     binsrv::storage &storage, std::uint32_t server_id,
     std::string_view base_file_name, std::uint64_t file_size) {
+  assert(storage.is_in_gtid_replication_mode());
   const auto current_common_header_v = current_event_v.get_common_header_view();
   const auto code = current_common_header_v.get_type_code();
 
@@ -654,6 +658,30 @@ void rewrite_and_process_binlog_event(
       code == binsrv::events::code_type::previous_gtids_log ||
       code == binsrv::events::code_type::rotate ||
       code == binsrv::events::code_type::stop) {
+    // making sure that there will be no events without checksums in the rewrite
+    // mode because when recalculating the value of 'transaction_length' field
+    // in GTID events we rely on the fact that upcoming events from the same
+    // transaction will not change their size after rewriting (currently, to
+    // avoid scenarios when one binlog file with checksums enabled is followed
+    // by another file without checksums, and we have to combine them in the
+    // same storage binlog file, we enforce that all events in the rewrite mode
+    // must have checksums)
+
+    // TODO: this restriction can be lifted if we implement whole transaction
+    //       rewrite logic (we do not add incomplete transaction events into
+    //       the storage buffer unless we receive all of them and perform
+    //       necessary checksum addition/removal)
+    if (code == binsrv::events::code_type::format_description) {
+      const auto format_description_body{binsrv::events::generic_body<
+          binsrv::events::code_type::format_description>{
+          current_event_v.get_body_raw()}};
+      if (!format_description_body.has_checksum_algorithm()) {
+        util::exception_location().raise<std::logic_error>(
+            "rewrite is supported in gtid replication mode only when "
+            "all events received from the MySQL server have checksums");
+      }
+    }
+
     const auto readable_flags{current_common_header_v.get_readable_flags()};
     logger.log(
         binsrv::log_severity::info,
@@ -756,16 +784,9 @@ void rewrite_and_process_binlog_event(
   // in rewrite mode we need to update next_event_position (and optional
   // checksum in the footer) in the received event data portion
   binsrv::events::event_storage buffer{};
-  const auto event_copy_uv{binsrv::events::materialize(
-      current_event_v, buffer,
-      binsrv::events::materialization_type::force_add_checksum)};
-  {
-    // TODO: optimize redundant checksum recalculation
-    const auto proxy{event_copy_uv.get_write_proxy()};
-    proxy.get_common_header_updatable_view().set_next_event_position_raw(
-        static_cast<std::uint32_t>(storage.get_current_position() +
-                                   event_copy_uv.get_total_size()));
-  }
+  const auto event_copy_uv{binsrv::events::rewriter::rewrite(
+      storage.get_last_transaction_sequence_number(), current_event_v, buffer,
+      storage.get_current_position())};
   process_binlog_event(event_copy_uv, logger, context, storage);
 }
 
@@ -910,16 +931,11 @@ void receive_binlog_events(
         "fetch operation did not reach EOF reading binlog events");
   }
 
-  // in GTID-based replication mode we also need to discard some data in the
-  // transaction event buffer to make sure that upon reconnection we will
-  // continue operation from the transaction boundary
-
-  // in position-based replication mode this is not needed as it is not a
-  // problem to resume streaming from a position that does not correspond to
-  // transaction boundary
-  if (storage.is_in_gtid_replication_mode()) {
-    storage.discard_incomplete_transaction_events();
-  }
+  // Truncate the in-memory event buffer to the last completed transaction so
+  // the persisted stream offset matches a transaction boundary. On reconnect,
+  // reader_context always expects the first logical event after the
+  // pseudo-preamble to be anonymous_gtid_log / gtid_log / gtid_tagged_log
+  storage.discard_incomplete_transaction_events();
 
   // connection termination is a good place to flush any remaining data
   // in the event buffer - this can be considered the third kind of

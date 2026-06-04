@@ -1,0 +1,75 @@
+--source ../include/have_binsrv.inc
+
+--source ../include/v80_v84_compatibility_defines.inc
+
+# in case of --repeat=N, we need to start from a fresh binary log to make
+# this test deterministic
+--echo *** Resetting replication at the very beginning of the test.
+--disable_query_log
+eval $stmt_reset_binary_logs_and_gtids;
+--enable_query_log
+
+# identifying backend storage type ('file' or 's3')
+--source ../include/identify_storage_backend.inc
+
+# creating data directory, configuration file, etc.
+--let $binsrv_connect_timeout = 20
+--let $binsrv_read_timeout = 60
+--let $binsrv_idle_time = 10
+--let $binsrv_verify_checksum = TRUE
+--let $binsrv_replication_mode = gtid
+--let $binsrv_rewrite_file_size = 1G
+--source ../include/set_up_binsrv_environment.inc
+
+--echo
+--echo *** Creating a simple table and filling it with some data.
+CREATE TABLE t1(id INT UNSIGNED NOT NULL AUTO_INCREMENT, PRIMARY KEY(id)) ENGINE=InnoDB;
+INSERT INTO t1 VALUES(DEFAULT);
+
+--echo
+--echo *** Inverting the value of the @@global.binlog_checksum system variable.
+--echo *** This must cause server binlog rotation.
+
+--let $initial_binlog_checksum = `SELECT @@global.binlog_checksum`
+--disable_query_log
+if ($initial_binlog_checksum == CRC32)
+{
+  SET GLOBAL binlog_checksum = NONE;
+}
+if ($initial_binlog_checksum == NONE)
+{
+  SET GLOBAL binlog_checksum = CRC32;
+}
+--enable_query_log
+
+--echo
+--echo *** Filling the table with more data after binlog file rotation.
+INSERT INTO t1 VALUES(DEFAULT);
+
+--echo
+--echo *** Executing the Binlog Server utility in GTID + rewrite mode.
+--echo *** One of the binlogs generated on the server should not have
+--echo *** checksums in its events, so we should see a dedicated error.
+--error 1
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+--echo
+--echo *** Checking that Binlog Server utility reported
+--echo *** "unsupported checksum-less event found" error.
+--let $assert_text = server events must meet the checksum enforcement requirement
+--let $assert_file = $binsrv_log_path
+--let $assert_count = 1
+--let $assert_select = rewrite is supported in gtid replication mode only when all events received from the MySQL server have checksums
+--source include/assert_grep.inc
+
+--echo
+--echo *** Dropping the table.
+DROP TABLE t1;
+
+# restoring original state of the @@global.binlog_checksum system variable
+--disable_query_log
+eval SET GLOBAL binlog_checksum = $initial_binlog_checksum;
+--enable_query_log
+
+# cleaning up
+--source ../include/tear_down_binsrv_environment.inc

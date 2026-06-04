@@ -13,17 +13,21 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef UTIL_SEMANTIC_VERSION_FWD_HPP
-#define UTIL_SEMANTIC_VERSION_FWD_HPP
+#ifndef BINSRV_EVENTS_REWRITER_FWD_HPP
+#define BINSRV_EVENTS_REWRITER_FWD_HPP
 
-#include <optional>
+#include <cstdint>
 
-namespace util {
+namespace binsrv::events {
 
-class semantic_version;
+class rewriter;
 
-using optional_semantic_version = std::optional<semantic_version>;
+enum class materialization_type : std::uint8_t {
+  force_add_checksum,
+  force_remove_checksum,
+  leave_checksum_as_is
+};
 
-} // namespace util
+} // namespace binsrv::events
 
-#endif // UTIL_SEMANTIC_VERSION_FWD_HPP
+#endif // BINSRV_EVENTS_REWRITER_FWD_HPP

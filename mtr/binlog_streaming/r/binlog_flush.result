@@ -1,0 +1,35 @@
+
+*** Resetting replication at the very beginning of the test.
+
+*** Creating non-GTID transactions in one open binlog.
+CREATE TABLE t1(id INT UNSIGNED NOT NULL AUTO_INCREMENT, PRIMARY KEY(id)) ENGINE=InnoDB;
+FLUSH BINARY LOGS;
+
+*** Starting pull mode without checkpointing and before any source binlog rotation.
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+include/read_file_to_var.inc
+
+*** Waiting for the source-side Binlog Dump thread to report that all
+*** currently available events have been streamed to the Binlog Server
+*** utility.
+
+*** Capturing storage object size before checkpoint, rotate, timeout, or graceful shutdown.
+include/read_file_to_var.inc
+
+*** Terminating pull mode without giving it a chance to flush on graceful shutdown.
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.
+DROP TABLE t1;
+
+*** Verifying storage stayed at magic payload size before any valid flush trigger.

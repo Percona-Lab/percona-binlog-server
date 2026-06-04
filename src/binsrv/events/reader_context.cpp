@@ -943,6 +943,7 @@ void reader_context::start_transaction(const event_view &current_event_v) {
       util::exception_location().raise<std::logic_error>(
           "encountered non-empty gtid in the anonymous gtid log event");
     }
+    transaction_sequence_number_ = current_post_header.get_sequence_number();
     const auto current_body{generic_body<code_type::anonymous_gtid_log>{
         current_event_v.get_body_raw()}};
     const auto expected_transaction_length_raw{
@@ -962,6 +963,7 @@ void reader_context::start_transaction(const event_view &current_event_v) {
       util::exception_location().raise<std::logic_error>(
           "encountered an empty gtid in the gtid log event");
     }
+    transaction_sequence_number_ = current_post_header.get_sequence_number();
     const auto current_body{
         generic_body<code_type::gtid_log>{current_event_v.get_body_raw()}};
     const auto expected_transaction_length_raw{
@@ -981,6 +983,7 @@ void reader_context::start_transaction(const event_view &current_event_v) {
       util::exception_location().raise<std::logic_error>(
           "encountered an empty gtid in the gtid tagged log event");
     }
+    transaction_sequence_number_ = current_body.get_sequence_number();
     const auto expected_transaction_length_raw{
         current_body.get_transaction_length_raw()};
     if (!std::in_range<std::uint32_t>(expected_transaction_length_raw)) {
@@ -1011,6 +1014,7 @@ void reader_context::finish_transaction() {
         "transaction did not end at the declared length");
   }
   transaction_gtid_ = gtids::gtid{};
+  transaction_sequence_number_ = 0ULL;
   expected_transaction_length_ = 0U;
   current_transaction_length_ = 0U;
 }

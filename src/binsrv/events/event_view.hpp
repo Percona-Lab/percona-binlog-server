@@ -22,6 +22,7 @@
 #include "binsrv/events/footer_view.hpp"        // IWYU pragma: export
 #include "binsrv/events/protocol_traits_fwd.hpp"
 #include "binsrv/events/reader_context_fwd.hpp"
+#include "binsrv/events/rewriter_fwd.hpp"
 
 #include "util/byte_span_fwd.hpp"
 
@@ -124,9 +125,7 @@ private:
 
 class [[nodiscard]] event_updatable_view : private event_view_base {
   friend class event_view;
-  friend event_updatable_view materialize(const event_view &event_v,
-                                          event_storage &buffer,
-                                          materialization_type mode);
+  friend class rewriter;
 
 public:
   // an auxiliary proxy class that allows to update the content of an

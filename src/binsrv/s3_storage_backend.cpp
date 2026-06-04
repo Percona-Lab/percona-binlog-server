@@ -509,7 +509,15 @@ s3_storage_backend::s3_storage_backend(const storage_config &config)
   if (opt_fs_buffer_directory.has_value()) {
     tmp_file_directory_ = *opt_fs_buffer_directory;
   } else {
-    tmp_file_directory_ = boost::uuids::to_string(uuid_generator_());
+    std::error_code fs_error{};
+    const auto tmp_directory{std::filesystem::temp_directory_path(fs_error)};
+    if (fs_error) {
+      util::exception_location().raise<std::invalid_argument>(
+          "unable to resolve default OS temporary directory");
+    }
+    tmp_file_directory_ =
+        tmp_directory / boost::uuids::to_string(uuid_generator_());
+    owns_tmp_file_directory_ = true;
   }
 
   const auto tmp_file_directory_status{
@@ -579,12 +587,15 @@ s3_storage_backend::s3_storage_backend(const storage_config &config)
 }
 
 s3_storage_backend::~s3_storage_backend() {
-  if (!tmp_fstream_.is_open()) {
-    return;
-  }
   // bugprone-empty-catch should not be that strict in destructors
   try {
-    close_stream_internal();
+    if (tmp_fstream_.is_open()) {
+      close_stream_internal();
+    }
+    if (owns_tmp_file_directory_) {
+      std::error_code remove_ec;
+      std::filesystem::remove_all(tmp_file_directory_, remove_ec);
+    }
   } catch (...) { // NOLINT(bugprone-empty-catch)
   }
 }

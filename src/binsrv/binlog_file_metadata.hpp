@@ -22,6 +22,8 @@
 #include <string>
 #include <string_view>
 
+#include "binsrv/events/common_types.hpp"
+
 #include "binsrv/gtids/gtid_set.hpp"
 
 #include "util/ctime_timestamp.hpp"
@@ -31,6 +33,12 @@ namespace binsrv {
 
 class [[nodiscard]] binlog_file_metadata {
 private:
+  // The 'last_sequence_number' field persists the rewrite-mode GTID
+  // recovery state for this binlog file. It is stored here (rather
+  // than re-derived from the binlog file content on resume) because
+  // every other piece of resume state already lives in this metadata
+  // record - this addition simply makes recovery a single
+  // read-and-load step.
   using impl_type = util::nv_tuple<
       // clang-format off
       util::nv<"version", std::uint32_t>,
@@ -38,7 +46,8 @@ private:
       util::nv<"previous_gtids", gtids::optional_gtid_set>,
       util::nv<"added_gtids", gtids::optional_gtid_set>,
       util::nv<"min_timestamp", util::ctime_timestamp>,
-      util::nv<"max_timestamp", util::ctime_timestamp>
+      util::nv<"max_timestamp", util::ctime_timestamp>,
+      util::nv<"last_sequence_number", events::seq_no_t>
       // clang-format on
       >;
 

@@ -55,6 +55,15 @@ uuid::uuid(const uuid_storage &data) {
       boost::uuids::uuid::static_size(), std::begin(data_));
 }
 
+[[nodiscard]] uuid_storage uuid::get_raw() const noexcept {
+  uuid_storage result;
+  std::copy_n(
+      // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+      reinterpret_cast<const std::byte *>(std::cbegin(data_)),
+      boost::uuids::uuid::static_size(), std::begin(result));
+  return result;
+}
+
 [[nodiscard]] std::string uuid::str() const {
   return boost::uuids::to_string(data_);
 }

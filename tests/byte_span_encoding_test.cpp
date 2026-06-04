@@ -23,13 +23,17 @@
 #include <type_traits>
 #include <utility>
 
-#define BOOST_TEST_MODULE TagTests
+#define BOOST_TEST_MODULE ExtractionInsertionTests
 // this include is needed as it provides the 'main()' function
 // NOLINTNEXTLINE(misc-include-cleaner)
 #include <boost/test/unit_test.hpp>
 
 #include <boost/test/unit_test_log.hpp>
 #include <boost/test/unit_test_suite.hpp>
+
+#include <boost/test/data/test_case.hpp>
+
+#include <boost/test/data/monomorphic/collection.hpp>
 
 #include <boost/test/tools/old/interface.hpp>
 
@@ -38,6 +42,7 @@
 #include "util/byte_span_extractors.hpp"
 #include "util/byte_span_fwd.hpp"
 #include "util/byte_span_inserters.hpp"
+#include "util/byte_span_packed_int_constants.hpp"
 
 struct mixin_fixture {
   static constexpr std::size_t bits_in_byte{
@@ -191,4 +196,57 @@ BOOST_FIXTURE_TEST_CASE_TEMPLATE(VarlenIntEncoding, ValueType,
   if constexpr (std::is_signed_v<ValueType>) {
     print_and_check_single(std::numeric_limits<ValueType>::min());
   }
+}
+
+static constexpr std::array<std::uint64_t, 21U> packed_int_values{
+    0ULL,
+    1ULL,
+    2ULL,
+    util::packed_int_single_boundary - 2ULL,
+    util::packed_int_single_boundary - 1ULL,
+    util::packed_int_single_boundary,
+    util::packed_int_single_boundary + 1ULL,
+    util::packed_int_single_boundary + 2ULL,
+    util::packed_int_double_boundary - 2ULL,
+    util::packed_int_double_boundary - 1ULL,
+    util::packed_int_double_boundary,
+    util::packed_int_double_boundary + 1ULL,
+    util::packed_int_double_boundary + 2ULL,
+    util::packed_int_triple_boundary - 2ULL,
+    util::packed_int_triple_boundary - 1ULL,
+    util::packed_int_triple_boundary,
+    util::packed_int_triple_boundary + 1ULL,
+    util::packed_int_triple_boundary + 2ULL,
+    std::numeric_limits<std::uint64_t>::max() - 2ULL,
+    std::numeric_limits<std::uint64_t>::max() - 1ULL,
+    std::numeric_limits<std::uint64_t>::max()};
+
+BOOST_DATA_TEST_CASE(PackedIntEncoding,
+                     boost::unit_test::data::make(packed_int_values)) {
+  const std::uint64_t value{sample}; // sample is provided by Boost.Test
+
+  const auto calculated_encoded_size{util::calculate_packed_int_size(value)};
+  using encoding_buffer_type =
+      std::array<std::byte, util::packed_int_octuple_size + 1U>;
+
+  encoding_buffer_type buffer;
+  util::byte_span encoding_portion{buffer};
+  BOOST_CHECK(
+      util::insert_packed_int_to_byte_span_checked(encoding_portion, value));
+
+  const auto actual_encoded_size{std::size(buffer) -
+                                 std::size(encoding_portion)};
+
+  BOOST_CHECK_EQUAL(actual_encoded_size, calculated_encoded_size);
+
+  util::const_byte_span decoding_portion{buffer};
+  std::uint64_t restored_value{};
+  BOOST_CHECK(util::extract_packed_int_from_byte_span_checked(decoding_portion,
+                                                              restored_value));
+
+  const auto actual_decoded_size{std::size(buffer) -
+                                 std::size(decoding_portion)};
+  BOOST_CHECK_EQUAL(actual_decoded_size, calculated_encoded_size);
+
+  BOOST_CHECK_EQUAL(restored_value, value);
 }

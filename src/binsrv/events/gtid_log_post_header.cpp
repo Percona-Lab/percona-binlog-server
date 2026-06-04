@@ -25,6 +25,7 @@
 
 #include <boost/align/align_up.hpp>
 
+#include "binsrv/events/common_types.hpp"
 #include "binsrv/events/gtid_log_flag_type.hpp"
 
 #include "binsrv/gtids/common_types.hpp"
@@ -33,6 +34,7 @@
 
 #include "util/byte_span.hpp"
 #include "util/byte_span_extractors.hpp"
+#include "util/byte_span_inserters.hpp"
 #include "util/exception_location_helpers.hpp"
 #include "util/flag_set.hpp"
 
@@ -109,13 +111,23 @@ gtid_log_post_header::gtid_log_post_header(util::const_byte_span portion) {
   // TODO: for gtid_log (not anonymous gtid_log) add validation of gno -
   //       (gno >= gtid::min_gno && gno_ < gtid::max_gno)
   util::extract_fixed_int_from_byte_span(remainder, logical_ts_code_);
-  if (logical_ts_code_ != expected_logical_ts_code) {
+  if (logical_ts_code_ != known_logical_ts_code) {
     util::exception_location().raise<std::invalid_argument>(
         "unsupported logical timestamp code in gtid_log post header");
   }
   util::extract_fixed_int_from_byte_span(remainder, last_committed_);
   util::extract_fixed_int_from_byte_span(remainder, sequence_number_);
 }
+
+gtid_log_post_header::gtid_log_post_header(
+    const gtid_log_flag_set &flags, const gtids::uuid &uuid,
+    // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+    gtids::gno_t gno, std::uint8_t logical_ts_code,
+    events::seq_no_t last_committed, events::seq_no_t sequence_number) noexcept
+    : flags_{flags.get_bits()}, logical_ts_code_{logical_ts_code},
+      uuid_{uuid.get_raw()}, gno_{static_cast<std::int64_t>(gno)},
+      last_committed_{static_cast<std::int64_t>(last_committed)},
+      sequence_number_{static_cast<std::int64_t>(sequence_number)} {}
 
 [[nodiscard]] gtid_log_flag_set
 gtid_log_post_header::get_flags() const noexcept {
@@ -139,6 +151,19 @@ gtid_log_post_header::get_flags() const noexcept {
     return {};
   }
   return {get_uuid(), get_gno()};
+}
+
+void gtid_log_post_header::encode_to(util::byte_span &destination) const {
+  if (std::size(destination) < calculate_encoded_size()) {
+    util::exception_location().raise<std::invalid_argument>(
+        "cannot encode rotate event post header");
+  }
+  util::insert_fixed_int_to_byte_span(destination, flags_);
+  util::insert_byte_array_to_byte_span(destination, uuid_);
+  util::insert_fixed_int_to_byte_span(destination, gno_);
+  util::insert_fixed_int_to_byte_span(destination, logical_ts_code_);
+  util::insert_fixed_int_to_byte_span(destination, last_committed_);
+  util::insert_fixed_int_to_byte_span(destination, sequence_number_);
 }
 
 std::ostream &operator<<(std::ostream &output,
