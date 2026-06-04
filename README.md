@@ -154,7 +154,7 @@ Please run
 ./binlog_server list <json_config_file>
 ./binlog_server search_by_timestamp <json_config_file> <timestamp>
 ./binlog_server search_by_gtid_set <json_config_file> <gtid_set>
-./binlog_server purge_binlogs <binlog_name>
+./binlog_server purge_binlogs <json_config_file> <binlog_name>
 ```
 where
 `<json_config_file>` is a path to a JSON configuration file (described below),
@@ -445,6 +445,8 @@ For instance,
 }
 ```
 These responses with `status` set to `warning` can be considered as an indicator of partial success.
+
+Please also notice that running the utility in the `purge_binlogs` mode on a certain storage (identified by an absolute path in the case of the 'file' storage backend or by a bucket + virtual folder pair in the case of the s3 storage backend) while another instance is fetching / pulling data to the same storage may cause data corruption and should be avoided. At the same time running the utility in the `purge_binlogs` mode on one storage and having another instance of the process (even running on the same host) fetching / pulling data to another storage is an absolutely legitimate operation.
 
 ### JSON Configuration file
 
