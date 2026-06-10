@@ -96,6 +96,13 @@ storage::storage(const storage_config &config,
 
   const auto binlog_index_it{storage_objects.find(default_binlog_index_name)};
   if (binlog_index_it == std::cend(storage_objects)) {
+    // as binlog index file is created after the very first binlog data file
+    // and its metadata file are created, the concurrent query-only operation
+    // may intrude exactly between these two steps, so for query-only operations
+    // we should not consider the absence of binlog index file as an error
+    if (construction_mode == storage_construction_mode_type::querying_only) {
+      return;
+    }
     util::exception_location().raise<std::logic_error>(
         "storage is not empty but does not contain binlog index");
   }
@@ -538,6 +545,12 @@ void storage::load_binlog_index() {
 
 void storage::validate_binlog_index(
     const storage_object_name_container &object_names) const {
+  // in the querying_only mode we allow discrepancies between the binlog index
+  // and the actual objects in the storage
+  if (construction_mode_ == storage_construction_mode_type::querying_only) {
+    return;
+  }
+
   for (auto const &record : binlog_records_) {
     if (!object_names.contains(record.name.str())) {
       util::exception_location().raise<std::logic_error>(
@@ -658,28 +671,51 @@ void storage::load_and_validate_binlog_metadata_set(
     // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
     const storage_object_name_container &object_names,
     const storage_object_name_container &object_metadata_names) {
-  for (auto &record : binlog_records_) {
-    const auto binlog_metadata_name{generate_binlog_metadata_name(record.name)};
-    if (!object_metadata_names.contains(binlog_metadata_name)) {
-      util::exception_location().raise<std::logic_error>(
-          "missing metadata for a binlog listed in the binlog index");
+  auto record_it{std::begin(binlog_records_)};
+  while (record_it != std::end(binlog_records_)) {
+    storage::binlog_record loaded_binlog_metadata{};
+    try {
+      const auto binlog_metadata_name{
+          generate_binlog_metadata_name(record_it->name)};
+      if (!object_metadata_names.contains(binlog_metadata_name)) {
+        util::exception_location().raise<std::logic_error>(
+            "missing metadata for a binlog listed in the binlog index");
+      }
+      loaded_binlog_metadata = load_binlog_metadata(record_it->name);
+    } catch (const std::exception &) {
+      if (construction_mode_ == storage_construction_mode_type::querying_only) {
+        // in the querying_only mode we just skip invalid metadata and the
+        // corresponding binlog file - this allows to query an otherwise
+        // unusable storage and retrieve information about valid binlog files
+        // from it, which can be useful for debugging / forensics purposes
+        record_it = binlog_records_.erase(record_it);
+        continue;
+      }
+      throw;
     }
-    auto loaded_binlog_metadata{load_binlog_metadata(record.name)};
     validate_binlog_metadata(loaded_binlog_metadata);
-    // validating that the size stored in the metadata matches the actual size
-    if (loaded_binlog_metadata.size != object_names.at(record.name.str())) {
-      util::exception_location().raise<std::logic_error>(
-          "size from the binlog metadata does not match the actual binlog "
-          "size");
+    // validating binlog size from the metadata only makes sense if we are not
+    // in the querying_only mode
+    if (construction_mode_ != storage_construction_mode_type::querying_only) {
+      // validating that the size stored in the metadata matches the actual size
+      if (loaded_binlog_metadata.size !=
+          object_names.at(record_it->name.str())) {
+        util::exception_location().raise<std::logic_error>(
+            "size from the binlog metadata does not match the actual binlog "
+            "size");
+      }
     }
-    record = std::move(loaded_binlog_metadata);
+    *record_it = std::move(loaded_binlog_metadata);
+    ++record_it;
   }
   // after this loop position_ and gtids_ should store the values from the last
   // binlog file metadata
 
-  if (std::size(object_metadata_names) != std::size(binlog_records_)) {
-    util::exception_location().raise<std::logic_error>(
-        "found metadata for a non-existing binlog");
+  if (construction_mode_ != storage_construction_mode_type::querying_only) {
+    if (std::size(object_metadata_names) != std::size(binlog_records_)) {
+      util::exception_location().raise<std::logic_error>(
+          "found metadata for a non-existing binlog");
+    }
   }
 
   // if we are in GTID replication mode, then we can consider GTIDs from the

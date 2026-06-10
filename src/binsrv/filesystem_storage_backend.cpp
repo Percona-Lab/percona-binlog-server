@@ -16,10 +16,12 @@
 #include "binsrv/filesystem_storage_backend.hpp"
 
 #include <cassert>
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <ios>
+#include <iosfwd>
 #include <iterator>
 #include <stdexcept>
 #include <string>
@@ -114,6 +116,11 @@ filesystem_storage_backend::do_list_objects() {
           "filesystem storage directory contains an entry that is not a "
           "regular file");
     }
+    if (dir_entry.path().extension() == tmp_object_suffix) {
+      // skip temporary files used by the atomic-overwrite implementation of
+      // 'do_put_object'
+      continue;
+    }
     // TODO: check permissions here
     result.emplace(dir_entry.path().filename().string(), dir_entry.file_size());
   }
@@ -132,7 +139,18 @@ filesystem_storage_backend::do_get_object(std::string_view name) {
     util::exception_location().raise<std::runtime_error>(
         "cannot open underlying object file");
   }
-  auto file_size = std::filesystem::file_size(object_path);
+  if (!object_ifs.seekg(0, std::ios_base::end)) {
+    util::exception_location().raise<std::runtime_error>(
+        "cannot seek underlying object file to the end");
+  }
+  const std::streampos end_pos{object_ifs.tellg()};
+  const auto end_offset{static_cast<std::streamoff>(end_pos)};
+  if (!object_ifs.seekg(0, std::ios_base::beg)) {
+    util::exception_location().raise<std::runtime_error>(
+        "cannot seek underlying object file to the beginning");
+  }
+
+  const auto file_size{static_cast<std::size_t>(end_offset)};
   if (file_size > max_memory_object_size) {
     util::exception_location().raise<std::out_of_range>(
         "underlying object file is too large to be loaded in memory");
