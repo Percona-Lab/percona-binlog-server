@@ -134,6 +134,9 @@ install -D -m 0644  main_config.json %{buildroot}/%{_sysconfdir}/percona-binlog-
 
 
 %changelog
+* Thu Jun 11 2026 Yura Sorokin <yura.sorokin@percona.com> - 0.3.1-1
+- PBS-27 binlog_server list command fails with ERROR if executed while fetch/pull is in progress.
+
 * Thu Jun 04 2026 Yura Sorokin <yura.sorokin@percona.com> - 0.3.0-1
 - PS-10625 Update boost libraries to 1.90.0.
 - PS-10934 Update AWS SDK C++ libraries to version 1.11.774.

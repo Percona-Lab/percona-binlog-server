@@ -1,3 +1,9 @@
+percona-binlog-server (0.3.1-1) unstable; urgency=low
+
+  * PBS-27 binlog_server list command fails with ERROR if executed while fetch/pull is in progress.
+
+ -- Yura Sorokin <yura.sorokin@percona.com>  Thu, 11 Jun 2026 16:46:21 +0200
+
 percona-binlog-server (0.3.0-1) unstable; urgency=low
 
   * PS-10625 Update boost libraries to 1.90.0.
