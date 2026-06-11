@@ -23,7 +23,8 @@ FLUSH BINARY LOGS;
 
 --disable_query_log
 --let $transaction_idx = 0
-while ($transaction_idx < 20)
+--let $number_of_inserts = 20
+while ($transaction_idx < $number_of_inserts)
 {
   INSERT INTO t1 VALUES(DEFAULT);
   --inc $transaction_idx
@@ -56,20 +57,17 @@ EOF
 --let $binsrv_pid = $result
 
 --echo
---echo *** Waiting for the source-side Binlog Dump thread to report that all
---echo *** currently available events have been streamed to the Binlog Server
---echo *** utility.
-# We deliberately avoid waiting for PBS to log "entering
-# idle mode for" because that pattern fires only after the MySQL
-# read timeout, and the read-timeout path itself flushes the event
-# buffer (see receive_binlog_events()) - which would invalidate the
-# "storage stayed empty before any flush trigger" invariant this
-# test asserts.
-let $wait_condition = SELECT COUNT(*) FROM performance_schema.processlist
-                      WHERE COMMAND = 'Binlog Dump'
-                      AND STATE LIKE '%sent all binlog to%';
+--echo *** Waiting until Binlog Server log confirms that it processed an
+--echo *** the ANONYMOUS_GTID_LOG event with sequence_number which is equal
+--echo *** to the number of inserts we executed.
+# the fact there could be unprocessed events after ANONYMOUS_GTID_LOG
+# with sequence_number == $number_of_inserts does not change the logic
+# of this test case (for us what matters is that the storage memory buffer
+# has some data that hasn't been flushed).
+--let $grep_file = $binsrv_log_path
+--let $grep_pattern = sequence_number: $number_of_inserts
 --let $wait_timeout = 60
---source include/wait_condition.inc
+--source include/wait_for_pattern_in_file.inc
 
 --echo
 --echo *** Capturing storage object size before checkpoint, rotate, timeout, or graceful shutdown.
