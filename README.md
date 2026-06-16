@@ -182,7 +182,7 @@ For instance,
 ```
 may print
 ```
-0.3.1
+0.4.0
 ```
 
 #### 'list' operation mode
