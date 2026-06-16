@@ -16,9 +16,10 @@ FLUSH BINARY LOGS;
 *** binlog files downloaded via the Binlog Server utility.
 include/read_file_to_var.inc
 
-*** Waiting for the source-side Binlog Dump thread to report that all
-*** currently available events have been streamed to the Binlog Server
-*** utility.
+*** Waiting until Binlog Server log confirms that it processed an
+*** the ANONYMOUS_GTID_LOG event with sequence_number which is equal
+*** to the number of inserts we executed.
+include/wait_for_pattern_in_file.inc [sequence_number: 20]
 
 *** Capturing storage object size before checkpoint, rotate, timeout, or graceful shutdown.
 include/read_file_to_var.inc

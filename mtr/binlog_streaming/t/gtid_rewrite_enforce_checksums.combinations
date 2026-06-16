@@ -1,8 +1,8 @@
 [gtid_on_checksum_on]
-enforce-gtid-consistency = ON
+enforce-gtid-consistency
 gtid-mode = ON
 
 [gtid_on_checksum_off]
-enforce-gtid-consistency = ON
+enforce-gtid-consistency
 gtid-mode = ON
 binlog-checksum=NONE
