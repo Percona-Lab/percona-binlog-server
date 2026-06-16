@@ -15,7 +15,7 @@
 
 cmake_minimum_required(VERSION 3.20)
 
-project(BinlogServer VERSION 0.3 LANGUAGES CXX)
+project(BinlogServer VERSION 0.4 LANGUAGES CXX)
 
 # specify the C++ standard
 add_library(binlog_server_compiler_flags INTERFACE)
