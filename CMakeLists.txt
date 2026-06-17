@@ -19,7 +19,7 @@ project(BinlogServer VERSION 0.4 LANGUAGES CXX)
 
 # specify the C++ standard
 add_library(binlog_server_compiler_flags INTERFACE)
-target_compile_features(binlog_server_compiler_flags INTERFACE cxx_std_20)
+target_compile_features(binlog_server_compiler_flags INTERFACE cxx_std_23)
 target_include_directories(binlog_server_compiler_flags INTERFACE "${PROJECT_SOURCE_DIR}/src")
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_SOURCE_DIR}/cmake)
