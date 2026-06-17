@@ -13,8 +13,8 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef UTIL_REDIRECTABLE_FWD_HPP
-#define UTIL_REDIRECTABLE_FWD_HPP
+#ifndef UTIL_REDIRECTABLE_HPP
+#define UTIL_REDIRECTABLE_HPP
 
 namespace util {
 
@@ -23,4 +23,4 @@ concept redirectable = requires { typename T::redirect_type; };
 
 } // namespace util
 
-#endif // UTIL_REDIRECTABLE_FWD_HPP
+#endif // UTIL_REDIRECTABLE_HPP

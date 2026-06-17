@@ -121,6 +121,7 @@ public:
   struct endpoint_tag {};
 
   using stream_factory_type = std::function<std::iostream *()>;
+  // TODO: change to std::move_only_function when libc++ supports it
   using stream_handler_type = std::function<void(std::size_t, std::iostream &)>;
 
   aws_context(bucket_tag tag, const simple_aws_credentials &credentials,
@@ -680,7 +681,7 @@ void s3_storage_backend::init_with_endpoint(
 
   if (uri_path_it == std::cend(uri_path)) {
     util::exception_location().raise<std::invalid_argument>(
-        "endpoint s3 URI path must include at least on segment");
+        "endpoint s3 URI path must include at least one segment");
   }
   bucket_ = *uri_path_it;
   ++uri_path_it;

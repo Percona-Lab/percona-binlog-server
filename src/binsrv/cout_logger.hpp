@@ -13,8 +13,8 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef BINSRV_OSTREAM_LOGGER_HPP
-#define BINSRV_OSTREAM_LOGGER_HPP
+#ifndef BINSRV_COUT_LOGGER_HPP
+#define BINSRV_COUT_LOGGER_HPP
 
 #include <string_view>
 
@@ -32,4 +32,4 @@ private:
 
 } // namespace binsrv
 
-#endif // BINSRV_OSTREAM_LOGGER_HPP
+#endif // BINSRV_COUT_LOGGER_HPP
