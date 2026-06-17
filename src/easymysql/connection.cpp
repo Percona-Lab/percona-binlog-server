@@ -183,12 +183,12 @@ private:
   MYSQL_RPL rpl_;
 
   // MYSQL_RPL_SKIP_HEARTBEAT
-  // https://github.com/mysql/mysql-server/blob/mysql-cluster-8.0.43/include/mysql.h#L366
-  // https://github.com/mysql/mysql-server/blob/mysql-cluster-8.4.6/include/mysql.h#L367
+  // https://github.com/mysql/mysql-server/blob/mysql-8.0.43/include/mysql.h#L366
+  // https://github.com/mysql/mysql-server/blob/mysql-8.4.6/include/mysql.h#L367
 
   // USE_HEARTBEAT_EVENT_V2
-  // https://github.com/mysql/mysql-server/blob/mysql-cluster-8.0.43/include/mysql.h#L372
-  // https://github.com/mysql/mysql-server/blob/mysql-cluster-8.4.6/include/mysql.h#L373
+  // https://github.com/mysql/mysql-server/blob/mysql-8.0.43/include/mysql.h#L372
+  // https://github.com/mysql/mysql-server/blob/mysql-8.4.6/include/mysql.h#L373
 
   // Explaining BINLOG_DUMP_NON_BLOCK
   // https://github.com/mysql/mysql-server/blob/mysql-8.0.43/sql/rpl_constants.h#L45

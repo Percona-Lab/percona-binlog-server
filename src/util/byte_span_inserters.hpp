@@ -24,8 +24,6 @@
 #include <cstring>
 #include <limits>
 
-#include <boost/endian/conversion.hpp>
-
 #include "util/byte_span_fwd.hpp"
 #include "util/byte_span_packed_int_constants.hpp"
 #include "util/conversion_helpers.hpp"
@@ -43,8 +41,12 @@ void insert_fixed_int_to_byte_span(
   if constexpr (sizeof(T) != 1U) {
     // A fixed-length unsigned integer stores its value in a series of
     // bytes with the least significant byte first.
-    // TODO: in c++23 use std::byteswap()
-    T value_in_network_format{boost::endian::native_to_little(value)};
+    T value_in_network_format{};
+    if constexpr (std::endian::native == std::endian::little) {
+      value_in_network_format = value;
+    } else {
+      value_in_network_format = std::byteswap(value);
+    }
     std::memcpy(std::data(remainder), &value_in_network_format,
                 bytes_to_insert);
   } else {

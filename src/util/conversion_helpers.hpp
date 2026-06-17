@@ -18,6 +18,7 @@
 
 #include <concepts>
 #include <type_traits>
+#include <utility>
 
 namespace util {
 
@@ -28,15 +29,6 @@ template <std::integral To, std::integral From>
   } else {
     return static_cast<To>(value);
   }
-}
-
-// TODO: remove this function when switch to c++23 and use std::to_underlying
-//       instead
-template <typename EnumType>
-  requires std::is_enum_v<EnumType>
-[[nodiscard]] constexpr std::underlying_type_t<EnumType>
-to_underlying(EnumType enum_value) noexcept {
-  return static_cast<std::underlying_type_t<EnumType>>(enum_value);
 }
 
 template <typename EnumType>
@@ -52,7 +44,7 @@ template <typename EnumType>
            sizeof(std::underlying_type_t<EnumType>) <= sizeof(std::size_t))
 [[nodiscard]] constexpr std::size_t
 enum_to_index(EnumType enum_value) noexcept {
-  return static_cast<std::size_t>(to_underlying(enum_value));
+  return static_cast<std::size_t>(std::to_underlying(enum_value));
 }
 
 template <typename EnumType>

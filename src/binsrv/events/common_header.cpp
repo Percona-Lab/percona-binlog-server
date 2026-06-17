@@ -19,6 +19,7 @@
 #include <iterator>
 #include <ostream>
 #include <stdexcept>
+#include <utility>
 
 #include <boost/align/align_up.hpp>
 
@@ -27,7 +28,6 @@
 #include "binsrv/events/common_header_view.hpp"
 
 #include "util/byte_span_fwd.hpp"
-#include "util/conversion_helpers.hpp"
 #include "util/ctime_timestamp.hpp"
 #include "util/exception_location_helpers.hpp"
 
@@ -41,7 +41,7 @@ common_header::common_header(
     : timestamp_(static_cast<std::uint32_t>(timestamp.get_value())),
       server_id_(server_id), event_size_(event_size),
       next_event_position_(next_event_position), flags_(flags.get_bits()),
-      type_code_(util::to_underlying(type_code)) {}
+      type_code_(std::to_underlying(type_code)) {}
 
 common_header::common_header(const common_header_view &view)
     : timestamp_{view.get_timestamp_raw()},

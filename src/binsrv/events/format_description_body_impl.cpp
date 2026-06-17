@@ -20,6 +20,7 @@
 #include <ostream>
 #include <stdexcept>
 #include <string_view>
+#include <utility>
 
 #include <boost/align/align_up.hpp>
 
@@ -36,7 +37,7 @@ namespace binsrv::events {
 
 generic_body_impl<code_type::format_description>::generic_body_impl(
     checksum_algorithm_type checksum_algorithm) noexcept
-    : checksum_algorithm_{util::to_underlying(checksum_algorithm)} {}
+    : checksum_algorithm_{std::to_underlying(checksum_algorithm)} {}
 
 generic_body_impl<code_type::format_description>::generic_body_impl(
     util::const_byte_span portion) {

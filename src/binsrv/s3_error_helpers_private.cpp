@@ -18,12 +18,12 @@
 #include <source_location>
 #include <string>
 #include <string_view>
+#include <utility>
 
 #include <aws/s3-crt/S3CrtErrors.h>
 
 #include "binsrv/s3_error.hpp"
 
-#include "util/conversion_helpers.hpp"
 #include "util/exception_location_helpers.hpp"
 
 namespace binsrv {
@@ -47,9 +47,8 @@ raise_s3_error_from_outcome(std::string_view user_message,
   message += ", RequestID ";
   message += sdk_error.GetRequestId();
   message += ", ResponseCode ";
-  // TODO: in c++23 change to std::to_underlying()
   auto http_status_code = sdk_error.GetResponseCode();
-  message += std::to_string(util::to_underlying(http_status_code));
+  message += std::to_string(std::to_underlying(http_status_code));
   message += ')';
 
   // default value std::source_location::current() for the 'location'

@@ -28,6 +28,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <utility>
 
 #include <boost/lexical_cast.hpp>
 
@@ -431,71 +432,71 @@ generic_body_impl<code_type::gtid_tagged_log>::calculate_tlv_section_size()
   std::size_t total{0U};
 
   // field: flags
-  total += util::calculate_varlen_int_size(
-      util::to_underlying(field_id_type::flags));
+  total +=
+      util::calculate_varlen_int_size(std::to_underlying(field_id_type::flags));
   total += util::calculate_varlen_int_size(flags_);
 
   // field: uuid (16 separate varlen-encoded bytes, one per UUID byte)
   total +=
-      util::calculate_varlen_int_size(util::to_underlying(field_id_type::uuid));
+      util::calculate_varlen_int_size(std::to_underlying(field_id_type::uuid));
   for (auto uuid_byte : uuid_) {
-    total += util::calculate_varlen_int_size(util::to_underlying(uuid_byte));
+    total += util::calculate_varlen_int_size(std::to_underlying(uuid_byte));
   }
 
   // field: gno
   total +=
-      util::calculate_varlen_int_size(util::to_underlying(field_id_type::gno));
+      util::calculate_varlen_int_size(std::to_underlying(field_id_type::gno));
   total += util::calculate_varlen_int_size(gno_);
 
   // field: tag (varlen length + raw bytes)
   total +=
-      util::calculate_varlen_int_size(util::to_underlying(field_id_type::tag));
+      util::calculate_varlen_int_size(std::to_underlying(field_id_type::tag));
   total += util::calculate_varlen_int_size(std::size(tag_));
   total += std::size(tag_);
 
   // field: last_committed
   total += util::calculate_varlen_int_size(
-      util::to_underlying(field_id_type::last_committed));
+      std::to_underlying(field_id_type::last_committed));
   total += util::calculate_varlen_int_size(last_committed_);
 
   // field: sequence_number
   total += util::calculate_varlen_int_size(
-      util::to_underlying(field_id_type::sequence_number));
+      std::to_underlying(field_id_type::sequence_number));
   total += util::calculate_varlen_int_size(sequence_number_);
 
   // field: immediate_commit_timestamp
   total += util::calculate_varlen_int_size(
-      util::to_underlying(field_id_type::immediate_commit_timestamp));
+      std::to_underlying(field_id_type::immediate_commit_timestamp));
   total += util::calculate_varlen_int_size(immediate_commit_timestamp_);
 
   // field: original_commit_timestamp (optional)
   if (has_original_commit_timestamp()) {
     total += util::calculate_varlen_int_size(
-        util::to_underlying(field_id_type::original_commit_timestamp));
+        std::to_underlying(field_id_type::original_commit_timestamp));
     total += util::calculate_varlen_int_size(original_commit_timestamp_);
   }
 
   // field: transaction_length
   total += util::calculate_varlen_int_size(
-      util::to_underlying(field_id_type::transaction_length));
+      std::to_underlying(field_id_type::transaction_length));
   total += util::calculate_varlen_int_size(transaction_length_);
 
   // field: immediate_server_version
   total += util::calculate_varlen_int_size(
-      util::to_underlying(field_id_type::immediate_server_version));
+      std::to_underlying(field_id_type::immediate_server_version));
   total += util::calculate_varlen_int_size(immediate_server_version_);
 
   // field: original_server_version (optional)
   if (has_original_server_version()) {
     total += util::calculate_varlen_int_size(
-        util::to_underlying(field_id_type::original_server_version));
+        std::to_underlying(field_id_type::original_server_version));
     total += util::calculate_varlen_int_size(original_server_version_);
   }
 
   // field: commit_group_ticket (optional)
   if (has_commit_group_ticket()) {
     total += util::calculate_varlen_int_size(
-        util::to_underlying(field_id_type::commit_group_ticket));
+        std::to_underlying(field_id_type::commit_group_ticket));
     total += util::calculate_varlen_int_size(commit_group_ticket_);
   }
 
@@ -541,7 +542,7 @@ void generic_body_impl<code_type::gtid_tagged_log>::encode_tlv_section_to(
     util::byte_span &destination) const {
   const auto emit_field_id{[&destination](field_id_type field_id) {
     [[maybe_unused]] auto result{util::insert_varlen_int_to_byte_span_checked(
-        destination, util::to_underlying(field_id))};
+        destination, std::to_underlying(field_id))};
   }};
 
   // It is OK to ignore the result here as we already ensured
@@ -557,7 +558,7 @@ void generic_body_impl<code_type::gtid_tagged_log>::encode_tlv_section_to(
   emit_field_id(field_id_type::uuid);
   for (auto uuid_byte : uuid_) {
     insert_result = util::insert_varlen_int_to_byte_span_checked(
-        destination, util::to_underlying(uuid_byte));
+        destination, std::to_underlying(uuid_byte));
   }
 
   // field: gno

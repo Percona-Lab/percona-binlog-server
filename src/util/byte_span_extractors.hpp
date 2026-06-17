@@ -23,8 +23,7 @@
 #include <cstddef>
 #include <cstring>
 #include <limits>
-
-#include <boost/endian/conversion.hpp>
+#include <utility>
 
 #include "util/byte_span_fwd.hpp"
 #include "util/byte_span_packed_int_constants.hpp"
@@ -46,11 +45,13 @@ void extract_fixed_int_from_byte_span(
                 bytes_to_extract);
     // A fixed-length unsigned integer stores its value in a series of
     // bytes with the least significant byte first.
-    // TODO: in c++23 use std::byteswap()
-    value = boost::endian::little_to_native(value_in_network_format);
+    if constexpr (std::endian::native == std::endian::little) {
+      value = value_in_network_format;
+    } else {
+      value = std::byteswap(value_in_network_format);
+    }
   } else {
-    // TODO: in c++23 change use std::to_underlying(*std::data(remainder))
-    value = static_cast<T>(util::to_underlying(*std::data(remainder)));
+    value = static_cast<T>(std::to_underlying(*std::data(remainder)));
   }
   remainder = remainder.subspan(bytes_to_extract);
 }
