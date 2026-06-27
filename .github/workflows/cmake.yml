@@ -263,10 +263,14 @@ jobs:
       if: matrix.config.run_clang_tidy
       run: clang-tidy-20 --version
 
+    - name: Dump Clang Tidy Config
+      if: matrix.config.run_clang_tidy
+      run: clang-tidy-20 --dump-config --config-file=${{github.workspace}}/src/.clang-tidy
+
     - name: Clang Tidy
       if: matrix.config.run_clang_tidy
       # Run Clang Tidy
-      run: run-clang-tidy-20 -header-filter=.* -j=${{steps.cpu-cores.outputs.count}} -use-color -p=${{github.workspace}}/src-build-${{matrix.config.label}}
+      run: run-clang-tidy-20 -config-file=${{github.workspace}}/src/.clang-tidy -j=${{steps.cpu-cores.outputs.count}} -use-color -p=${{github.workspace}}/src-build-${{matrix.config.label}}
 
     - name: Application version
       working-directory: ${{github.workspace}}/src-build-${{matrix.config.label}}

@@ -712,9 +712,6 @@ BOOST_AUTO_TEST_CASE(GtidSetWhitespaces) {
   // looks like a misconfiguration in clang-tidy-19 that doesn't know that
   // std::erase() for std::string is located in the <string> system header
 
-  // TODO: re-check this when switching to clang-20
-
-  // NOLINTNEXTLINE(misc-include-cleaner)
   std::erase(gtids_str, ' ');
   BOOST_CHECK(gtids_str.find(' ') == std::string::npos);
   const auto restored_gtids{

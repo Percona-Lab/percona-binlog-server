@@ -72,7 +72,7 @@ if(WITH_ASAN)
   target_link_options(binlog_server_compiler_flags INTERFACE "-fsanitize=address")
 endif()
 
-find_package(Boost 1.90.0 EXACT REQUIRED COMPONENTS url json)
+find_package(Boost 1.90.0 EXACT REQUIRED COMPONENTS url json asio)
 
 find_package(MySQL REQUIRED)
 
@@ -533,6 +533,74 @@ target_link_libraries(binlog_server
 # it is not possible to propagate CXX_EXTENSIONS and CXX_STANDARD_REQUIRED
 # via interface library (binlog_server_compiler_flags)
 set_target_properties(binlog_server PROPERTIES
+  CXX_STANDARD_REQUIRED YES
+  CXX_EXTENSIONS NO
+)
+set(mysql_harness_source_files
+  extra/mysql_protocol/mysql/harness/net_ts/buffer.h
+
+  extra/mysql_protocol/mysql/harness/stdx/bit.h
+  extra/mysql_protocol/mysql/harness/stdx/expected.h
+  extra/mysql_protocol/mysql/harness/stdx/flags.h
+  extra/mysql_protocol/mysql/harness/stdx/ranges.h
+  extra/mysql_protocol/mysql/harness/stdx/type_traits.h
+)
+
+set(mysql_protocol_source_files
+  extra/mysql_protocol/mysqlrouter/classic_protocol.h
+  extra/mysql_protocol/mysqlrouter/classic_protocol_binary.h
+  extra/mysql_protocol/mysqlrouter/classic_protocol_clone.h
+  extra/mysql_protocol/mysqlrouter/classic_protocol_codec.h
+  extra/mysql_protocol/mysqlrouter/classic_protocol_codec_base.h
+  extra/mysql_protocol/mysqlrouter/classic_protocol_codec_binary.h
+  extra/mysql_protocol/mysqlrouter/classic_protocol_codec_clone.h
+  extra/mysql_protocol/mysqlrouter/classic_protocol_codec_error.h
+  extra/mysql_protocol/mysqlrouter/classic_protocol_codec_frame.h
+  extra/mysql_protocol/mysqlrouter/classic_protocol_codec_message.h
+  extra/mysql_protocol/mysqlrouter/classic_protocol_codec_session_track.h
+  extra/mysql_protocol/mysqlrouter/classic_protocol_codec_wire.h
+  extra/mysql_protocol/mysqlrouter/classic_protocol_constants.h
+  extra/mysql_protocol/mysqlrouter/classic_protocol_frame.h
+  extra/mysql_protocol/mysqlrouter/classic_protocol_message.h
+  extra/mysql_protocol/mysqlrouter/classic_protocol_session_track.h
+  extra/mysql_protocol/mysqlrouter/classic_protocol_wire.h)
+
+set(minimysql_source_files
+  src/minimysql/caching_sha2_password_authenticator.hpp
+  src/minimysql/caching_sha2_password_authenticator.cpp
+  src/minimysql/connection_context_fwd.hpp
+  src/minimysql/connection_context.hpp
+  src/minimysql/connection_context.cpp
+
+  src/minimysql_app.cpp
+)
+
+add_executable(minimysql_server ${minimysql_source_files} ${mysql_protocol_source_files} ${mysql_harness_source_files})
+
+# GCC 14 may report a false-positive mismatched allocation/deallocation
+# warning in boost::asio coroutine machinery (awaitable_frame) used in
+# minimysql_app.cpp.
+# Also, there are some false-positive null-dereference warnings in boost::asio
+# io_context.
+# Keep -Werror globally and suppress only this source file.
+set_source_files_properties(src/minimysql_app.cpp PROPERTIES
+  COMPILE_OPTIONS
+    "$<$<AND:$<COMPILE_LANG_AND_ID:CXX,GNU>,$<VERSION_GREATER_EQUAL:$<CXX_COMPILER_VERSION>,14>>:-Wno-error=mismatched-new-delete;-Wno-error=null-dereference>"
+)
+
+target_compile_definitions(minimysql_server PRIVATE BOOST_ASIO_NO_DEPRECATED)
+target_link_libraries(minimysql_server
+  PRIVATE
+    binlog_server_compiler_flags
+    Boost::headers Boost::asio
+    OpenSSL::Crypto
+)
+
+target_include_directories(minimysql_server PRIVATE "${PROJECT_SOURCE_DIR}/extra/mysql_protocol")
+
+# it is not possible to propagate CXX_EXTENSIONS and CXX_STANDARD_REQUIRED
+# via interface library (binlog_server_compiler_flags)
+set_target_properties(minimysql_server PROPERTIES
   CXX_STANDARD_REQUIRED YES
   CXX_EXTENSIONS NO
 )

@@ -13,4 +13,5 @@ Checks: "
   -llvm-header-guard
 "
 WarningsAsErrors: '*'
-HeaderFilterRegex: ''
+HeaderFilterRegex: '.*'
+ExcludeHeaderFilterRegex: 'mysqlrouter/.*'
