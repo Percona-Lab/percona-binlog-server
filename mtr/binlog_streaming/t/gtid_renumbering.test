@@ -118,7 +118,7 @@ if ($storage_backend == file)
 if ($storage_backend == s3)
 {
   --let $local_binlog_path = $MYSQL_TMP_DIR/gtid_renumbering.bnlg.000001
-  --exec $aws_cli s3 cp s3://$aws_s3_bucket$binsrv_storage_path/bnlg.000001 $local_binlog_path > /dev/null
+  --exec $aws_cli s3 cp s3://$aws_s3_bucket/$binsrv_storage_path/bnlg.000001 $local_binlog_path > /dev/null
 }
 
 --let GTID_DUMP = $MYSQL_TMP_DIR/gtid_renumbering.dump

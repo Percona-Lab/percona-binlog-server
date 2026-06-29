@@ -79,8 +79,7 @@ if ($storage_backend == file)
 if ($storage_backend == s3)
 {
   # removing leading '/' from the $binsrv_storage_path
-  --let $relative_binsrv_storage_path = `SELECT SUBSTRING('$binsrv_storage_path', 2)`
-  --exec $aws_cli s3api head-object --bucket $MTR_BINSRV_AWS_S3_BUCKET --key $relative_binsrv_storage_path/$binlog_name --query ContentLength --output text > $size_file 2>/dev/null || echo 0 > $size_file
+  --exec $aws_cli s3api head-object --bucket $MTR_BINSRV_AWS_S3_BUCKET --key $binsrv_storage_path/$binlog_name --query ContentLength --output text > $size_file 2>/dev/null || echo 0 > $size_file
 }
 --let $read_from_file = $size_file
 --source include/read_file_to_var.inc
