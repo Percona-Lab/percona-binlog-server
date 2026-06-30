@@ -24,10 +24,13 @@
 
 #include <boost/describe/enum.hpp>
 
+#include "minimysql/network_io_operations_fwd.hpp"
+
 namespace minimysql {
 
-using connection_buffer_type = std::string;
-using connection_buffer_container = std::vector<connection_buffer_type>;
+[[nodiscard]] std::size_t get_frame_header_length() noexcept;
+[[nodiscard]] std::size_t
+parse_frame_header(const network_buffer_type &payload);
 
 inline constexpr auto number_of_capability_bits{32UZ};
 using capability_bitset = std::bitset<number_of_capability_bits>;

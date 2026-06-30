@@ -52,6 +52,7 @@
 #pragma GCC diagnostic pop
 
 #include "minimysql/caching_sha2_password_authenticator.hpp"
+#include "minimysql/network_io_operations_fwd.hpp"
 
 namespace minimysql {
 
@@ -59,7 +60,7 @@ namespace {
 
 template <class MessageType>
 classic_protocol::frame::Frame<MessageType>
-decode_client_command_frame(const connection_buffer_type &payload,
+decode_client_command_frame(const network_buffer_type &payload,
                             const capability_bitset &shared_capabilities) {
   auto buffer{boost::asio::buffer(payload)};
   using frame_type = classic_protocol::frame::Frame<MessageType>;
@@ -119,24 +120,6 @@ connection_context::check_binlog_non_blocking_dump() const noexcept {
           classic_protocol::message::client::BinlogDump::Flags::non_blocking);
 }
 
-[[nodiscard]] std::size_t
-connection_context::get_frame_header_length() noexcept {
-  return classic_protocol::Codec<classic_protocol::frame::Header>::max_size();
-}
-
-[[nodiscard]] std::size_t
-connection_context::parse_frame_header(const connection_buffer_type &payload) {
-
-  auto buffer{boost::asio::buffer(payload)};
-  auto decode_result{
-      classic_protocol::decode<classic_protocol::frame::Header>(buffer, {})};
-  if (!decode_result) {
-    throw boost::system::system_error{decode_result.error()};
-  }
-
-  return decode_result.value().second.payload_size();
-}
-
 [[nodiscard]] std::string
 connection_context::generate_encoded_server_greeting() {
   std::string result_buffer{};
@@ -171,7 +154,7 @@ connection_context::generate_encoded_server_greeting() {
 }
 
 void connection_context::parse_client_greeting(
-    const connection_buffer_type &payload) {
+    const network_buffer_type &payload) {
   auto buffer{boost::asio::buffer(payload)};
   using client_greeting_frame = classic_protocol::frame::Frame<
       classic_protocol::message::client::Greeting>;
@@ -195,7 +178,7 @@ void connection_context::parse_client_greeting(
   client_attributes_ = client_greeting.attributes();
 }
 
-[[nodiscard]] connection_buffer_type
+[[nodiscard]] network_buffer_type
 connection_context::generate_encoded_fast_auth() {
   std::string result_buffer{};
 
@@ -214,7 +197,7 @@ connection_context::generate_encoded_fast_auth() {
   return result_buffer;
 }
 
-[[nodiscard]] connection_buffer_type connection_context::generate_encoded_ok() {
+[[nodiscard]] network_buffer_type connection_context::generate_encoded_ok() {
   std::string result_buffer{};
 
   const classic_protocol::message::server::Ok ok_message{};
@@ -231,8 +214,7 @@ connection_context::generate_encoded_fast_auth() {
   return result_buffer;
 }
 
-[[nodiscard]] connection_buffer_type
-connection_context::generate_encoded_eof() {
+[[nodiscard]] network_buffer_type connection_context::generate_encoded_eof() {
   std::string result_buffer{};
 
   const classic_protocol::message::server::Eof eof_message{};
@@ -249,7 +231,7 @@ connection_context::generate_encoded_eof() {
   return result_buffer;
 }
 
-[[nodiscard]] connection_buffer_type connection_context::generate_encoded_error(
+[[nodiscard]] network_buffer_type connection_context::generate_encoded_error(
     std::uint16_t error_code,
     // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
     std::string_view message, std::string_view sql_state) {
@@ -272,18 +254,18 @@ connection_context::generate_encoded_eof() {
   return result_buffer;
 }
 
-[[nodiscard]] connection_buffer_type
+[[nodiscard]] network_buffer_type
 connection_context::generate_encoded_access_denied() {
   return generate_encoded_error(
       ER_ACCESS_DENIED_ERROR,
       "Access Denied for user '" + get_client_username() + "'@'%'", "28000");
 }
-[[nodiscard]] connection_buffer_type
+[[nodiscard]] network_buffer_type
 connection_context::generate_encoded_unknown_command() {
   return generate_encoded_error(ER_UNKNOWN_COM_ERROR, "Unknown command",
                                 "HY000");
 }
-[[nodiscard]] connection_buffer_type
+[[nodiscard]] network_buffer_type
 connection_context::generate_encoded_syntax_error() {
   // 00000	Success
   // 01000	Warning
@@ -295,7 +277,7 @@ connection_context::generate_encoded_syntax_error() {
   return generate_encoded_error(ER_PARSE_ERROR, "Syntax error", "42000");
 }
 
-[[nodiscard]] connection_buffer_type
+[[nodiscard]] network_buffer_type
 connection_context::generate_encoded_binlog_event(std::string_view event_data) {
   std::string result_buffer{};
   result_buffer.reserve(get_frame_header_length() + std::size(event_data) + 1U);
@@ -314,8 +296,8 @@ connection_context::generate_encoded_binlog_event(std::string_view event_data) {
 }
 
 void connection_context::parse_client_command(
-    const connection_buffer_type &payload) {
-  if (payload.size() <= get_frame_header_length()) {
+    const network_buffer_type &payload) {
+  if (std::size(payload) <= get_frame_header_length()) {
     throw boost::system::system_error{
         make_error_code(std::errc::protocol_error)};
   }
@@ -461,8 +443,7 @@ void connection_context::validate_and_update_sequence_number(
 }
 
 void connection_context::encode_resultset_number_of_columns_internal(
-    connection_buffer_container &result_buffers,
-    std::size_t number_of_columns) {
+    network_buffer_container &result_buffers, std::size_t number_of_columns) {
   const classic_protocol::wire::VarInt column_count{
       static_cast<std::int64_t>(number_of_columns)};
   using column_count_frame =
@@ -568,7 +549,7 @@ connection_context::get_datatype_properties<
     std::optional<std::uint64_t>>() noexcept;
 
 void connection_context::encode_resultset_column_definition_internal(
-    connection_buffer_container &result_buffers, std::string_view db_name,
+    network_buffer_container &result_buffers, std::string_view db_name,
     std::string_view table_name, const column_name_pair &column_name,
     const datatype_properties_type &datatype_properties) {
   // 'binary' collation for integer types
@@ -597,7 +578,7 @@ void connection_context::encode_resultset_column_definition_internal(
 }
 
 void connection_context::encode_resultset_intermediate_eof_internal(
-    connection_buffer_container &result_buffers) {
+    network_buffer_container &result_buffers) {
   const auto encode_result = classic_protocol::encode<
       classic_protocol::frame::Frame<classic_protocol::message::server::Eof>>(
       {generate_sequence_number(), {}}, get_shared_capabilities(),
@@ -608,7 +589,7 @@ void connection_context::encode_resultset_intermediate_eof_internal(
 }
 
 void connection_context::encode_resultset_textualized_row_internal(
-    connection_buffer_container &result_buffers,
+    network_buffer_container &result_buffers,
     const optional_string_collection &row_values) {
   static_assert(
       std::is_same_v<optional_string,
@@ -624,7 +605,7 @@ void connection_context::encode_resultset_textualized_row_internal(
 }
 
 void connection_context::encode_resultset_eof_internal(
-    connection_buffer_container &result_buffers) {
+    network_buffer_container &result_buffers) {
   classic_protocol::message::server::Eof eof_packet{};
   const classic_protocol::status::value_type eof_status_flags{
       classic_protocol::status::autocommit};
@@ -637,6 +618,22 @@ void connection_context::encode_resultset_eof_internal(
   if (!encode_result) {
     throw boost::system::system_error{encode_result.error()};
   }
+}
+
+[[nodiscard]] std::size_t get_frame_header_length() noexcept {
+  return classic_protocol::Codec<classic_protocol::frame::Header>::max_size();
+}
+
+[[nodiscard]] std::size_t
+parse_frame_header(const network_buffer_type &payload) {
+  auto buffer{boost::asio::buffer(payload)};
+  auto decode_result{
+      classic_protocol::decode<classic_protocol::frame::Header>(buffer, {})};
+  if (!decode_result) {
+    throw boost::system::system_error{decode_result.error()};
+  }
+
+  return decode_result.value().second.payload_size();
 }
 
 } // namespace minimysql
