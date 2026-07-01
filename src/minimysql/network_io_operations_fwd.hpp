@@ -1,4 +1,4 @@
-// Copyright (c) 2023-2024 Percona and/or its affiliates.
+// Copyright (c) 2023-2026 Percona and/or its affiliates.
 //
 // This program is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License, version 2.0,
@@ -13,11 +13,20 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef APP_VERSION_HPP
-#define APP_VERSION_HPP
+#ifndef MINIMYSQL_NETWORK_IO_OPERATIONS_FWD_HPP
+#define MINIMYSQL_NETWORK_IO_OPERATIONS_FWD_HPP
 
-#include "util/semantic_version.hpp"
+#include <string>
+#include <vector>
 
-inline constexpr util::semantic_version app_version{0U, 4U, 0U};
+namespace minimysql {
 
-#endif // APP_VERSION_HPP
+using network_buffer_type = std::string;
+using network_buffer_container = std::vector<network_buffer_type>;
+
+inline constexpr std::size_t max_payload_size{
+    16UZ * 1024UZ * 1024UZ}; // 16 MiB - MySQL's maximum packet size
+
+} // namespace minimysql
+
+#endif // MINIMYSQL_NETWORK_IO_OPERATIONS_FWD_HPP

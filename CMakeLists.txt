@@ -571,22 +571,17 @@ set(minimysql_source_files
   src/minimysql/connection_context_fwd.hpp
   src/minimysql/connection_context.hpp
   src/minimysql/connection_context.cpp
+  src/minimysql/network_io_operations.hpp
+  src/minimysql/network_io_operations.cpp
+  src/minimysql/network_service.hpp
+  src/minimysql/network_service.cpp
+  src/minimysql/sample_event_collection.hpp
+  src/minimysql/sample_event_collection.cpp
 
   src/minimysql_app.cpp
 )
 
 add_executable(minimysql_server ${minimysql_source_files} ${mysql_protocol_source_files} ${mysql_harness_source_files})
-
-# GCC 14 may report a false-positive mismatched allocation/deallocation
-# warning in boost::asio coroutine machinery (awaitable_frame) used in
-# minimysql_app.cpp.
-# Also, there are some false-positive null-dereference warnings in boost::asio
-# io_context.
-# Keep -Werror globally and suppress only this source file.
-set_source_files_properties(src/minimysql_app.cpp PROPERTIES
-  COMPILE_OPTIONS
-    "$<$<AND:$<COMPILE_LANG_AND_ID:CXX,GNU>,$<VERSION_GREATER_EQUAL:$<CXX_COMPILER_VERSION>,14>>:-Wno-error=mismatched-new-delete;-Wno-error=null-dereference>"
-)
 
 target_compile_definitions(minimysql_server PRIVATE BOOST_ASIO_NO_DEPRECATED)
 target_link_libraries(minimysql_server

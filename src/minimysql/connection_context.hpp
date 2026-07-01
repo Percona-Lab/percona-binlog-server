@@ -25,6 +25,8 @@
 #include <string>
 #include <string_view>
 
+#include "minimysql/network_io_operations_fwd.hpp"
+
 namespace minimysql {
 
 class connection_context {
@@ -125,24 +127,20 @@ public:
     return binlog_position_;
   }
 
-  [[nodiscard]] static std::size_t get_frame_header_length() noexcept;
-  [[nodiscard]] static std::size_t
-  parse_frame_header(const connection_buffer_type &payload);
+  [[nodiscard]] network_buffer_type generate_encoded_server_greeting();
+  void parse_client_greeting(const network_buffer_type &payload);
 
-  [[nodiscard]] connection_buffer_type generate_encoded_server_greeting();
-  void parse_client_greeting(const connection_buffer_type &payload);
-
-  [[nodiscard]] connection_buffer_type generate_encoded_fast_auth();
-  [[nodiscard]] connection_buffer_type generate_encoded_ok();
-  [[nodiscard]] connection_buffer_type generate_encoded_eof();
-  [[nodiscard]] connection_buffer_type
+  [[nodiscard]] network_buffer_type generate_encoded_fast_auth();
+  [[nodiscard]] network_buffer_type generate_encoded_ok();
+  [[nodiscard]] network_buffer_type generate_encoded_eof();
+  [[nodiscard]] network_buffer_type
   generate_encoded_error(std::uint16_t error_code, std::string_view message,
                          std::string_view sql_state);
-  [[nodiscard]] connection_buffer_type generate_encoded_access_denied();
-  [[nodiscard]] connection_buffer_type generate_encoded_unknown_command();
-  [[nodiscard]] connection_buffer_type generate_encoded_syntax_error();
+  [[nodiscard]] network_buffer_type generate_encoded_access_denied();
+  [[nodiscard]] network_buffer_type generate_encoded_unknown_command();
+  [[nodiscard]] network_buffer_type generate_encoded_syntax_error();
 
-  [[nodiscard]] connection_buffer_type
+  [[nodiscard]] network_buffer_type
   generate_encoded_binlog_event(std::string_view event_data);
 
   void enter_command_loop_iteration() noexcept {
@@ -150,19 +148,19 @@ public:
     client_command_ = client_command_type::unknown;
     client_statement_.clear();
   }
-  void parse_client_command(const connection_buffer_type &payload);
+  void parse_client_command(const network_buffer_type &payload);
 
   template <typename... TypePack>
-  [[nodiscard]] connection_buffer_container encode_resultset(
+  [[nodiscard]] network_buffer_container encode_resultset(
       const std::vector<std::tuple<TypePack...>> &rows,
       std::span<const column_name_pair, sizeof...(TypePack)> column_names) {
     static constexpr std::size_t number_of_columns{
         std::tuple_size_v<std::tuple<TypePack...>>};
-    const std::size_t number_of_rows{rows.size()};
+    const std::size_t number_of_rows{std::size(rows)};
 
     const bool text_result_with_session_tracking_supported{
         check_shared_text_result_with_session_tracking_supported()};
-    connection_buffer_container result_buffers{};
+    network_buffer_container result_buffers{};
     // 1 for column count, 1 per column + (0 or 1) for intermediate EOF, 1 per
     // row + 1 for EOF
     result_buffers.reserve(
@@ -234,19 +232,18 @@ private:
   void validate_and_update_sequence_number(std::uint8_t sequence_number);
 
   void encode_resultset_number_of_columns_internal(
-      connection_buffer_container &result_buffers,
-      std::size_t number_of_columns);
+      network_buffer_container &result_buffers, std::size_t number_of_columns);
 
   template <typename Type>
   static const datatype_properties_type &get_datatype_properties() noexcept;
 
   void encode_resultset_column_definition_internal(
-      connection_buffer_container &result_buffers, std::string_view db_name,
+      network_buffer_container &result_buffers, std::string_view db_name,
       std::string_view table_name, const column_name_pair &column_name,
       const datatype_properties_type &datatype_properties);
   template <typename... TypePack>
   void encode_resultset_column_definitions_internal(
-      connection_buffer_container &result_buffers,
+      network_buffer_container &result_buffers,
       [[maybe_unused]] std::string_view db_name,
       [[maybe_unused]] std::string_view table_name,
       [[maybe_unused]] std::span<const column_name_pair, sizeof...(TypePack)>
@@ -258,12 +255,12 @@ private:
      ...);
   }
   void encode_resultset_intermediate_eof_internal(
-      connection_buffer_container &result_buffers);
+      network_buffer_container &result_buffers);
 
   using optional_string = std::optional<std::string>;
   using optional_string_collection = std::vector<optional_string>;
   void encode_resultset_textualized_row_internal(
-      connection_buffer_container &result_buffers,
+      network_buffer_container &result_buffers,
       const optional_string_collection &row_values);
 
   template <typename Type>
@@ -283,9 +280,8 @@ private:
   }
 
   template <typename... TypePack>
-  void
-  encode_resultset_row_internal(connection_buffer_container &result_buffers,
-                                const std::tuple<TypePack...> &row) {
+  void encode_resultset_row_internal(network_buffer_container &result_buffers,
+                                     const std::tuple<TypePack...> &row) {
     optional_string_collection textualized_row_values{};
     textualized_row_values.reserve(sizeof...(TypePack));
     const auto tuple_traversal_lambda{[&textualized_row_values,
@@ -298,8 +294,7 @@ private:
     encode_resultset_textualized_row_internal(result_buffers,
                                               textualized_row_values);
   }
-  void
-  encode_resultset_eof_internal(connection_buffer_container &result_buffers);
+  void encode_resultset_eof_internal(network_buffer_container &result_buffers);
 };
 
 } // namespace minimysql
