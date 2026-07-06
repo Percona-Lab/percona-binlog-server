@@ -291,8 +291,28 @@ void handle_exception(std::string_view context) {
                 << " authentication that does not match the one associated "
                    "with the user account ("
                 << context.get_server_auth_method() << ")\n";
-      // TODO: send SwitchAuthentication packet
-      co_return;
+
+      const auto auth_method_switch{
+          context.generate_encoded_auth_method_switch()};
+      print_generic(remote_endpoint, context, "auth method switch");
+      co_await minimysql::async_write_mysql_frame(
+          socket, auth_method_switch,
+          network_service::session_authentication_timeout);
+      std::cout << "sent server auth method switch ("
+                << std::size(auth_method_switch) << " bytes to "
+                << remote_endpoint << ")\n";
+
+      co_await minimysql::async_read_mysql_frame(
+          socket, data, network_service::session_authentication_timeout);
+      std::cout << "received client auth method switch response ("
+                << std::size(data) << " bytes from " << remote_endpoint
+                << ")\n";
+      context.parse_client_auth_method_data(data);
+      std::cout << "client auth method after switch: "
+                << context.get_client_auth_method() << '\n'
+                << "  auth_method_data: "
+                << std::size(context.get_client_auth_method_data())
+                << " byte(s)\n";
     }
     if (!context.check_client_authentication()) {
       std::cout << "client authentication failed for "

@@ -130,6 +130,9 @@ public:
   [[nodiscard]] network_buffer_type generate_encoded_server_greeting();
   void parse_client_greeting(const network_buffer_type &payload);
 
+  [[nodiscard]] network_buffer_type generate_encoded_auth_method_switch();
+  void parse_client_auth_method_data(const network_buffer_type &payload);
+
   [[nodiscard]] network_buffer_type generate_encoded_fast_auth();
   [[nodiscard]] network_buffer_type generate_encoded_ok();
   [[nodiscard]] network_buffer_type generate_encoded_eof();

@@ -1,0 +1,175 @@
+# The Binlog Server listens on a hard-coded TCP port, so this test can not
+# run in parallel with other tests using the same port.
+--source include/not_parallel.inc
+
+--source ../include/have_binsrv.inc
+
+--source ../include/v80_v84_compatibility_defines.inc
+
+--source include/count_sessions.inc
+
+# in case of --repeat=N, we need to start from a fresh binary log to make
+# this test deterministic
+--echo *** Resetting replication at the very beginning of the test.
+--disable_query_log
+eval $stmt_reset_binary_logs_and_gtids;
+--enable_query_log
+
+# identifying backend storage type ('file' or 's3')
+--source ../include/identify_storage_backend.inc
+
+# creating data directory, configuration file, etc.
+--let $binsrv_connect_timeout = 10
+--let $binsrv_read_timeout = 10
+--let $binsrv_idle_time = 1
+--let $binsrv_verify_checksum = TRUE
+--let $binsrv_replication_mode = position
+--source ../include/set_up_binsrv_environment.inc
+
+--echo
+--echo *** Starting Binlog Server Utility in background in pull mode.
+--echo *** stdout/stderr goes to a dedicated log so we can grep for the
+--echo *** auth-switch marker AFTER binsrv has exited (see below - graceful
+--echo *** SIGTERM flushes std::cout unconditionally, so we do not need to
+--echo *** rely on any per-line buffering trick that could misbehave under
+--echo *** ASAN.
+--let $binsrv_pid_file = $MYSQL_TMP_DIR/auth_switch_binsrv.pid
+--let $binsrv_stdout_log = $MYSQL_TMP_DIR/auth_switch_binsrv_stdout.log
+--let $binsrv_spawn_cmd_line = $BINSRV pull $binsrv_config_file_path > $binsrv_stdout_log 2>&1 & echo \$! > $binsrv_pid_file
+
+# We route the spawn through Perl's system() rather than --exec because
+# mysqltest strips the shell's `$!` before it can be expanded, leaving the
+# PID file empty. Passing the command as an env var and executing it from
+# Perl leaves the shell metacharacters intact.
+--let EXPORTED_BINSRV_SPAWN_CMD_LINE = $binsrv_spawn_cmd_line
+--perl
+  use strict;
+  use warnings;
+  my $cmd = $ENV{'EXPORTED_BINSRV_SPAWN_CMD_LINE'};
+  system("$cmd");
+EOF
+
+--let $read_from_file = $binsrv_pid_file
+--source include/read_file_to_var.inc
+--let $binsrv_pid = $result
+
+# SELECT VERSION() is one of the queries the Binlog Server's command loop
+# recognises (see network_service.cpp). We do not care what row comes
+# back - we discard the client's stdout below and rely solely on the
+# mysql client's exit code as the pass/fail signal so the test stays
+# stable when the Binlog Server's hard-coded version string changes.
+--let $probe_query = SELECT VERSION()
+
+--echo
+--echo *** Waiting for the Binlog Server listener to come up on
+--echo *** 127.0.0.1:3307. We probe with bash's /dev/tcp instead of the
+--echo *** mysql client because bash is not ASAN-instrumented and
+--echo *** /dev/tcp uses a plain connect(2), so each attempt is cheap and
+--echo *** measures exactly the "listening on the port" state we care
+--echo *** about.
+--let $max_wait = 300
+--let $iteration = 0
+--let $port_open = 0
+while ($iteration < $max_wait)
+{
+  if (!$port_open)
+  {
+    --error 0, 1
+    --exec bash -c "echo > /dev/tcp/127.0.0.1/3307" 2>/dev/null
+    --let $port_status = $__error
+    if ($port_status == 0)
+    {
+      --let $port_open = 1
+      --let $iteration = $max_wait
+    }
+    if ($port_status != 0)
+    {
+      --sleep 1
+      --inc $iteration
+    }
+  }
+}
+if (!$port_open)
+{
+  --die The Binlog Server listener did not become reachable on 3307 within 300 seconds
+}
+
+--echo
+--echo *** Control: client picks the same plugin the server advertises
+--echo *** (caching_sha2_password). No AuthMethodSwitch is expected on the
+--echo *** wire; a zero exit code from mysql confirms the session got as
+--echo *** far as running the probe query.
+--exec $MYSQL --protocol=TCP --host=127.0.0.1 --port=3307 --user=rpl --password=password --default-auth=caching_sha2_password --skip-column-names -e "$probe_query" >/dev/null 2>&1
+
+--echo
+--echo *** Trigger: client forces mysql_native_password in its handshake so
+--echo *** the Binlog Server has to send an AuthMethodSwitch, and the client
+--echo *** must recompute its response against a fresh caching_sha2_password
+--echo *** scramble. If the switch encoding, the follow-up parse, or the
+--echo *** re-verified fast-auth path is broken, mysql returns non-zero and
+--echo *** MTR fails the --exec. The log grep that follows the shutdown
+--echo *** is what actually proves the switch happened - this line only
+--echo *** proves the session survived it.
+--exec $MYSQL --protocol=TCP --host=127.0.0.1 --port=3307 --user=rpl --password=password --default-auth=mysql_native_password --skip-column-names -e "$probe_query" >/dev/null 2>&1
+
+--echo
+--echo *** Sending SIGTERM to the Binlog Server Utility and waiting for the
+--echo *** process to terminate (poll kill -0 until the pid is gone).
+--echo *** Graceful exit flushes std::cout, so any log line binsrv wrote
+--echo *** during its lifetime is now safely on disk.
+--replace_result $binsrv_pid <BINSRV_PID>
+--exec kill -s TERM $binsrv_pid
+
+--let $max_exit_wait = 30
+--let $iteration = 0
+--let $binsrv_running = 1
+while ($iteration < $max_exit_wait)
+{
+  if ($binsrv_running)
+  {
+    --error 0, 1
+    --exec kill -0 $binsrv_pid 2>/dev/null
+    --let $kill_status = $__error
+    if ($kill_status != 0)
+    {
+      --let $binsrv_running = 0
+      --let $iteration = $max_exit_wait
+    }
+    if ($kill_status == 0)
+    {
+      --sleep 1
+      --inc $iteration
+    }
+  }
+}
+if ($binsrv_running)
+{
+  --die Binlog Server Utility did not terminate within 30 seconds
+}
+
+--echo
+--echo *** Confirming the switch actually happened by grepping the Binlog
+--echo *** Server stdout log (now complete and flushed) for the marker
+--echo *** emitted after generate_encoded_auth_method_switch() writes its
+--echo *** frame.
+--let $grep_file = $binsrv_stdout_log
+--let $grep_pattern = sent server auth method switch
+--let $wait_timeout = 30
+--source include/wait_for_pattern_in_file.inc
+
+--remove_file $binsrv_pid_file
+--remove_file $binsrv_stdout_log
+
+# cleaning up
+--source ../include/tear_down_binsrv_environment.inc
+
+# As the Binlog Server Utility interrupts the connection upon timeout, here we
+# need to close it on the MySQL server side as well in order to make sure that
+# MTR 'check-test' before and after the test produces the same output.
+--let $binlog_dump_connection_id = `SELECT ID FROM performance_schema.processlist WHERE COMMAND = 'Binlog Dump'`
+--replace_result $binlog_dump_connection_id <CONNECTION_ID>
+eval KILL CONNECTION $binlog_dump_connection_id;
+
+# Also, we use 'count_sessions' include files to make sure that 'Binlog Dump'
+# connection is indeed closed.
+--source include/wait_until_count_sessions.inc

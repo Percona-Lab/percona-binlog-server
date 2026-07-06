@@ -1,0 +1,56 @@
+*** Resetting replication at the very beginning of the test.
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+
+*** Starting Binlog Server Utility in background in pull mode.
+*** stdout/stderr goes to a dedicated log so we can grep for the
+*** auth-switch marker AFTER binsrv has exited (see below - graceful
+*** SIGTERM flushes std::cout unconditionally, so we do not need to
+*** rely on any per-line buffering trick that could misbehave under
+*** ASAN.
+include/read_file_to_var.inc
+
+*** Waiting for the Binlog Server listener to come up on
+*** 127.0.0.1:3307. We probe with bash's /dev/tcp instead of the
+*** mysql client because bash is not ASAN-instrumented and
+*** /dev/tcp uses a plain connect(2), so each attempt is cheap and
+*** measures exactly the "listening on the port" state we care
+*** about.
+
+*** Control: client picks the same plugin the server advertises
+*** (caching_sha2_password). No AuthMethodSwitch is expected on the
+*** wire; a zero exit code from mysql confirms the session got as
+*** far as running the probe query.
+
+*** Trigger: client forces mysql_native_password in its handshake so
+*** the Binlog Server has to send an AuthMethodSwitch, and the client
+*** must recompute its response against a fresh caching_sha2_password
+*** scramble. If the switch encoding, the follow-up parse, or the
+*** re-verified fast-auth path is broken, mysql returns non-zero and
+*** MTR fails the --exec. The log grep that follows the shutdown
+*** is what actually proves the switch happened - this line only
+*** proves the session survived it.
+
+*** Sending SIGTERM to the Binlog Server Utility and waiting for the
+*** process to terminate (poll kill -0 until the pid is gone).
+*** Graceful exit flushes std::cout, so any log line binsrv wrote
+*** during its lifetime is now safely on disk.
+
+*** Confirming the switch actually happened by grepping the Binlog
+*** Server stdout log (now complete and flushed) for the marker
+*** emitted after generate_encoded_auth_method_switch() writes its
+*** frame.
+include/wait_for_pattern_in_file.inc [sent server auth method switch]
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.
+KILL CONNECTION <CONNECTION_ID>;
