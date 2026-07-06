@@ -1,0 +1,380 @@
+--source ../include/have_binsrv.inc
+--source include/big_test.inc
+
+--source ../include/v80_v84_compatibility_defines.inc
+
+--source include/count_sessions.inc
+
+# identifying backend storage type ('file' or 's3')
+--source ../include/identify_storage_backend.inc
+# identifying interval checkpointing mode from the combination
+--let $extracted_init_connect_variable_name = binsrv_checkpointing
+--source ../include/extract_init_connect_variable_value.inc
+
+--echo *** Testing checkpointing verification
+--echo *** For S3 backend, each checkpoint triggers a full object re-upload.
+
+--echo
+--echo *** Resetting replication at the very beginning of the test.
+--disable_query_log
+eval $stmt_reset_binary_logs_and_gtids;
+--enable_query_log
+
+--echo
+--echo *** Creating a table and generating large binlog events
+CREATE TABLE t1(
+  id SERIAL,
+  val CHAR(64) CHARACTER SET ascii NOT NULL,
+  PRIMARY KEY(id)
+) ENGINE=InnoDB;
+
+--echo
+--echo *** Generating data to trigger checkpointing
+--disable_query_log
+--let $transaction_idx = 0
+while ($transaction_idx < 20)
+{
+  START TRANSACTION;
+  --let $statement_idx = 0
+  while ($statement_idx < 100)
+  {
+    eval INSERT INTO t1(val) VALUES(SHA2(LAST_INSERT_ID(), 256));
+    --inc $statement_idx
+  }
+  COMMIT;
+  --inc $transaction_idx
+}
+--enable_query_log
+
+--echo
+--echo *** Determining current open binlog file name
+--let $binlog_name = query_get_value($stmt_show_binary_log_status, File, 1)
+
+--disable_query_log
+--let $next_event_position = query_get_value(SHOW BINARY LOGS, File_size, 1)
+--enable_query_log
+
+--let $binsrv_replication_mode = position
+
+--echo
+--echo *** Setting up checkpointing configuration
+
+if ($extracted_init_connect_variable_value == size)
+{
+  --let $binsrv_checkpoint_size = 1K
+  --let $binsrv_checkpoint_interval = 0
+}
+if ($extracted_init_connect_variable_value == interval)
+{
+  --let $binsrv_checkpoint_interval = 2s
+  --let $binsrv_checkpoint_size = 0
+}
+if ($extracted_init_connect_variable_value == both)
+{
+  --let $binsrv_checkpoint_size = 1K
+  --let $binsrv_checkpoint_interval = 2s
+}
+
+--echo
+--echo *** Setting up configuration
+--let $binsrv_connect_timeout = 10
+--let $binsrv_read_timeout = 60
+--let $binsrv_idle_time = 1
+--let $binsrv_verify_checksum = TRUE
+
+--replace_result $binsrv_checkpoint_size binsrv_checkpoint_size
+--eval SET @save_binsrv_checkpoint_size = '$binsrv_checkpoint_size'
+--replace_result $binsrv_checkpoint_interval binsrv_checkpoint_interval
+--eval SET @save_binsrv_checkpoint_interval = '$binsrv_checkpoint_interval'
+
+--echo
+--echo *** Test 1: Test checkpointing with existing open binary log
+--echo *** Expectation:
+--echo *** - Without checkpointing: storage object stays at magic payload size while binsrv runs
+--echo *** - With size checkpointing: storage object grows beyond magic payload while binsrv runs
+--echo *** Note: Checkpointing only works with S3 backend, not with file backend
+
+--echo
+--echo Executing binlog_server in pull mode without checkpointing
+--let $binsrv_checkpoint_size =
+--let $binsrv_checkpoint_interval =
+--let $binsrv_pid_file = $MYSQL_TMP_DIR/binsrv_no_ckpt.pid
+--source ../include/set_up_binsrv_environment.inc
+
+--let $binsrv_spawn_cmd_line = $BINSRV pull $binsrv_config_file_path > $binsrv_log_path 2>&1 & echo \$! > $binsrv_pid_file
+--source ../include/trigger_binsrv_pull.inc
+
+--let $read_from_file = $binsrv_pid_file
+--source include/read_file_to_var.inc
+--let $binsrv_pid = $result
+
+--echo
+--echo *** Waiting until the Binlog Server Utility has downloaded the
+--echo *** existing binlog data.
+--let $grep_pattern = next event position: $next_event_position
+--let $grep_file = $binsrv_log_path
+--let $wait_timeout = 120
+--let $grep_match_count = 1
+--let $skip_log_pattern = 1
+--source ../include/wait_for_pattern_count_in_file.inc
+
+--let $size_file = $MYSQL_TMP_DIR/binsrv_no_ckpt_size
+
+if ($storage_backend == file)
+{
+  --exec /bin/sh -c "wc -c < '$binsrv_storage_path/$binlog_name' > '$size_file'"
+}
+if ($storage_backend == s3)
+{
+  --exec $aws_cli s3api head-object --bucket $MTR_BINSRV_AWS_S3_BUCKET --key $binsrv_storage_path/$binlog_name --query ContentLength --output text > $size_file 2>/dev/null || echo 0 > $size_file
+}
+
+--let $read_from_file = $size_file
+--source include/read_file_to_var.inc
+--let $no_ckpt_size = $result
+if ($no_ckpt_size != 4)
+{
+  --echo Binlog size is $no_ckpt_size
+  --die Binlog size to be at magic payload before flush
+}
+
+--remove_file $size_file
+
+--source ../include/terminate_binsrv.inc
+--remove_file $binsrv_pid_file
+
+--source ../include/tear_down_binsrv_environment.inc
+
+
+--echo
+--echo Executing binlog_server in pull mode with checkpointing
+--let $binsrv_checkpoint_size = `select @save_binsrv_checkpoint_size`
+--let $binsrv_checkpoint_interval =`select @save_binsrv_checkpoint_interval`
+--source ../include/set_up_binsrv_environment.inc
+
+--let $binsrv_pid_file = $MYSQL_TMP_DIR/binsrv_size_ckpt.pid
+--let $binsrv_spawn_cmd_line = $BINSRV pull $binsrv_config_file_path > $binsrv_log_path 2>&1 & echo \$! > $binsrv_pid_file
+--source ../include/trigger_binsrv_pull.inc
+
+--let $read_from_file = $binsrv_pid_file
+--source include/read_file_to_var.inc
+--let $binsrv_pid = $result
+
+--echo
+--echo *** Waiting until the Binlog Server Utility has downloaded the
+--echo *** existing binlog data.
+--let $grep_pattern = next event position: $next_event_position
+--let $grep_file = $binsrv_log_path
+--let $wait_timeout = 120
+--let $grep_match_count = 1
+--let $skip_log_pattern = 1
+--source ../include/wait_for_pattern_count_in_file.inc
+
+--let $size_file = $MYSQL_TMP_DIR/binsrv_size_ckpt_size
+if ($storage_backend == file)
+{
+  --exec /bin/sh -c "wc -c < '$binsrv_storage_path/$binlog_name' > '$size_file'"
+}
+if ($storage_backend == s3)
+{
+  --exec $aws_cli s3api head-object --bucket $MTR_BINSRV_AWS_S3_BUCKET --key $binsrv_storage_path/$binlog_name --query ContentLength --output text > $size_file 2>/dev/null || echo 0 > $size_file
+}
+--let $read_from_file = $size_file
+--source include/read_file_to_var.inc
+--let $size_ckpt_size = $result
+--remove_file $size_file
+--let $size_ckpt_grew = `SELECT ($size_ckpt_size > $no_ckpt_size)`
+if ($binsrv_checkpoint_size == 1K)
+{
+  if ($size_ckpt_grew != 1)
+  {
+    --die expected storage object to grow with size checkpointing
+  }
+}
+if ($binsrv_checkpoint_size != 1K)
+{
+  if ($size_ckpt_size != 4)
+  {
+    --die expected storage object size to be at magic payload without size checkpointing
+  }
+}
+--source ../include/terminate_binsrv.inc
+--remove_file $binsrv_pid_file
+--source ../include/tear_down_binsrv_environment.inc
+
+--echo *** Test 2: Test that new updates in binary log on server will be flushed
+--echo *** to the binlog_server storage directory due to checkpointing.
+--echo
+
+--echo
+--echo *** Starting pull mode in background to monitor checkpointing
+--let $binsrv_pid_file = $MYSQL_TMP_DIR/binsrv_checkpointing.pid
+--source ../include/set_up_binsrv_environment.inc
+--let $binsrv_spawn_cmd_line = $BINSRV pull $binsrv_config_file_path > $binsrv_log_path 2>&1 & echo \$! > $binsrv_pid_file
+--source ../include/trigger_binsrv_pull.inc
+
+--let $read_from_file = $binsrv_pid_file
+--source include/read_file_to_var.inc
+--let $binsrv_pid = $result
+
+--echo
+--echo *** Waiting until the Binlog Server Utility has downloaded all
+--echo *** existing binlog data.
+--let $grep_pattern = next event position: $next_event_position
+--let $grep_file = $binsrv_log_path
+--let $wait_timeout = 120
+--let $grep_match_count = 1
+--let $skip_log_pattern = 1
+--source ../include/wait_for_pattern_count_in_file.inc
+
+--echo
+--echo *** Capturing current storage object size (before workload)
+
+--let $size_file = $MYSQL_TMP_DIR/binsrv_storage_object_size_before
+if ($storage_backend == file)
+{
+  --exec /bin/sh -c "wc -c < '$binsrv_storage_path/$binlog_name' > '$size_file'"
+}
+if ($storage_backend == s3)
+{
+  --exec $aws_cli s3api head-object --bucket $MTR_BINSRV_AWS_S3_BUCKET --key $binsrv_storage_path/$binlog_name --query ContentLength --output text > $size_file 2>/dev/null || echo 0 > $size_file
+}
+--let $read_from_file = $size_file
+--source include/read_file_to_var.inc
+--let $storage_object_size_before = $result
+--remove_file $size_file
+
+--echo
+--echo *** Generating more data to trigger checkpointing during pull
+--disable_query_log
+--let $transaction_idx = 0
+while ($transaction_idx < 20)
+{
+  START TRANSACTION;
+  --let $statement_idx = 0
+  while ($statement_idx < 50)
+  {
+    eval INSERT INTO t1(val) VALUES(SHA2(LAST_INSERT_ID(), 256));
+    --inc $statement_idx
+  }
+  COMMIT;
+  --inc $transaction_idx
+}
+--enable_query_log
+
+--disable_query_log
+--let $next_event_position = query_get_value(SHOW BINARY LOGS, File_size, 1)
+--enable_query_log
+
+--echo
+--echo *** Waiting until the Binlog Server Utility has downloaded the
+--echo *** latest binlog changes.
+--let $grep_pattern = next event position: $next_event_position
+--let $grep_file = $binsrv_log_path
+--let $wait_timeout = 120
+--let $grep_match_count = 1
+--let $skip_log_pattern = 1
+--source ../include/wait_for_pattern_count_in_file.inc
+
+--echo
+--echo *** Capturing storage object size after checkpointing workload
+--let $size_file = $MYSQL_TMP_DIR/binsrv_storage_object_size_after
+if ($storage_backend == file)
+{
+  --exec /bin/sh -c "wc -c < '$binsrv_storage_path/$binlog_name' > '$size_file'"
+}
+if ($storage_backend == s3)
+{
+  --exec $aws_cli s3api head-object --bucket $MTR_BINSRV_AWS_S3_BUCKET --key $binsrv_storage_path/$binlog_name --query ContentLength --output text > $size_file 2>/dev/null || echo 0 > $size_file
+}
+--let $read_from_file = $size_file
+--source include/read_file_to_var.inc
+--let $storage_object_size_after = $result
+--remove_file $size_file
+
+--echo
+--echo *** Verifying checkpointing occurred (by storage object size change)
+if ($extracted_init_connect_variable_value == size)
+{
+  if ($storage_backend == s3)
+  {
+    --let $size_grew = `SELECT ($storage_object_size_after > $storage_object_size_before)`
+    if ($size_grew != 1)
+    {
+      --die storage object size did not grow after checkpointing workload
+    }
+  }
+}
+--let $binlog_file_to_patch = $binlog_base_dir/$binlog_name
+--let PATCHED_BINLOG_FILE = $MYSQL_TMP_DIR/$binlog_name.patched
+--source ../include/patch_binlog_in_use_flag.inc
+
+--echo
+--echo *** Terminating pull mode
+--source ../include/terminate_binsrv.inc
+
+--remove_file $binsrv_pid_file
+
+--echo
+--echo *** Verifying binlog file integrity after checkpointing
+--let $local_file = $PATCHED_BINLOG_FILE
+--let $storage_object = $binsrv_storage_path/$binlog_name
+--source ../include/diff_with_storage_object.inc
+
+--remove_file $PATCHED_BINLOG_FILE
+
+--echo
+--echo *** Starting pull mode again to verify it resumes correctly without any issues.
+--let $binsrv_pid_file = $MYSQL_TMP_DIR/binsrv_checkpointing_resume.pid
+--let $binsrv_spawn_cmd_line = $BINSRV pull $binsrv_config_file_path > $binsrv_log_path 2>&1 & echo \$! > $binsrv_pid_file
+--source ../include/trigger_binsrv_pull.inc
+
+--let $read_from_file = $binsrv_pid_file
+--source include/read_file_to_var.inc
+--let $binsrv_pid = $result
+
+--echo
+--echo *** Adding more data
+eval INSERT INTO t1(val) VALUES(SHA2(LAST_INSERT_ID(), 256));
+FLUSH BINARY LOGS;
+
+--let $new_binlog_name = query_get_value($stmt_show_binary_log_status, File, 1)
+
+--echo
+--echo *** Waiting until the Binlog Server Utility has downloaded the
+--echo *** flushed binlog file and started the new one.
+--let $grep_pattern = storage: closed binlog file: $binlog_name
+--let $grep_file = $binsrv_log_path
+--let $wait_timeout = 120
+--let $grep_match_count = 1
+--let $skip_log_pattern = 1
+--source ../include/wait_for_pattern_count_in_file.inc
+--let $grep_pattern = storage: created a new binlog file: $new_binlog_name
+--source ../include/wait_for_pattern_count_in_file.inc
+
+--echo
+--echo *** Terminating pull mode
+--source ../include/terminate_binsrv.inc
+--remove_file $binsrv_pid_file
+
+--echo
+--echo *** Verifying that resume worked correctly (no duplicate data)
+--let $local_file = $binlog_base_dir/$binlog_name
+--let $storage_object = $binsrv_storage_path/$binlog_name
+--source ../include/diff_with_storage_object.inc
+
+--source ../include/tear_down_binsrv_environment.inc
+
+# Clean up any remaining binlog dump connections
+--let $binlog_dump_connection_id = `SELECT ID FROM performance_schema.processlist WHERE COMMAND = 'Binlog Dump'`
+if ($binlog_dump_connection_id != '')
+{
+  --disable_query_log
+  --replace_result $binlog_dump_connection_id <CONNECTION_ID>
+  eval KILL CONNECTION $binlog_dump_connection_id;
+  --enable_query_log
+}
+
+--source include/wait_until_count_sessions.inc
+
+DROP TABLE t1;

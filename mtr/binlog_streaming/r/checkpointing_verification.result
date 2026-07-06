@@ -1,0 +1,127 @@
+*** Testing checkpointing verification
+*** For S3 backend, each checkpoint triggers a full object re-upload.
+
+*** Resetting replication at the very beginning of the test.
+
+*** Creating a table and generating large binlog events
+CREATE TABLE t1(
+id SERIAL,
+val CHAR(64) CHARACTER SET ascii NOT NULL,
+PRIMARY KEY(id)
+) ENGINE=InnoDB;
+
+*** Generating data to trigger checkpointing
+
+*** Determining current open binlog file name
+
+*** Setting up checkpointing configuration
+
+*** Setting up configuration
+SET @save_binsrv_checkpoint_size = 'binsrv_checkpoint_size';
+SET @save_binsrv_checkpoint_interval = 'binsrv_checkpoint_interval';
+
+*** Test 1: Test checkpointing with existing open binary log
+*** Expectation:
+*** - Without checkpointing: storage object stays at magic payload size while binsrv runs
+*** - With size checkpointing: storage object grows beyond magic payload while binsrv runs
+*** Note: Checkpointing only works with S3 backend, not with file backend
+
+Executing binlog_server in pull mode without checkpointing
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+include/read_file_to_var.inc
+
+*** Waiting until the Binlog Server Utility has downloaded the
+*** existing binlog data.
+include/read_file_to_var.inc
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.
+
+Executing binlog_server in pull mode with checkpointing
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+include/read_file_to_var.inc
+
+*** Waiting until the Binlog Server Utility has downloaded the
+*** existing binlog data.
+include/read_file_to_var.inc
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.
+*** Test 2: Test that new updates in binary log on server will be flushed
+*** to the binlog_server storage directory due to checkpointing.
+
+
+*** Starting pull mode in background to monitor checkpointing
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+include/read_file_to_var.inc
+
+*** Waiting until the Binlog Server Utility has downloaded all
+*** existing binlog data.
+
+*** Capturing current storage object size (before workload)
+include/read_file_to_var.inc
+
+*** Generating more data to trigger checkpointing during pull
+
+*** Waiting until the Binlog Server Utility has downloaded the
+*** latest binlog changes.
+
+*** Capturing storage object size after checkpointing workload
+include/read_file_to_var.inc
+
+*** Verifying checkpointing occurred (by storage object size change)
+
+*** Patching the server version of the binlog file to clear the
+*** LOG_EVENT_BINLOG_IN_USE_F (currently in use) flag.
+
+*** Terminating pull mode
+
+*** Verifying binlog file integrity after checkpointing
+
+*** Starting pull mode again to verify it resumes correctly without any issues.
+include/read_file_to_var.inc
+
+*** Adding more data
+INSERT INTO t1(val) VALUES(SHA2(LAST_INSERT_ID(), 256));
+FLUSH BINARY LOGS;
+
+*** Waiting until the Binlog Server Utility has downloaded the
+*** flushed binlog file and started the new one.
+
+*** Terminating pull mode
+
+*** Verifying that resume worked correctly (no duplicate data)
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.
+DROP TABLE t1;

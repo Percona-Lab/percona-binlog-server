@@ -67,8 +67,8 @@ if ($storage_backend == s3)
 {
   --let $first_local_path = $MYSQL_TMP_DIR/gtid_renumbering_local_rotation.bnlg.000001
   --let $second_local_path = $MYSQL_TMP_DIR/gtid_renumbering_local_rotation.bnlg.000002
-  --exec $aws_cli s3 cp s3://$aws_s3_bucket$binsrv_storage_path/bnlg.000001 $first_local_path > /dev/null
-  --exec $aws_cli s3 cp s3://$aws_s3_bucket$binsrv_storage_path/bnlg.000002 $second_local_path > /dev/null
+  --exec $aws_cli s3 cp s3://$aws_s3_bucket/$binsrv_storage_path/bnlg.000001 $first_local_path > /dev/null
+  --exec $aws_cli s3 cp s3://$aws_s3_bucket/$binsrv_storage_path/bnlg.000002 $second_local_path > /dev/null
 }
 
 --echo

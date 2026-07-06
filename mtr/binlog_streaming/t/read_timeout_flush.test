@@ -1,0 +1,286 @@
+--source ../include/have_binsrv.inc
+
+--source ../include/v80_v84_compatibility_defines.inc
+
+--source include/count_sessions.inc
+
+# identifying backend storage type ('file' or 's3')
+--source ../include/identify_storage_backend.inc
+
+--echo
+--echo *** Test : Storage flush after read_timeout disconnection (PS-10320 fix)
+--echo *** This test verifies that local binary log data is flushed to storage
+--echo *** upon disconnection due to read_timeout
+--echo *** This test also verifies existence of temporary files in buffer directory
+--echo *** in S3 storage mode while binlog_server run is in progress.
+--disable_query_log
+eval $stmt_reset_binary_logs_and_gtids;
+--enable_query_log
+
+# To test compressed events with binlog_server
+SET SESSION binlog_transaction_compression=ON;
+
+CREATE TABLE t2(id INT UNSIGNED NOT NULL AUTO_INCREMENT, val CHAR(64), PRIMARY KEY(id)) ENGINE=InnoDB;
+
+--echo
+--echo *** Starting with a fresh binlog
+FLUSH BINARY LOGS;
+--let $test_binlog = query_get_value($stmt_show_binary_log_status, File, 1)
+
+--disable_query_log
+--let $next_event_position = query_get_value(SHOW BINARY LOGS, File_size, 1)
+--enable_query_log
+
+--echo
+--echo *** Setting up binsrv with short read_timeout to trigger timeout
+--let $binsrv_connect_timeout = 10
+--let $binsrv_read_timeout = 20
+--let $binsrv_idle_time = 30
+--let $binsrv_verify_checksum = TRUE
+--let $binsrv_replication_mode = position
+--source ../include/set_up_binsrv_environment.inc
+
+--echo
+--echo *** Starting Binlog Server Utility in background in pull mode
+--let $binsrv_pid_file = $MYSQL_TMP_DIR/binsrv_read_timeout_test.pid
+--let $binsrv_spawn_cmd_line = $BINSRV pull $binsrv_config_file_path > /dev/null & echo \$! > $binsrv_pid_file
+
+--source ../include/trigger_binsrv_pull.inc
+
+--let $read_from_file = $binsrv_pid_file
+--source include/read_file_to_var.inc
+--let $binsrv_pid = $result
+
+--echo
+--echo *** Waiting until the Binlog Server Utility has downloaded the
+--echo *** existing binlog data.
+--let $grep_pattern = next event position: $next_event_position
+--let $grep_file = $binsrv_log_path
+--let $wait_timeout = 120
+--let $grep_match_count = 1
+--let $skip_log_pattern = 1
+--source ../include/wait_for_pattern_count_in_file.inc
+
+--echo
+--echo *** Step 1: Check initial binlog size (baseline)
+--let $size_file_initial = $MYSQL_TMP_DIR/storage_size_initial.txt
+if ($storage_backend == file)
+{
+  --exec /bin/sh -c "wc -c < '$binsrv_storage_path/$test_binlog' > '$size_file_initial'"
+}
+if ($storage_backend == s3)
+{
+  --exec $aws_cli s3api head-object --bucket $MTR_BINSRV_AWS_S3_BUCKET --key $binsrv_storage_path/$test_binlog --query ContentLength --output text > $size_file_initial 2>&1 || echo 0 > $size_file_initial
+}
+--let $read_from_file = $size_file_initial
+--source include/read_file_to_var.inc
+--let $size_initial = $result
+--remove_file $size_file_initial
+
+--echo
+--echo *** Step 2: Execute INSERT and wait for read_timeout to trigger flush (read_timeout=20)
+INSERT INTO t2(val) VALUES('test_data_before_timeout');
+
+--disable_result_log
+if ($storage_backend == s3)
+{
+  --let $assert_text = Buffer directory should contain temporary files (UUID format)
+  --let $assert_file = $MYSQL_TMP_DIR/buffer_check.log
+  --disable_result_log
+  --exec ls -1 $binsrv_buffer_path 2>&1 | grep -v '^\.$' | grep -v '^\.\.$' > $assert_file || true
+  --let $include_silent = 1
+  --let $assert_count = 1
+  --let $assert_select = -.*-.*-.*-
+  --source include/assert_grep.inc
+  --enable_result_log
+  --let $include_silent = 0
+  --remove_file $assert_file
+}
+--enable_result_log
+
+--echo
+--echo *** Waiting for read_timeout to trigger flush (read_timeout=20)
+--let $grep_pattern = timed out waiting for events and disconnected
+--let $grep_file = $binsrv_log_path
+--let $wait_timeout = 60
+--let $grep_match_count = 1
+--let $skip_log_pattern = 1
+--source ../include/wait_for_pattern_count_in_file.inc
+
+--echo
+--echo *** Step 3: Check binlog size after read_timeout flush (should have increased)
+--let $size_file_after_first_timeout = $MYSQL_TMP_DIR/storage_size_after_first_timeout.txt
+if ($storage_backend == file)
+{
+  --exec /bin/sh -c "wc -c < '$binsrv_storage_path/$test_binlog' > '$size_file_after_first_timeout'"
+}
+if ($storage_backend == s3)
+{
+  --exec $aws_cli s3api head-object --bucket $MTR_BINSRV_AWS_S3_BUCKET --key $binsrv_storage_path/$test_binlog --query ContentLength --output text > $size_file_after_first_timeout 2>/dev/null || echo 0 > $size_file_after_first_timeout
+}
+--let $read_from_file = $size_file_after_first_timeout
+--source include/read_file_to_var.inc
+--let $size_after_first_timeout = $result
+
+--remove_file $size_file_after_first_timeout
+
+--echo
+--echo *** Verifying that data was flushed to storage after first read_timeout (PS-10320 fix)
+--let $size_increased_after_first = `SELECT IF($size_after_first_timeout > $size_initial, 1, 0)`
+if ($size_increased_after_first != 1)
+{
+  --die storage object size should have increased after first read_timeout flush, but it did not
+}
+
+--echo
+--echo *** Step 4: Wait around idle_time and generate new data in the binary log. verify either in idle_time or upon reconnection data was not flushed to storage.
+--sleep 10
+INSERT INTO t2(val) VALUES('test_data_after_timeout');
+
+# To test update_rows_partial event with binlog_server
+SET @save_binlog_row_value_options = @@GLOBAL.binlog_row_value_options;
+SET GLOBAL binlog_row_value_options = PARTIAL_JSON;
+
+UPDATE t2 set val='update_test_data_after_timeout' where val='test_data_after_timeout';
+
+CREATE TABLE tj (j JSON);
+INSERT INTO tj VALUES('{"name":"john","age":30,"city":"blr"}');
+INSERT INTO tj VALUES('{"arr":[1,2,3],"details":{"salary":5000}}');
+UPDATE tj SET j = JSON_REPLACE(j, '$.city', 'mysore') WHERE JSON_EXTRACT(j, '$.name') = 'john';
+UPDATE tj SET j = JSON_REPLACE(j, '$.arr[1]', 999);
+DROP TABLE tj;
+SET GLOBAL binlog_row_value_options = @save_binlog_row_value_options;
+
+--echo
+--echo *** Step 5: Check binlog size after around idle time (should NOT have changed - since no flush)
+--let $size_file_after_reconnection = $MYSQL_TMP_DIR/storage_size_after_reconnection.txt
+if ($storage_backend == file)
+{
+  --exec /bin/sh -c "wc -c < '$binsrv_storage_path/$test_binlog' > '$size_file_after_reconnection'"
+}
+if ($storage_backend == s3)
+{
+  --exec $aws_cli s3api head-object --bucket $MTR_BINSRV_AWS_S3_BUCKET --key $binsrv_storage_path/$test_binlog --query ContentLength --output text > $size_file_after_reconnection 2>/dev/null || echo 0 > $size_file_after_reconnection
+}
+--let $read_from_file = $size_file_after_reconnection
+--source include/read_file_to_var.inc
+--let $size_after_reconnection = $result
+--remove_file $size_file_after_reconnection
+
+--echo
+--echo *** Verifying that size did NOT change after reconnection (no flush)
+--let $size_unchanged = `SELECT IF($size_after_reconnection = $size_after_first_timeout, 1, 0)`
+if ($size_unchanged != 1)
+{
+  --die storage object size should NOT have changed after reconnection (no new data), but it did
+}
+
+--echo
+--echo *** Step 6: Execute INSERT again
+INSERT INTO t2(val) VALUES('test_data_after_timeout');
+
+--echo
+--echo *** Step 7: Check size immediately after INSERT ie around idle/reconnection time (should NOT have changed - data in buffer)
+--let $size_file_immediate = $MYSQL_TMP_DIR/storage_size_immediate.txt
+if ($storage_backend == file)
+{
+  --exec /bin/sh -c "wc -c < '$binsrv_storage_path/$test_binlog' > '$size_file_immediate'"
+}
+if ($storage_backend == s3)
+{
+  --exec $aws_cli s3api head-object --bucket $MTR_BINSRV_AWS_S3_BUCKET --key $binsrv_storage_path/$test_binlog --query ContentLength --output text > $size_file_immediate 2>/dev/null || echo 0 > $size_file_immediate
+}
+--let $read_from_file = $size_file_immediate
+--source include/read_file_to_var.inc
+--let $size_immediate = $result
+--remove_file $size_file_immediate
+
+--echo
+--echo *** Verifying that size did NOT change immediately after INSERT (data still in buffer)
+--let $size_unchanged_immediate = `SELECT IF($size_immediate = $size_after_reconnection, 1, 0)`
+if ($size_unchanged_immediate != 1)
+{
+  --die storage object size should NOT have changed immediately after INSERT (data in buffer), but it did
+}
+
+--echo
+--echo *** Step 8: Wait for read_timeout to trigger flush again
+--let $grep_pattern = timed out waiting for events and disconnected
+--let $grep_file = $binsrv_log_path
+--let $grep_match_count = 2
+--let $wait_timeout = 60
+--let $skip_log_pattern = 1
+--source ../include/wait_for_pattern_count_in_file.inc
+
+--echo
+--echo *** Step 9: Check binlog size after second read_timeout flush (should have increased)
+--let $size_file_after_second_timeout = $MYSQL_TMP_DIR/storage_size_after_second_timeout.txt
+if ($storage_backend == file)
+{
+  --exec /bin/sh -c "wc -c < '$binsrv_storage_path/$test_binlog' > '$size_file_after_second_timeout'"
+}
+if ($storage_backend == s3)
+{
+  --exec $aws_cli s3api head-object --bucket $MTR_BINSRV_AWS_S3_BUCKET --key $binsrv_storage_path/$test_binlog --query ContentLength --output text > $size_file_after_second_timeout 2>/dev/null || echo 0 > $size_file_after_second_timeout
+}
+--let $read_from_file = $size_file_after_second_timeout
+--source include/read_file_to_var.inc
+--let $size_after_second_timeout = $result
+--remove_file $size_file_after_second_timeout
+
+--echo
+--echo *** Verifying that size increased after second read_timeout flush
+--let $size_increased_after_second = `SELECT IF($size_after_second_timeout > $size_immediate, 1, 0)`
+if ($size_increased_after_second != 1)
+{
+  --die storage object size should have increased after second read_timeout flush, but it did not
+}
+
+FLUSH BINARY LOGS;
+
+--echo
+--echo *** Terminating the utility
+--source ../include/terminate_binsrv.inc
+
+--remove_file $binsrv_pid_file
+
+--disable_result_log
+if ($storage_backend == s3)
+{
+  --let $assert_text =  Temporary files shall be cleaned up in buffer directory (UUID format)
+  --let $assert_file = $MYSQL_TMP_DIR/buffer_check.log
+  --let $include_silent = 1
+  --disable_result_log
+  --exec ls -1 $binsrv_buffer_path 2>&1 | grep -v '^\.$' | grep -v '^\.\.$' > $assert_file || true
+  --let $assert_count = 0
+  --let $assert_select = -.*-.*-.*-
+  --source include/assert_grep.inc
+  --enable_result_log
+  --let $include_silent = 0
+  --remove_file $assert_file
+}
+--enable_result_log
+
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+--echo
+--echo *** Final verification: Compare storage object with server binlog
+--let $local_file = $binlog_base_dir/$test_binlog
+--let $storage_object = $binsrv_storage_path/$test_binlog
+--source ../include/diff_with_storage_object.inc
+
+--source ../include/tear_down_binsrv_environment.inc
+
+DROP TABLE t2;
+
+# Clean up any remaining binlog dump connections
+--let $binlog_dump_connection_id = `SELECT ID FROM performance_schema.processlist WHERE COMMAND = 'Binlog Dump'`
+if ($binlog_dump_connection_id != '')
+{
+  --disable_query_log
+  --replace_result $binlog_dump_connection_id <CONNECTION_ID>
+  eval KILL CONNECTION $binlog_dump_connection_id;
+  --enable_query_log
+}
+
+--source include/wait_until_count_sessions.inc

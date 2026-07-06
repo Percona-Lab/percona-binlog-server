@@ -1,0 +1,8 @@
+[checkpointing_size]
+init-connect = SET @binsrv_checkpointing = 'size'
+
+[checkpointing_interval]
+init-connect = SET @binsrv_checkpointing = 'interval'
+
+[checkpointing_both]
+init-connect = SET @binsrv_checkpointing = 'both'
