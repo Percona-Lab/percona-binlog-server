@@ -36,13 +36,19 @@ int main(int /* argc */, char * /* argv */[]) {
 
   static constexpr std::string_view default_username{"rpl"};
   static constexpr std::string_view default_password{"password"};
+  // Optional server RSA key paths for caching_sha2_password full auth; empty
+  // uses embedded defaults until wired from binlog server config.
+  static constexpr std::string_view default_server_rsa_public_key_path{};
+  static constexpr std::string_view default_server_rsa_private_key_path{};
 
   int res{EXIT_FAILURE};
   try {
     std::cout << "starting mini-mysql-server" << '\n';
     boost::asio::io_context ctx;
     const minimysql::network_service service(
-        ctx, listening_port, default_username, default_password);
+        ctx, listening_port, default_username, default_password,
+        default_server_rsa_public_key_path,
+        default_server_rsa_private_key_path);
 
     boost::asio::signal_set signals(ctx, SIGINT, SIGTERM);
     signals.async_wait([&](auto, auto) { ctx.stop(); });

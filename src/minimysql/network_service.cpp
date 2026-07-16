@@ -60,6 +60,7 @@
 
 #include <boost/system/system_error.hpp>
 
+#include "minimysql/caching_sha2_password_authenticator.hpp"
 #include "minimysql/connection_context.hpp"
 #include "minimysql/network_io_operations.hpp"
 #include "minimysql/sample_event_collection.hpp"
@@ -226,7 +227,11 @@ void handle_exception(std::string_view context) {
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
     const std::string &username,
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
-    const std::string &password) {
+    const std::string &password,
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
+    const std::string &server_rsa_public_key_path,
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
+    const std::string &server_rsa_private_key_path) {
   boost::system::error_code session_ec;
   const auto remote_endpoint{socket.remote_endpoint(session_ec)};
 
@@ -237,7 +242,9 @@ void handle_exception(std::string_view context) {
     minimysql::network_buffer_type data;
     data.reserve(network_service::expected_packet_size);
 
-    minimysql::connection_context context{username, password};
+    minimysql::connection_context context{username, password,
+                                          server_rsa_public_key_path,
+                                          server_rsa_private_key_path};
 
     // creating and sending server greeting packet:
     //   protocol_version: 10
@@ -286,12 +293,7 @@ void handle_exception(std::string_view context) {
       co_return;
     }
 
-    if (context.get_client_auth_method() != context.get_server_auth_method()) {
-      std::cout << "client requested " << context.get_client_auth_method()
-                << " authentication that does not match the one associated "
-                   "with the user account ("
-                << context.get_server_auth_method() << ")\n";
-
+    if (context.needs_auth_method_switch()) {
       const auto auth_method_switch{
           context.generate_encoded_auth_method_switch()};
       print_generic(remote_endpoint, context, "auth method switch");
@@ -314,7 +316,44 @@ void handle_exception(std::string_view context) {
                 << std::size(context.get_client_auth_method_data())
                 << " byte(s)\n";
     }
-    if (!context.check_client_authentication()) {
+
+    context.begin_authentication();
+
+    for (;;) {
+      // An authenticator may produce several outbound AuthMoreData frames
+      // before it needs client input (for example fast-auth success plus a
+      // follow-up, or a multi-step RSA exchange). The inner loop sends every
+      // frame queued by begin_authentication() or submit_authentication_frame()
+      // in order; only then does the outer loop read the next client packet.
+      for (const auto &outbound_frame :
+           context.take_authentication_outbound_frames()) {
+        print_generic(remote_endpoint, context, "auth method data");
+        co_await minimysql::async_write_mysql_frame(
+            socket, outbound_frame,
+            network_service::session_authentication_timeout);
+        std::cout << "sent server authentication packet ("
+                  << std::size(outbound_frame) << " bytes to "
+                  << remote_endpoint << ")\n";
+      }
+
+      if (context.authentication_state() !=
+          minimysql::authentication_state::in_progress) {
+        break;
+      }
+
+      if (!context.expects_authentication_input()) {
+        break;
+      }
+
+      co_await minimysql::async_read_mysql_frame(
+          socket, data, network_service::session_authentication_timeout);
+      std::cout << "received client authentication packet (" << std::size(data)
+                << " bytes from " << remote_endpoint << ")\n";
+      context.submit_authentication_frame(data);
+    }
+
+    if (context.authentication_state() !=
+        minimysql::authentication_state::succeeded) {
       std::cout << "client authentication failed for "
                 << context.get_client_username() << '\n';
       const auto access_denied{context.generate_encoded_access_denied()};
@@ -329,16 +368,6 @@ void handle_exception(std::string_view context) {
 
     std::cout << "client authentication succeeded for "
               << context.get_client_username() << '\n';
-
-    // sending fast auth success
-    const auto fast_auth_success{context.generate_encoded_fast_auth()};
-    print_generic(remote_endpoint, context, "auth method data (fast auth)");
-    co_await minimysql::async_write_mysql_frame(
-        socket, fast_auth_success,
-        network_service::session_authentication_timeout);
-    std::cout << "sent server fast auth success ("
-              << std::size(fast_auth_success) << " bytes to " << remote_endpoint
-              << ")\n";
 
     // sending server ok after successful authentication
     const auto auth_ok{context.generate_encoded_ok()};
@@ -500,7 +529,11 @@ void handle_exception(std::string_view context) {
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
     const std::string &username,
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
-    const std::string &password) {
+    const std::string &password,
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
+    const std::string &server_rsa_public_key_path,
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
+    const std::string &server_rsa_private_key_path) {
   const scope_tracer tracer("listener");
 
   auto executor = acceptor.get_executor();
@@ -524,7 +557,9 @@ void handle_exception(std::string_view context) {
 
       // NOLINTNEXTLINE(misc-include-cleaner)
       boost::asio::co_spawn(executor,
-                            session(std::move(socket), username, password),
+                            session(std::move(socket), username, password,
+                                    server_rsa_public_key_path,
+                                    server_rsa_private_key_path),
                             boost::asio::detached);
     }
   } catch (...) {
@@ -537,13 +572,21 @@ void handle_exception(std::string_view context) {
 network_service::network_service(
     boost::asio::io_context &context, std::uint16_t listening_port,
     // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
-    std::string_view username, std::string_view password)
-    : username_(username), password_(password), context_{&context},
+    std::string_view username, std::string_view password,
+    std::string_view server_rsa_public_key_path,
+    std::string_view server_rsa_private_key_path)
+    : username_(username), password_(password),
+      server_rsa_public_key_path_{server_rsa_public_key_path},
+      server_rsa_private_key_path_{server_rsa_private_key_path},
+      context_{&context},
       acceptor_{std::make_unique<acceptor_type>(
           context, boost::asio::ip::tcp::endpoint{boost::asio::ip::tcp::v4(),
                                                   listening_port})} {
   // NOLINTNEXTLINE(misc-include-cleaner)
-  boost::asio::co_spawn(*context_, listener(*acceptor_, username_, password_),
+  boost::asio::co_spawn(*context_,
+                        listener(*acceptor_, username_, password_,
+                                 server_rsa_public_key_path_,
+                                 server_rsa_private_key_path_),
                         boost::asio::detached);
 }
 

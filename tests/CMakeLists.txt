@@ -95,6 +95,25 @@ set_target_properties(event_test PROPERTIES
   CXX_EXTENSIONS NO
 )
 
+add_executable(caching_sha2_password_authenticator_test
+  caching_sha2_password_authenticator_test.cpp
+  "${PROJECT_SOURCE_DIR}/src/minimysql/caching_sha2_password_authenticator.cpp"
+)
+target_include_directories(caching_sha2_password_authenticator_test
+  PRIVATE
+    "${PROJECT_SOURCE_DIR}/src"
+)
+target_link_libraries(caching_sha2_password_authenticator_test
+  PRIVATE
+    binlog_server_compiler_flags
+    Boost::unit_test_framework
+    OpenSSL::Crypto
+)
+set_target_properties(caching_sha2_password_authenticator_test PROPERTIES
+  CXX_STANDARD_REQUIRED YES
+  CXX_EXTENSIONS NO
+)
+
 
 set(test_run_options --no_color_output)
 add_test(NAME byte_span_encoding_test COMMAND byte_span_encoding_test ${test_run_options})
@@ -103,3 +122,5 @@ add_test(NAME tag_test COMMAND tag_test ${test_run_options})
 add_test(NAME gtid_test COMMAND gtid_test ${test_run_options})
 add_test(NAME gtid_set_test COMMAND gtid_set_test ${test_run_options})
 add_test(NAME event_test COMMAND event_test ${test_run_options})
+add_test(NAME caching_sha2_password_authenticator_test
+  COMMAND caching_sha2_password_authenticator_test ${test_run_options})

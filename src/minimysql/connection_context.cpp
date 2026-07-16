@@ -19,14 +19,18 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <memory>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <system_error>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 #include <boost/asio/buffer.hpp>
+#include <openssl/rand.h>
 
 #include <boost/system/system_error.hpp>
 
@@ -58,6 +62,8 @@ namespace minimysql {
 
 namespace {
 
+constexpr std::size_t server_auth_method_data_length{20U};
+
 template <class MessageType>
 classic_protocol::frame::Frame<MessageType>
 decode_client_command_frame(const network_buffer_type &payload,
@@ -78,20 +84,100 @@ decode_client_command_frame(const network_buffer_type &payload,
 
 connection_context::connection_context(
     // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
-    std::string_view server_username, std::string_view server_password)
+    std::string_view server_username, std::string_view server_password,
+    std::string_view server_rsa_public_key_path,
+    std::string_view server_rsa_private_key_path)
     : server_username_(server_username), server_password_(server_password),
-      connection_id_(next_connection_id_++) {
+      connection_id_(next_connection_id_++),
+      authenticator_{server_password, server_rsa_public_key_path,
+                     server_rsa_private_key_path} {
   static_assert(std::is_same_v<capability_bitset,
                                classic_protocol::capabilities::value_type>,
                 "capability_bitset MUST be the same type as "
                 "classic_protocol::capabilities::value_type");
 }
 
-[[nodiscard]] bool connection_context::check_client_authentication() const {
-  return get_client_username() == get_server_username() &&
-         get_client_auth_method_data() ==
-             caching_sha2_password_authenticator::scramble(
-                 get_server_password(), get_server_auth_method_data());
+class connection_context::auth_packet_encoder_impl
+    : public auth_packet_encoder {
+public:
+  explicit auth_packet_encoder_impl(connection_context &context)
+      : context_{context} {}
+
+  [[nodiscard]] network_buffer_type
+  encode_single_byte(std::uint8_t payload_byte) override {
+    return context_.encode_single_byte_payload(payload_byte);
+  }
+
+  [[nodiscard]] network_buffer_type
+  encode_raw(std::string_view payload) override {
+    return context_.encode_raw_payload(payload);
+  }
+
+  [[nodiscard]] network_buffer_type
+  encode_auth_method_data(std::string_view payload) override {
+    return context_.encode_auth_method_data_payload(payload);
+  }
+
+  void validate_incoming_sequence(const network_buffer_type &payload) override {
+    context_.validate_and_update_sequence_number_from_frame(payload);
+  }
+
+  [[nodiscard]] std::string_view
+  frame_payload(const network_buffer_type &payload) const override {
+    return connection_context::get_frame_payload(payload);
+  }
+
+private:
+  // NOLINTNEXTLINE(cppcoreguidelines-avoid-const-or-ref-data-members)
+  connection_context &context_;
+};
+
+[[nodiscard]] auth_packet_encoder &
+connection_context::get_auth_packet_encoder() {
+  if (!auth_packet_encoder_) {
+    auth_packet_encoder_ = std::make_unique<auth_packet_encoder_impl>(*this);
+  }
+  return *auth_packet_encoder_;
+}
+
+[[nodiscard]] bool
+connection_context::needs_auth_method_switch() const noexcept {
+  return caching_sha2_password_authenticator::needs_auth_method_switch(
+      get_client_auth_method());
+}
+
+// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
+[[nodiscard]] bool connection_context::connection_is_secure() const noexcept {
+  // Stub until minimysql gains TLS: Percona Server accepts cleartext password
+  // after 0x04 only when the transport is secure (SSL/TLS, socket, etc.).
+  return false;
+}
+
+void connection_context::begin_authentication() {
+  authenticator_.begin_authentication(
+      get_server_username(), get_client_username(),
+      get_client_auth_method_data(), get_server_auth_method_data(),
+      connection_is_secure(), get_auth_packet_encoder());
+}
+
+[[nodiscard]] enum authentication_state
+connection_context::authentication_state() const noexcept {
+  return authenticator_.state();
+}
+
+[[nodiscard]] bool
+connection_context::expects_authentication_input() const noexcept {
+  return authenticator_.expects_client_input();
+}
+
+[[nodiscard]] std::vector<network_buffer_type>
+connection_context::take_authentication_outbound_frames() {
+  return authenticator_.take_outbound_frames();
+}
+
+enum authentication_state connection_context::submit_authentication_frame(
+    const network_buffer_type &payload) {
+  return authenticator_.submit_client_frame(payload, get_auth_packet_encoder());
 }
 
 [[nodiscard]] bool
@@ -182,8 +268,10 @@ void connection_context::parse_client_greeting(
 connection_context::generate_encoded_auth_method_switch() {
   std::string result_buffer{};
 
-  classic_protocol::message::server::AuthMethodSwitch auth_method_switch{
-      get_server_auth_method(), generate_server_auth_method_switch_data()};
+  const classic_protocol::message::server::AuthMethodSwitch auth_method_switch{
+      get_server_auth_method(),
+      caching_sha2_password_authenticator::generate_auth_switch_plugin_data(
+          get_server_auth_method_data())};
   using auth_method_switch_frame = classic_protocol::frame::Frame<
       classic_protocol::message::server::AuthMethodSwitch>;
   auto encode_result{classic_protocol::encode<auth_method_switch_frame>(
@@ -215,17 +303,58 @@ void connection_context::parse_client_auth_method_data(
       decode_result.value().second.payload().auth_method_data();
 }
 
+void connection_context::validate_and_update_sequence_number_from_frame(
+    const network_buffer_type &payload) {
+  auto buffer{boost::asio::buffer(payload)};
+  auto decode_result{
+      classic_protocol::decode<classic_protocol::frame::Header>(buffer, {})};
+  if (!decode_result) {
+    throw boost::system::system_error{decode_result.error()};
+  }
+
+  validate_and_update_sequence_number(decode_result.value().second.seq_id());
+}
+
 [[nodiscard]] network_buffer_type
-connection_context::generate_encoded_fast_auth() {
+connection_context::encode_single_byte_payload(std::uint8_t payload_byte) {
+  std::string result_buffer{};
+  result_buffer.reserve(get_frame_header_length() + 1U);
+
+  auto encode_result{classic_protocol::encode<classic_protocol::frame::Header>(
+      {1U, generate_sequence_number()}, get_shared_capabilities(),
+      boost::asio::dynamic_buffer(result_buffer))};
+  if (!encode_result) {
+    throw boost::system::system_error{encode_result.error()};
+  }
+
+  result_buffer.push_back(static_cast<char>(payload_byte));
+  return result_buffer;
+}
+
+[[nodiscard]] network_buffer_type
+connection_context::encode_raw_payload(std::string_view payload) {
+  std::string result_buffer{};
+  result_buffer.reserve(get_frame_header_length() + std::size(payload));
+
+  auto encode_result{classic_protocol::encode<classic_protocol::frame::Header>(
+      {std::size(payload), generate_sequence_number()},
+      get_shared_capabilities(), boost::asio::dynamic_buffer(result_buffer))};
+  if (!encode_result) {
+    throw boost::system::system_error{encode_result.error()};
+  }
+
+  result_buffer.append(payload);
+  return result_buffer;
+}
+
+[[nodiscard]] network_buffer_type
+connection_context::encode_auth_method_data_payload(std::string_view payload) {
   std::string result_buffer{};
 
-  static constexpr std::string_view fast_auth_code{
-      "\x03"}; // 0x03 means "fast auth success" in caching_sha2_password
-               // protocol
   using auth_method_data_frame = classic_protocol::frame::Frame<
       classic_protocol::message::server::AuthMethodData>;
   auto encode_res = classic_protocol::encode<auth_method_data_frame>(
-      {generate_sequence_number(), {std::string{fast_auth_code}}},
+      {generate_sequence_number(), {std::string{payload}}},
       get_shared_capabilities(), boost::asio::dynamic_buffer(result_buffer));
 
   if (!encode_res) {
@@ -460,22 +589,26 @@ connection_context::get_default_server_capabilities() noexcept {
 
 [[nodiscard]] const std::string &
 connection_context::generate_server_auth_method_data() {
-  // TODO: generate random auth method data (for caching_sha2_password, it must
-  // be 20 random bytes)
-  server_auth_method_data_ = "01234567890123456789";
+  server_auth_method_data_.assign(server_auth_method_data_length, '\0');
+  if (RAND_bytes(
+          // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+          reinterpret_cast<unsigned char *>(
+              std::data(server_auth_method_data_)),
+          static_cast<int>(std::size(server_auth_method_data_))) != 1) {
+    throw std::runtime_error{"failed to generate server auth method data"};
+  }
   return server_auth_method_data_;
 }
 
-[[nodiscard]] std::string
-connection_context::generate_server_auth_method_switch_data() const {
-  if (get_server_auth_method() ==
-      caching_sha2_password_authenticator::plugin_name) {
-    // caching_sha2_password follows the historical handshake seed shape:
-    // 20 bytes of challenge data plus a trailing NUL filler.
-    return get_server_auth_method_data() + '\0';
+[[nodiscard]] std::string_view connection_context::get_frame_payload(
+    const network_buffer_type &payload) noexcept {
+  if (std::size(payload) <= get_frame_header_length()) {
+    return {};
   }
 
-  return get_server_auth_method_data();
+  // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+  return {std::data(payload) + get_frame_header_length(),
+          std::size(payload) - get_frame_header_length()};
 }
 
 [[nodiscard]] std::uint8_t connection_context::generate_sequence_number() {
