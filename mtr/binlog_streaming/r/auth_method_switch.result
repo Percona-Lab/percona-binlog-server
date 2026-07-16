@@ -26,16 +26,20 @@ include/read_file_to_var.inc
 *** Control: client picks the same plugin the server advertises
 *** (caching_sha2_password). No AuthMethodSwitch is expected on the
 *** wire; a zero exit code from mysql confirms the session got as
-*** far as running the probe query.
+*** far as running the probe query. --get-server-public-key is
+*** required because PBS has no digest cache and drives every
+*** login through the 0x04 full-authentication branch (see
+*** caching_sha2_full_auth.test for the full-auth path itself).
 
 *** Trigger: client forces mysql_native_password in its handshake so
 *** the Binlog Server has to send an AuthMethodSwitch, and the client
 *** must recompute its response against a fresh caching_sha2_password
 *** scramble. If the switch encoding, the follow-up parse, or the
-*** re-verified fast-auth path is broken, mysql returns non-zero and
+*** post-switch authentication is broken, mysql returns non-zero and
 *** MTR fails the --exec. The log grep that follows the shutdown
 *** is what actually proves the switch happened - this line only
-*** proves the session survived it.
+*** proves the session survived it. --get-server-public-key covers
+*** the 0x04 that follows the switch (always-full-auth in PBS).
 
 *** Sending SIGTERM to the Binlog Server Utility and waiting for the
 *** process to terminate (poll kill -0 until the pid is gone).

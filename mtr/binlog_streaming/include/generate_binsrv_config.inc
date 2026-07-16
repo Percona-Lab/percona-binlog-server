@@ -21,6 +21,8 @@
 #   --let $binsrv_encryption_cipher = AES-256-CTR (optional)
 #   --let $binsrv_encryption_kek_id = alpha (optional)
 #   --let $binsrv_keyring_data_file_path = $MYSQL_TMP_DIR/keyring_data.json (optional)
+#   --let $binsrv_pbs_listener_rsa_public_key_path  = /path/to/pub.pem  (optional)
+#   --let $binsrv_pbs_listener_rsa_private_key_path = /path/to/priv.pem (optional)
 #   --source set_up_binsrv_environment.inc
 
 --echo
@@ -168,6 +170,25 @@ if ($binsrv_encryption_enabled)
       'cipher', '$binsrv_encryption_cipher'
     )
   );
+}
+
+# Optional 'pbs_listener' block (see binsrv/pbs_listener_config.hpp). Both
+# rsa_public_key_path and rsa_private_key_path must be non-empty; the block
+# is omitted when either input var is unset. Any operation that uses the
+# minimysql listener (currently: 'pull') requires this block, so tests that
+# spawn 'binlog_server pull' must set both.
+if ($binsrv_pbs_listener_rsa_public_key_path != "")
+{
+  if ($binsrv_pbs_listener_rsa_private_key_path != "")
+  {
+    eval SET @binsrv_config_json = JSON_INSERT(
+      @binsrv_config_json, '$.pbs_listener',
+      JSON_OBJECT(
+        'rsa_public_key_path',  '$binsrv_pbs_listener_rsa_public_key_path',
+        'rsa_private_key_path', '$binsrv_pbs_listener_rsa_private_key_path'
+      )
+    );
+  }
 }
 
 --let $binsrv_config_file_path = $MYSQL_TMP_DIR/binsrv_config.json

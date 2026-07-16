@@ -1,3 +1,14 @@
+# Exercises the caching_sha2_password full-authentication path (0x04) in the
+# Binlog Server: RSA-OAEP over plain TCP, via both --get-server-public-key
+# (client fetches the server PEM) and --server-public-key-path (client
+# encrypts with a pre-loaded local PEM), plus one rejection case with a
+# wrong password.
+#
+# PBS has no SHA-2 digest cache, so its authenticator treats every session
+# as a cache miss and drives 0x04.
+# That means the full-auth handshake this test verifies is the default
+# path in binsrv.
+
 # The Binlog Server listens on a hard-coded TCP port, so this test can not
 # run in parallel with other tests using the same port.
 --source include/not_parallel.inc
@@ -24,23 +35,27 @@ eval $stmt_reset_binary_logs_and_gtids;
 --let $binsrv_idle_time = 1
 --let $binsrv_verify_checksum = TRUE
 --let $binsrv_replication_mode = position
-# Both client invocations below pass --get-server-public-key, so the Binlog
-# Server needs a real RSA key pair to serve the '0x02' PEM request that
-# follows '0x04'. Point at the pair shipped in this suite's std_data/ (same
-# assets caching_sha2_full_auth.test uses).
---let $binsrv_pbs_listener_rsa_public_key_path  = $MYSQL_TEST_DIR/suite/binlog_streaming/std_data/caching_sha2_full_auth_pubkey.pem
---let $binsrv_pbs_listener_rsa_private_key_path = $MYSQL_TEST_DIR/suite/binlog_streaming/std_data/caching_sha2_full_auth_privkey.pem
+
+# Server-side RSA key pair for the caching_sha2_password authenticator, fed
+# to binsrv through the 'pbs_listener' config block that
+# generate_binsrv_config.inc emits from these two vars. Both are required
+# for 'pull'. The matching
+# public key ships alongside as caching_sha2_full_auth_pubkey.pem so that
+# scenario 2 below can also point mysql's --server-public-key-path at it.
+--let $binsrv_pubkey_file  = $MYSQL_TEST_DIR/suite/binlog_streaming/std_data/caching_sha2_full_auth_pubkey.pem
+--let $binsrv_privkey_file = $MYSQL_TEST_DIR/suite/binlog_streaming/std_data/caching_sha2_full_auth_privkey.pem
+--let $binsrv_pbs_listener_rsa_public_key_path  = $binsrv_pubkey_file
+--let $binsrv_pbs_listener_rsa_private_key_path = $binsrv_privkey_file
 --source ../include/set_up_binsrv_environment.inc
 
 --echo
 --echo *** Starting Binlog Server Utility in background in pull mode.
---echo *** stdout/stderr goes to a dedicated log so we can grep for the
---echo *** auth-switch marker AFTER binsrv has exited (see below - graceful
---echo *** SIGTERM flushes std::cout unconditionally, so we do not need to
---echo *** rely on any per-line buffering trick that could misbehave under
---echo *** ASAN.
---let $binsrv_pid_file = $MYSQL_TMP_DIR/auth_switch_binsrv.pid
---let $binsrv_stdout_log = $MYSQL_TMP_DIR/auth_switch_binsrv_stdout.log
+--echo *** Because PBS has no digest cache, every login this binsrv
+--echo *** sees will be driven through the 0x04 full-auth branch.
+--echo *** stdout/stderr goes to a dedicated log so we can grep for auth
+--echo *** markers AFTER binsrv has exited.
+--let $binsrv_pid_file = $MYSQL_TMP_DIR/caching_sha2_full_auth_binsrv.pid
+--let $binsrv_stdout_log = $MYSQL_TMP_DIR/caching_sha2_full_auth_binsrv_stdout.log
 --let $binsrv_spawn_cmd_line = $BINSRV pull $binsrv_config_file_path > $binsrv_stdout_log 2>&1 & echo \$! > $binsrv_pid_file
 
 # We route the spawn through Perl's system() rather than --exec because
@@ -60,10 +75,9 @@ EOF
 --let $binsrv_pid = $result
 
 # SELECT VERSION() is one of the queries the Binlog Server's command loop
-# recognises (see network_service.cpp). We do not care what row comes
-# back - we discard the client's stdout below and rely solely on the
-# mysql client's exit code as the pass/fail signal so the test stays
-# stable when the Binlog Server's hard-coded version string changes.
+# recognises (see network_service.cpp). Only the mysql client exit code is
+# used as pass/fail; the row itself is discarded so the test stays stable
+# across changes to the Binlog Server's hard-coded version string.
 --let $probe_query = SELECT VERSION()
 
 --echo
@@ -101,26 +115,34 @@ if (!$port_open)
 }
 
 --echo
---echo *** Control: client picks the same plugin the server advertises
---echo *** (caching_sha2_password). No AuthMethodSwitch is expected on the
---echo *** wire; a zero exit code from mysql confirms the session got as
---echo *** far as running the probe query. --get-server-public-key is
---echo *** required because PBS has no digest cache and drives every
---echo *** login through the 0x04 full-authentication branch (see
---echo *** caching_sha2_full_auth.test for the full-auth path itself).
+--echo *** Scenario 1: correct password + --get-server-public-key. Server
+--echo *** sends 0x04 (PBS default), client requests the PEM
+--echo *** with 0x02, server enqueues the RSA public key, client OAEP-
+--echo *** encrypts the password and sends the ciphertext, server
+--echo *** rsa_private_key::decrypt_oaep recovers it and matches. A zero
+--echo *** exit code from mysql means the whole PEM + RSA round-trip
+--echo *** succeeded.
 --exec $MYSQL --protocol=TCP --host=127.0.0.1 --port=3307 --user=rpl --password=password --default-auth=caching_sha2_password --get-server-public-key --skip-column-names -e "$probe_query" >/dev/null 2>&1
 
 --echo
---echo *** Trigger: client forces mysql_native_password in its handshake so
---echo *** the Binlog Server has to send an AuthMethodSwitch, and the client
---echo *** must recompute its response against a fresh caching_sha2_password
---echo *** scramble. If the switch encoding, the follow-up parse, or the
---echo *** post-switch authentication is broken, mysql returns non-zero and
---echo *** MTR fails the --exec. The log grep that follows the shutdown
---echo *** is what actually proves the switch happened - this line only
---echo *** proves the session survived it. --get-server-public-key covers
---echo *** the 0x04 that follows the switch (always-full-auth in PBS).
---exec $MYSQL --protocol=TCP --host=127.0.0.1 --port=3307 --user=rpl --password=password --default-auth=mysql_native_password --get-server-public-key --skip-column-names -e "$probe_query" >/dev/null 2>&1
+--echo *** Scenario 2: correct password + --server-public-key-path pointing
+--echo *** at the PEM we wrote above. Server sends 0x04, client skips the
+--echo *** 0x02 PEM-fetch step and OAEP-encrypts the password directly with
+--echo *** the local key, server decrypts and matches. Confirms
+--echo *** rsa_private_key::decrypt_oaep and the ciphertext-length check
+--echo *** in the wrapper agree with what mysql's client-side OAEP produces
+--echo *** for this key.
+--exec $MYSQL --protocol=TCP --host=127.0.0.1 --port=3307 --user=rpl --password=password --default-auth=caching_sha2_password --server-public-key-path=$binsrv_pubkey_file --skip-column-names -e "$probe_query" >/dev/null 2>&1
+
+--echo
+--echo *** Scenario 3: WRONG password + --get-server-public-key. Same full-
+--echo *** auth handshake as scenario 1, but the RSA-decrypted plaintext no
+--echo *** longer matches the configured password so
+--echo *** verify_encrypted_password() returns failed and the server issues
+--echo *** an access_denied. mysql exits non-zero, which we assert on to
+--echo *** confirm the rejection path is graceful (no crash, no hang).
+--error 1
+--exec $MYSQL --protocol=TCP --host=127.0.0.1 --port=3307 --user=rpl --password=wrong-password --default-auth=caching_sha2_password --get-server-public-key --skip-column-names -e "$probe_query" >/dev/null 2>&1
 
 --echo
 --echo *** Sending SIGTERM to the Binlog Server Utility and waiting for the
@@ -158,12 +180,19 @@ if ($binsrv_running)
 }
 
 --echo
---echo *** Confirming the switch actually happened by grepping the Binlog
---echo *** Server stdout log (now complete and flushed) for the marker
---echo *** emitted after generate_encoded_auth_method_switch() writes its
---echo *** frame.
+--echo *** Confirming end-to-end results by grepping the Binlog Server
+--echo *** stdout log (now complete and flushed):
+--echo ***   - "client authentication succeeded for rpl" proves at least one
+--echo ***     full-auth session round-tripped correctly (scenarios 1 & 2)
+--echo ***   - "client authentication failed for rpl" proves the rejection
+--echo ***     path fired for the wrong-password session (scenario 3)
 --let $grep_file = $binsrv_stdout_log
---let $grep_pattern = sent server auth method switch
+--let $grep_pattern = client authentication succeeded for rpl
+--let $wait_timeout = 30
+--source include/wait_for_pattern_in_file.inc
+
+--let $grep_file = $binsrv_stdout_log
+--let $grep_pattern = client authentication failed for rpl
 --let $wait_timeout = 30
 --source include/wait_for_pattern_in_file.inc
 
