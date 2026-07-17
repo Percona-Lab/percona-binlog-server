@@ -20,12 +20,15 @@
 
 #include <atomic>
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <span>
 #include <string>
 #include <string_view>
 
 #include "minimysql/network_io_operations_fwd.hpp"
+
+#include "minimysql/caching_sha2_password_authenticator.hpp"
 
 namespace minimysql {
 
@@ -39,10 +42,12 @@ public:
   static constexpr std::uint16_t default_server_status_flags{0U};
   static constexpr std::uint8_t default_server_collation{0U};
   static constexpr std::string_view default_server_auth_method{
-      "caching_sha2_password"};
+      caching_sha2_password_authenticator::plugin_name};
 
   connection_context(std::string_view server_username,
-                     std::string_view server_password);
+                     std::string_view server_password,
+                     std::string_view server_rsa_public_key_path = {},
+                     std::string_view server_rsa_private_key_path = {});
 
   [[nodiscard]] const std::string &get_server_username() const noexcept {
     return server_username_;
@@ -50,7 +55,19 @@ public:
   [[nodiscard]] const std::string &get_server_password() const noexcept {
     return server_password_;
   }
-  [[nodiscard]] bool check_client_authentication() const;
+  [[nodiscard]] bool check_shared_plugin_auth_supported() const;
+  [[nodiscard]] bool
+  check_shared_text_result_with_session_tracking_supported() const;
+
+  [[nodiscard]] bool needs_auth_method_switch() const noexcept;
+  [[nodiscard]] bool connection_is_secure() const noexcept;
+  void begin_authentication();
+  [[nodiscard]] enum authentication_state authentication_state() const noexcept;
+  [[nodiscard]] bool expects_authentication_input() const noexcept;
+  [[nodiscard]] std::vector<network_buffer_type>
+  take_authentication_outbound_frames();
+  enum authentication_state
+  submit_authentication_frame(const network_buffer_type &payload);
 
   [[nodiscard]] std::uint32_t get_connection_id() const noexcept {
     return connection_id_;
@@ -70,9 +87,6 @@ public:
   [[nodiscard]] capability_bitset get_shared_capabilities() const noexcept {
     return client_capabilities_ & server_capabilities_;
   }
-  [[nodiscard]] bool check_shared_plugin_auth_supported() const;
-  [[nodiscard]] bool
-  check_shared_text_result_with_session_tracking_supported() const;
 
   [[nodiscard]] const std::string &get_server_auth_method() const noexcept {
     return server_auth_method_;
@@ -130,7 +144,9 @@ public:
   [[nodiscard]] network_buffer_type generate_encoded_server_greeting();
   void parse_client_greeting(const network_buffer_type &payload);
 
-  [[nodiscard]] network_buffer_type generate_encoded_fast_auth();
+  [[nodiscard]] network_buffer_type generate_encoded_auth_method_switch();
+  void parse_client_auth_method_data(const network_buffer_type &payload);
+
   [[nodiscard]] network_buffer_type generate_encoded_ok();
   [[nodiscard]] network_buffer_type generate_encoded_eof();
   [[nodiscard]] network_buffer_type
@@ -225,11 +241,29 @@ private:
   std::string binlog_filename_{};
   std::uint64_t binlog_position_{};
 
+  caching_sha2_password_authenticator authenticator_;
+
   [[nodiscard]] static capability_bitset
   get_default_server_capabilities() noexcept;
   [[nodiscard]] const std::string &generate_server_auth_method_data();
   [[nodiscard]] std::uint8_t generate_sequence_number();
   void validate_and_update_sequence_number(std::uint8_t sequence_number);
+
+  [[nodiscard]] network_buffer_type
+  encode_single_byte_payload(std::uint8_t payload_byte);
+  [[nodiscard]] network_buffer_type
+  encode_raw_payload(std::string_view payload);
+  [[nodiscard]] network_buffer_type
+  encode_auth_method_data_payload(std::string_view payload);
+  [[nodiscard]] static std::string_view
+  get_frame_payload(const network_buffer_type &payload) noexcept;
+
+  class auth_packet_encoder_impl;
+  [[nodiscard]] auth_packet_encoder &get_auth_packet_encoder();
+
+  mutable std::unique_ptr<auth_packet_encoder> auth_packet_encoder_;
+  void validate_and_update_sequence_number_from_frame(
+      const network_buffer_type &payload);
 
   void encode_resultset_number_of_columns_internal(
       network_buffer_container &result_buffers, std::size_t number_of_columns);
