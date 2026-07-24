@@ -86,11 +86,12 @@ connection_context::connection_context(
     // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
     std::string_view server_username, std::string_view server_password,
     std::string_view server_rsa_public_key_path,
-    std::string_view server_rsa_private_key_path)
+    std::string_view server_rsa_private_key_path, bool ssl_capability_enabled)
     : server_username_(server_username), server_password_(server_password),
       connection_id_(next_connection_id_++),
       authenticator_{server_password, server_rsa_public_key_path,
-                     server_rsa_private_key_path} {
+                     server_rsa_private_key_path},
+      ssl_capability_enabled_{ssl_capability_enabled} {
   static_assert(std::is_same_v<capability_bitset,
                                classic_protocol::capabilities::value_type>,
                 "capability_bitset MUST be the same type as "
@@ -146,11 +147,28 @@ connection_context::needs_auth_method_switch() const noexcept {
       get_client_auth_method());
 }
 
-// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
 [[nodiscard]] bool connection_context::connection_is_secure() const noexcept {
-  // Stub until minimysql gains TLS: Percona Server accepts cleartext password
-  // after 0x04 only when the transport is secure (SSL/TLS, socket, etc.).
-  return false;
+  // Percona Server accepts cleartext password after 0x04 only when the
+  // transport is secure (SSL/TLS, unix socket, etc.). The network layer flips
+  // transport_is_secure_ once the TLS handshake succeeds.
+  return transport_is_secure_;
+}
+
+void connection_context::mark_transport_secure() noexcept {
+  transport_is_secure_ = true;
+}
+
+[[nodiscard]] bool connection_context::client_requested_ssl() const {
+  // Not noexcept because std::bitset<>::test() is not noexcept.
+  return get_client_capabilities().test(
+      classic_protocol::capabilities::pos::ssl);
+}
+
+[[nodiscard]] bool connection_context::is_sslrequest_greeting() const {
+  // Not noexcept because std::bitset<>::test() is not noexcept.
+  return get_shared_capabilities().test(
+             classic_protocol::capabilities::pos::ssl) &&
+         client_username_.empty();
 }
 
 void connection_context::begin_authentication() {
@@ -211,6 +229,9 @@ connection_context::generate_encoded_server_greeting() {
   std::string result_buffer{};
 
   server_capabilities_ = get_default_server_capabilities();
+  if (ssl_capability_enabled_) {
+    server_capabilities_ |= classic_protocol::capabilities::ssl;
+  }
   server_auth_method_ = std::string{default_server_auth_method};
 
   // for historical reasons sever auth data must include a trailing '\0' byte
@@ -244,8 +265,19 @@ void connection_context::parse_client_greeting(
   auto buffer{boost::asio::buffer(payload)};
   using client_greeting_frame = classic_protocol::frame::Frame<
       classic_protocol::message::client::Greeting>;
-  auto decode_result{classic_protocol::decode<client_greeting_frame>(
-      buffer, get_server_capabilities())};
+  // Decode with SSL forced into the codec's caps mask so the classic_protocol
+  // parser will accept the truncated Protocol::SSLRequest form even when the
+  // server did *not* advertise CLIENT_SSL. This lets the network layer parse
+  // any well-formed client greeting first and apply policy afterwards (e.g.
+  // "client wants SSL against a plaintext-only server" → log + close, like
+  // Percona Server does). The SSL bit here only gates acceptance of the
+  // short form; it does not change the shape of a full greeting decode and
+  // has no effect on the actual capability negotiation exposed through
+  // get_shared_capabilities().
+  const auto decoder_caps{get_server_capabilities() |
+                          classic_protocol::capabilities::ssl};
+  auto decode_result{
+      classic_protocol::decode<client_greeting_frame>(buffer, decoder_caps)};
   if (!decode_result) {
     throw boost::system::system_error{decode_result.error()};
   }

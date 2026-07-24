@@ -79,6 +79,12 @@ find_package(MySQL REQUIRED)
 find_package(ZLIB REQUIRED)
 find_package(AWSSDK 1.11.774 EXACT REQUIRED COMPONENTS s3-crt)
 
+# minimysql_server needs OpenSSL::SSL for boost::asio::ssl (server-side TLS
+# listener). OpenSSL::Crypto is used by several other targets as well and
+# was previously picked up transitively via AWS SDK; make the dependency
+# explicit now that we also need the SSL half of OpenSSL.
+find_package(OpenSSL REQUIRED)
+
 # various utility files
 set(util_source_files
   src/util/bnf_parser_helpers.hpp
@@ -615,9 +621,11 @@ set(minimysql_source_files
   src/minimysql/connection_context.cpp
   src/minimysql/network_io_operations_fwd.hpp
   src/minimysql/network_io_operations.hpp
-  src/minimysql/network_io_operations.cpp
   src/minimysql/network_service.hpp
   src/minimysql/network_service.cpp
+  src/minimysql/ssl_acceptor_context_fwd.hpp
+  src/minimysql/ssl_acceptor_context.hpp
+  src/minimysql/ssl_acceptor_context.cpp
   src/minimysql/sample_event_collection.hpp
   src/minimysql/sample_event_collection.cpp
 
@@ -631,6 +639,7 @@ target_link_libraries(minimysql_server
   PRIVATE
     binlog_server_compiler_flags
     Boost::headers Boost::asio
+    OpenSSL::SSL
     OpenSSL::Crypto
 )
 
