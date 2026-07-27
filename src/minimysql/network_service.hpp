@@ -17,9 +17,13 @@
 #define MINIMYSQL_NETWORK_SERVICE_HPP
 
 #include <cstdint>
+#include <memory>
+#include <string>
 #include <string_view>
 
 #include <boost/asio/ts/netfwd.hpp>
+
+#include "minimysql/ssl_acceptor_context_fwd.hpp"
 
 namespace minimysql {
 
@@ -29,9 +33,26 @@ public:
   static constexpr std::chrono::seconds session_authentication_timeout{10};
   static constexpr std::chrono::seconds session_command_timeout{120};
 
+  // `ssl_ctx` is an optional owning handle. When non-empty, the server
+  // advertises CLIENT_SSL in its greeting and upgrades the transport to TLS
+  // on receipt of a Protocol::SSLRequest. When empty, the listener behaves
+  // exactly like the plaintext-only version (no SSL capability advertised,
+  // no upgrade path). Construction of the ssl_acceptor_context must happen
+  // in the caller — a failure there (bad cert/key path, mismatched pair)
+  // surfaces before network_service is instantiated instead of throwing
+  // from this constructor. Ownership is transferred by move; the caller
+  // does not retain a handle.
+  //
+  // No default argument for `ssl_ctx` because libc++'s `unique_ptr` requires
+  // the complete type at the point where the default-argument destructor is
+  // instantiated. Callers wanting the plaintext-only listener pass
+  // `nullptr` (or an empty unique_ptr) explicitly.
   network_service(boost::asio::io_context &context,
                   std::uint16_t listening_port, std::string_view username,
-                  std::string_view password);
+                  std::string_view password,
+                  std::string_view server_rsa_public_key_path,
+                  std::string_view server_rsa_private_key_path,
+                  std::unique_ptr<ssl_acceptor_context> ssl_ctx);
 
   network_service(const network_service &) = delete;
   network_service &operator=(const network_service &) = delete;
@@ -43,8 +64,12 @@ public:
 private:
   std::string username_;
   std::string password_;
+  std::string server_rsa_public_key_path_;
+  std::string server_rsa_private_key_path_;
 
   boost::asio::io_context *context_;
+  // Owned SSL acceptor state. Empty when the listener is plaintext-only.
+  std::unique_ptr<ssl_acceptor_context> ssl_ctx_;
   using acceptor_type =
       boost::asio::basic_socket_acceptor<boost::asio::ip::tcp>;
   using acceptor_ptr = std::unique_ptr<acceptor_type>;
