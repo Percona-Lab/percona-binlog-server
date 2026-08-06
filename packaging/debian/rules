@@ -1,7 +1,7 @@
 #!/usr/bin/make -f
 
 export DH_VERBOSE=1
-export DEB_BUILD_MAINT_OPTIONS=hardening=+all
+export DEB_BUILD_MAINT_OPTIONS=hardening=+all,-lto
 export DEB_CMAKE_GENERATOR=Ninja
 
 export DISTRO := $(shell dpkg-vendor --query Vendor)
