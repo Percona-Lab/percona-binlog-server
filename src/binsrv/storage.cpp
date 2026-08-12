@@ -34,7 +34,8 @@
 #include "binsrv/basic_keyring.hpp"
 #include "binsrv/basic_storage_backend.hpp"
 #include "binsrv/binlog_file_metadata.hpp"
-#include "binsrv/encryption_format_type_fwd.hpp"
+#include "binsrv/encryption_format_type.hpp"
+#include "binsrv/keyring_config.hpp"
 #include "binsrv/keyring_factory.hpp"
 #include "binsrv/keyring_record.hpp"
 #include "binsrv/replication_mode_type.hpp"
@@ -119,7 +120,8 @@ storage::binlog_encryption_record::from_model(
   return record;
 }
 
-storage::storage(const storage_config &config,
+storage::storage(const optional_keyring_config &keyring_config,
+                 const storage_config &config,
                  storage_construction_mode_type construction_mode,
                  replication_mode_type replication_mode)
     : construction_mode_{construction_mode}, backend_{},
@@ -135,26 +137,11 @@ storage::storage(const storage_config &config,
         std::chrono::seconds{checkpoint_interval_opt->get_value()};
   }
 
-  const auto &encryption_config{config.get<"encryption">()};
-  optional_encryption_format_type encryption_format{};
-  if (encryption_config.has_value()) {
-    encryption_format = encryption_config->get<"format">();
-    encryption_format_ = encryption_format;
-    keyring_ = keyring_factory::create(encryption_config->get<"keyring_uri">());
-    const auto &kek_id{encryption_config->get<"kek_id">()};
-    if (!keyring_->contains(kek_id)) {
-      util::exception_location().raise<std::runtime_error>(
-          "keyring does not contain the specified KEK ID");
-    }
-    // TODO: make sure that random file keys (of length that corresponds to the
-    //       active data cipher) can be encrypted with the active KEK -
-    //       for instance, if active data cipher is AES-192-CRT (key length 24
-    //       bytes), then the active KEK cannot be of ECB or CBC mode as these
-    //       ciphers can only encrypt data of length that is a multiple of the
-    //       block size (16 bytes)
-    active_kek_id_ = kek_id;
-    active_data_cipher_ = encryption_config->get<"cipher">();
+  if (keyring_config.has_value()) {
+    keyring_ = keyring_factory::create(keyring_config->get<"uri">());
   }
+  const auto &encryption_config{config.get<"encryption">()};
+  initialize_storage_encryption(encryption_config);
 
   backend_ = storage_backend_factory::create(config);
 
@@ -174,8 +161,18 @@ storage::storage(const storage_config &config,
   }
   storage_objects.erase(metadata_it);
 
+  // as load_metadata() will be updating 'encryption_format_', saving it here
+  // to use for validation later
+  const auto encryption_format{encryption_format_};
   load_metadata();
   validate_metadata(replication_mode, encryption_format);
+  // in case when storage metadata file is present and did not have encryption
+  // format specified, but it is set in the configuration file, we need to
+  // update storage metadata
+  if (!encryption_format_.has_value() && encryption_format.has_value()) {
+    encryption_format_ = encryption_format;
+    save_metadata();
+  }
 
   // if after metadata erasure 'storage_objects' is empty, then this mean
   // that it has only metadata in it that passes validation and we can
@@ -497,14 +494,53 @@ storage::purge_binlogs(const events::composite_binlog_name &target) {
 }
 
 [[nodiscard]] std::string storage::get_keyring_description() const {
-  return is_encryption_enabled() ? keyring_->get_description()
-                                 : "keyring is not initialized";
+  return is_keyring_initialized() ? keyring_->get_description()
+                                  : "keyring is not initialized";
 }
 
 [[nodiscard]] std::string storage::get_active_kek_description() const {
-  return is_encryption_enabled()
-             ? keyring_->get_key(active_kek_id_).get_description()
-             : "active KEK is not set";
+  return has_active_kek() ? keyring_->get_key(active_kek_id_).get_description()
+                          : "active KEK is not set";
+}
+
+[[nodiscard]] std::string storage::get_encryption_format_description() const {
+  return encryption_format_.has_value()
+             ? std::string{to_string_view(*encryption_format_)}
+             : std::string{"encryption format is not set"};
+}
+
+void storage::initialize_storage_encryption(
+    const optional_encryption_config &encryption_config) {
+  if (encryption_config.has_value()) {
+    encryption_format_ = encryption_config->get<"format">();
+    if (!is_keyring_initialized()) {
+      util::exception_location().raise<std::logic_error>(
+          "encryption is enabled but keyring is not initialized");
+    }
+    const auto &kek_id{encryption_config->get<"kek_id">()};
+    if (!keyring_->contains(kek_id)) {
+      util::exception_location().raise<std::runtime_error>(
+          "keyring does not contain the specified KEK ID");
+    }
+    active_kek_id_ = kek_id;
+    active_data_cipher_ = encryption_config->get<"cipher">();
+
+    // make sure that random file keys (of length that corresponds to the
+    // active data cipher) can be encrypted with the active KEK -
+    // for instance, if active data cipher is AES-192-CRT (key length 24
+    // bytes), then the active KEK cannot be of ECB or CBC mode as these
+    // ciphers can only encrypt data of length that is a multiple of the
+    // block size (16 bytes)
+    const auto &keyring_record{keyring_->get_key(active_kek_id_)};
+    if (opensslpp::cipher_context::get_key_size_in_bytes(active_data_cipher_) %
+            opensslpp::cipher_context::get_block_size_in_bytes(
+                keyring_record.get<"cipher">()) !=
+        0U) {
+      util::exception_location().raise<std::runtime_error>(
+          "active data cipher key length is not compatible with the active "
+          "KEK cipher block size");
+    }
+  }
 }
 
 void storage::ensure_streaming_mode() const {
@@ -704,7 +740,11 @@ void storage::validate_metadata(
         "stored in metadata");
   }
 
-  if (encryption_format != encryption_format_) {
+  if (encryption_format_.has_value() && encryption_format.has_value() &&
+      *encryption_format_ != *encryption_format) {
+    // if both encryption formats (the existing one loaded from the storage
+    // metadata file and a new one specified in the configuration file) are
+    // present and have different values, then this is an error
     util::exception_location().raise<std::logic_error>(
         "storage encryption format provided to initialize storage differs from "
         "the one stored in metadata");
@@ -771,6 +811,21 @@ void storage::validate_binlog_metadata(const binlog_record &record) const {
       util::exception_location().raise<std::logic_error>(
           "found added GTID set in the binlog metadata while in position "
           "replication mode");
+    }
+  }
+  // make sure that if the encryption record is present in the binlog
+  // metadata, keyring must be initialized and contain the KEK with the
+  // ID specified in the encryption record
+  if (record.encryption.has_value()) {
+    if (!is_keyring_initialized()) {
+      util::exception_location().raise<std::logic_error>(
+          "found encryption record in the binlog metadata but keyring is not "
+          "initialized");
+    }
+    if (!keyring_->contains(record.encryption->kek_id)) {
+      util::exception_location().raise<std::logic_error>(
+          "found encryption record in the binlog metadata but keyring does not "
+          "contain the specified KEK ID");
     }
   }
 }
@@ -856,7 +911,7 @@ void storage::load_and_validate_binlog_metadata_set(
 
 [[nodiscard]] storage::optional_binlog_encryption_record
 storage::generate_binlog_encryption_record() const {
-  if (!is_encryption_enabled()) {
+  if (!has_active_kek()) {
     return std::nullopt;
   }
 
@@ -896,7 +951,7 @@ storage::generate_binlog_encryption_record() const {
   // creating an encryption context with the KEK cipher, the KEK, and
   // the IV for file key encryption
   opensslpp::cipher_context file_key_encryption_context{
-      opensslpp::cipher_context_mode_type::encryption, kek_cipher, kek,
+      opensslpp::cipher_context_operation_type::encryption, kek_cipher, kek,
       iv_for_file_key_encryption_v};
 
   // identify the size of the file key encryption tag from the encryption
@@ -970,7 +1025,7 @@ void storage::write_data_to_stream(
 
   // creating a context for the file key decryption
   opensslpp::cipher_context file_key_decryption_context{
-      opensslpp::cipher_context_mode_type::decryption, kek_cipher, kek,
+      opensslpp::cipher_context_operation_type::decryption, kek_cipher, kek,
       iv_for_file_key_encryption_v, tag_of_file_key_encryption_v};
   util::hex_value_storage file_key_decrypted{
       std::size(encryption_record->file_key_encrypted_with_kek)};
@@ -982,7 +1037,7 @@ void storage::write_data_to_stream(
   // key (decrypted previously), and the IV for data encryption
 
   auto data_encryption_context{opensslpp::cipher_context::create_with_offset(
-      offset, opensslpp::cipher_context_mode_type::encryption,
+      offset, opensslpp::cipher_context_operation_type::encryption,
       encryption_record->data_cipher, file_key_decrypted,
       encryption_record->iv_for_data_encryption)};
 

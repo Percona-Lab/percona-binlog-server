@@ -1,0 +1,258 @@
+--source ../include/have_binsrv.inc
+
+--source ../include/v80_v84_compatibility_defines.inc
+
+# in case of --repeat=N, we need to start from a fresh binary log to make
+# this test deterministic
+--echo *** Resetting replication at the very beginning of the test.
+--disable_query_log
+eval $stmt_reset_binary_logs_and_gtids;
+--enable_query_log
+
+# identifying backend storage type ('file' or 's3')
+--source ../include/identify_storage_backend.inc
+
+# generating keyring data file
+--let $binsrv_keyring_data_file_path = $MYSQL_TMP_DIR/keyring_data.json
+--source ../include/generate_keyring_data_file.inc
+
+# creating data directory, configuration file, etc.
+--let $binsrv_connect_timeout = 20
+--let $binsrv_read_timeout = 60
+--let $binsrv_idle_time = 10
+--let $binsrv_verify_checksum = TRUE
+--let $binsrv_replication_mode = position
+--let $binsrv_checkpoint_size = 1
+--source ../include/set_up_binsrv_environment.inc
+
+--let $second_file_kek_id = alpha16
+--let $third_file_kek_id = gamma24
+
+--let $second_file_data_cipher = AES-256-CTR
+--let $third_file_data_cipher = AES-192-CTR
+
+
+--echo
+--echo *** Creating a simple table and filling it with some data.
+CREATE TABLE t1(id INT UNSIGNED NOT NULL AUTO_INCREMENT, PRIMARY KEY(id)) ENGINE=InnoDB;
+INSERT INTO t1 VALUES(DEFAULT);
+
+--echo
+--echo *** Executing the Binlog Server utility to download the very
+--echo *** first unencrypted binlog file.
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+INSERT INTO t1 VALUES(DEFAULT);
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+
+--echo
+--echo *** Flushing the first binary log and switching to the second one.
+FLUSH BINARY LOGS;
+
+--echo
+--echo *** Filling the table with some more data.
+INSERT INTO t1 VALUES(DEFAULT);
+
+# re-generating configuration file with encryption options enabled
+--let $binsrv_encryption_cipher = $second_file_data_cipher
+--let $binsrv_encryption_kek_id = $second_file_kek_id
+--source ../include/generate_binsrv_config.inc
+
+--echo
+--echo *** Executing the Binlog Server utility to download the second
+--echo *** encrypted binlog file whose file key is encrypted with the second KEK
+--echo *** and file data encrypted with the second data cipher.
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+INSERT INTO t1 VALUES(DEFAULT);
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+
+--echo
+--echo *** Flushing the second binary log and switching to the third one.
+FLUSH BINARY LOGS;
+
+--echo
+--echo *** Filling the table with some more data.
+INSERT INTO t1 VALUES(DEFAULT);
+
+# re-generating configuration file with encryption options enabled one more time
+--let $binsrv_encryption_cipher = $third_file_data_cipher
+--let $binsrv_encryption_kek_id = $third_file_kek_id
+--source ../include/generate_binsrv_config.inc
+
+--echo
+--echo *** Executing the Binlog Server utility to download the third
+--echo *** encrypted binlog file whose file key is encrypted with the third KEK
+--echo *** and file data encrypted with the third data cipher.
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+INSERT INTO t1 VALUES(DEFAULT);
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+
+--echo
+--echo *** Flushing the third binary log and switching to the fourth one.
+FLUSH BINARY LOGS;
+
+--echo
+--echo *** Filling the table with some more data.
+INSERT INTO t1 VALUES(DEFAULT);
+
+# re-generating configuration file with encryption disabled
+--let $binsrv_encryption_cipher =
+--let $binsrv_encryption_kek_id =
+--source ../include/generate_binsrv_config.inc
+
+--echo
+--echo *** Executing the Binlog Server utility to download the fourth
+--echo *** unencrypted binlog file.
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+INSERT INTO t1 VALUES(DEFAULT);
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+
+--echo
+--echo *** The last flush to ensure that the last meaningful binlog file
+--echo *** does not have the 'in_use' flag.
+FLUSH BINARY LOGS;
+
+--echo
+--echo *** Executing the Binlog Server utility for the last time.
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+
+--echo
+--echo *** Executing the Binlog Server utility to produce the list
+--echo *** of binlog files along with their metadata.
+--let $list_result_file = $MYSQL_TMP_DIR/list_result.json
+--exec $BINSRV list $binsrv_config_file_path > $list_result_file
+
+--let $read_from_file = $list_result_file
+--source include/read_file_to_var.inc
+--disable_query_log
+eval SET @parsed_list_result = CAST('$result' AS JSON);
+--enable_query_log
+
+CREATE TABLE keyring_tbl AS
+  SELECT * FROM JSON_TABLE(
+    @keyring_keys_array,
+    '$[*]' COLUMNS(
+      id VARCHAR(32) PATH '$.id',
+      cipher VARCHAR(32) PATH '$.cipher',
+      data_hex VARCHAR(128) PATH '$.data_hex'
+    )
+  ) AS tt;
+
+CREATE TABLE binlog_tbl AS
+  SELECT * FROM JSON_TABLE(
+    @parsed_list_result,
+    '$.result[*]' COLUMNS(
+      rowid FOR ORDINALITY,
+      name VARCHAR(32) PATH '$.name',
+      uri VARCHAR(128) PATH '$.uri',
+      kek_id VARCHAR(32) PATH '$.encryption.file_key_envelope.kek_id',
+      iv_for_file_key_encryption_hex VARCHAR(128) PATH '$.encryption.file_key_envelope.iv_hex',
+      file_key_encrypted_with_kek_hex VARCHAR(128) PATH '$.encryption.file_key_envelope.data_hex',
+      data_cipher VARCHAR(32) PATH '$.encryption.file_data_envelope.cipher',
+      iv_for_file_data_encryption VARCHAR(128) PATH '$.encryption.file_data_envelope.iv_hex'
+    )
+  ) AS tt;
+
+--let $file_key_decryption_result_path = $MYSQL_TMP_DIR/decrypted_file_key.hex
+--let $decrypted_binlog_dir = $MYSQL_TMP_DIR/decrypted
+--mkdir $decrypted_binlog_dir
+
+--let $number_of_binlogs = `SELECT COUNT(*) FROM binlog_tbl`
+--let $binlog_index = 1
+
+# deliberately skipping the last item in the list as it is the currently active
+# binlog file with the 'in_use' flag set
+while ($binlog_index < $number_of_binlogs)
+{
+  --let $binlog_file = `SELECT name FROM binlog_tbl WHERE rowid = $binlog_index`
+  --echo *** Processing $binlog_file
+
+  --let $kek_id = `SELECT kek_id FROM binlog_tbl WHERE rowid = $binlog_index`
+  if ($kek_id == "")
+  {
+    if ($storage_backend == file)
+    {
+      --let $decrypted_binlog_file = $binsrv_storage_path/$binlog_file
+    }
+    if ($storage_backend == s3)
+    {
+      --let $decrypted_binlog_file = $decrypted_binlog_dir/$binlog_file
+      --exec $aws_cli s3 cp s3://$aws_s3_bucket$binsrv_storage_path/$binlog_file $decrypted_binlog_file > /dev/null
+    }
+  }
+  if ($kek_id != "")
+  {
+    # extracting the cipher associated with the current KEK ID
+    --let $kek_cipher = `SELECT cipher FROM keyring_tbl WHERE id = '$kek_id'`
+
+    # extracting the key data associated with the current KEK ID
+    --let $kek_data_hex = `SELECT data_hex FROM keyring_tbl WHERE id = '$kek_id'`
+
+    # extracting current file key encrypted with the current KEK
+    --let $file_key_encrypted_with_kek_hex = `SELECT file_key_encrypted_with_kek_hex FROM binlog_tbl WHERE rowid = $binlog_index`
+
+    # extracting IV used for encrypting current file key (can be empty for ECB ciphers)
+    --let $iv_for_file_key_encryption_hex = `SELECT iv_for_file_key_encryption_hex FROM binlog_tbl WHERE rowid = $binlog_index`
+
+    --let $iv_for_file_key_encryption_param =
+    if ($iv_for_file_key_encryption_hex != "")
+    {
+      --let $iv_for_file_key_encryption_param = -iv $iv_for_file_key_encryption_hex
+    }
+
+    # decrypting current file key with OpenSSL command line utility
+    exec echo $file_key_encrypted_with_kek_hex |
+         xxd -r -p |
+         openssl enc -$kek_cipher -d -K $kek_data_hex $iv_for_file_key_encryption_param -nopad |
+         xxd -p -c 255 -u >
+         $file_key_decryption_result_path
+    ;
+
+    --let $read_from_file = $file_key_decryption_result_path
+    --source include/read_file_to_var.inc
+    --let $file_key_hex = $result
+    --remove_file $file_key_decryption_result_path
+
+    # extracting data cipher used for current file data encryption
+    --let $data_cipher = `SELECT data_cipher FROM binlog_tbl WHERE rowid = $binlog_index`
+    # extracting IV used for current file data encryption
+    --let $iv_for_file_data_encryption = `SELECT iv_for_file_data_encryption FROM binlog_tbl WHERE rowid = $binlog_index`
+
+    if ($storage_backend == file)
+    {
+      --let $encrypted_binlog_file = $binsrv_storage_path/$binlog_file
+    }
+    if ($storage_backend == s3)
+    {
+      --let $encrypted_binlog_file = $decrypted_binlog_dir/$binlog_file.encrypted
+      --exec $aws_cli s3 cp s3://$aws_s3_bucket$binsrv_storage_path/$binlog_file $encrypted_binlog_file > /dev/null
+    }
+    --let $decrypted_binlog_file = $decrypted_binlog_dir/$binlog_file
+
+    exec cat $encrypted_binlog_file |
+         openssl enc -$data_cipher -d -K $file_key_hex -iv $iv_for_file_data_encryption -out $decrypted_binlog_file
+    ;
+  }
+  --echo *** Comparing decrypted binlog file with the original one
+  --diff_files $binlog_base_dir/$binlog_file $decrypted_binlog_file
+
+  --inc $binlog_index
+}
+
+
+DROP TABLE binlog_tbl;
+DROP TABLE keyring_tbl;
+
+--echo
+--echo *** Dropping the table.
+DROP TABLE t1;
+
+# cleaning up
+--force-rmdir $decrypted_binlog_dir
+--remove_file $list_result_file
+--source ../include/tear_down_binsrv_environment.inc
+--source ../include/delete_keyring_data_file.inc

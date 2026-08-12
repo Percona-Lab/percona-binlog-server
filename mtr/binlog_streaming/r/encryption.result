@@ -1,0 +1,116 @@
+*** Resetting replication at the very beginning of the test.
+
+*** Generating keyring data file in JSON format.
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+
+*** Creating a simple table and filling it with some data.
+CREATE TABLE t1(id INT UNSIGNED NOT NULL AUTO_INCREMENT, PRIMARY KEY(id)) ENGINE=InnoDB;
+INSERT INTO t1 VALUES(DEFAULT);
+
+*** Executing the Binlog Server utility to download the very
+*** first unencrypted binlog file.
+INSERT INTO t1 VALUES(DEFAULT);
+
+*** Flushing the first binary log and switching to the second one.
+FLUSH BINARY LOGS;
+
+*** Filling the table with some more data.
+INSERT INTO t1 VALUES(DEFAULT);
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Executing the Binlog Server utility to download the second
+*** encrypted binlog file whose file key is encrypted with the second KEK
+*** and file data encrypted with the second data cipher.
+INSERT INTO t1 VALUES(DEFAULT);
+
+*** Flushing the second binary log and switching to the third one.
+FLUSH BINARY LOGS;
+
+*** Filling the table with some more data.
+INSERT INTO t1 VALUES(DEFAULT);
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Executing the Binlog Server utility to download the third
+*** encrypted binlog file whose file key is encrypted with the third KEK
+*** and file data encrypted with the third data cipher.
+INSERT INTO t1 VALUES(DEFAULT);
+
+*** Flushing the third binary log and switching to the fourth one.
+FLUSH BINARY LOGS;
+
+*** Filling the table with some more data.
+INSERT INTO t1 VALUES(DEFAULT);
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Executing the Binlog Server utility to download the fourth
+*** unencrypted binlog file.
+INSERT INTO t1 VALUES(DEFAULT);
+
+*** The last flush to ensure that the last meaningful binlog file
+*** does not have the 'in_use' flag.
+FLUSH BINARY LOGS;
+
+*** Executing the Binlog Server utility for the last time.
+
+*** Executing the Binlog Server utility to produce the list
+*** of binlog files along with their metadata.
+include/read_file_to_var.inc
+CREATE TABLE keyring_tbl AS
+SELECT * FROM JSON_TABLE(
+@keyring_keys_array,
+'$[*]' COLUMNS(
+id VARCHAR(32) PATH '$.id',
+cipher VARCHAR(32) PATH '$.cipher',
+data_hex VARCHAR(128) PATH '$.data_hex'
+    )
+) AS tt;
+CREATE TABLE binlog_tbl AS
+SELECT * FROM JSON_TABLE(
+@parsed_list_result,
+'$.result[*]' COLUMNS(
+rowid FOR ORDINALITY,
+name VARCHAR(32) PATH '$.name',
+uri VARCHAR(128) PATH '$.uri',
+kek_id VARCHAR(32) PATH '$.encryption.file_key_envelope.kek_id',
+iv_for_file_key_encryption_hex VARCHAR(128) PATH '$.encryption.file_key_envelope.iv_hex',
+file_key_encrypted_with_kek_hex VARCHAR(128) PATH '$.encryption.file_key_envelope.data_hex',
+data_cipher VARCHAR(32) PATH '$.encryption.file_data_envelope.cipher',
+iv_for_file_data_encryption VARCHAR(128) PATH '$.encryption.file_data_envelope.iv_hex'
+    )
+) AS tt;
+*** Processing binlog.000001
+*** Comparing decrypted binlog file with the original one
+*** Processing binlog.000002
+include/read_file_to_var.inc
+*** Comparing decrypted binlog file with the original one
+*** Processing binlog.000003
+include/read_file_to_var.inc
+*** Comparing decrypted binlog file with the original one
+*** Processing binlog.000004
+*** Comparing decrypted binlog file with the original one
+DROP TABLE binlog_tbl;
+DROP TABLE keyring_tbl;
+
+*** Dropping the table.
+DROP TABLE t1;
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.
+
+*** Deleting keyring data file in JSON format.

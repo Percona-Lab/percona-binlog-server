@@ -251,13 +251,20 @@ void log_replication_config_info(
   }
 }
 
+void log_keyring_config_info(binsrv::basic_logger &logger,
+                             const binsrv::keyring_config &keyring_config) {
+  log_config_param<"uri">(logger, keyring_config, "keyring URI");
+}
+
 void log_encryption_config_info(
     binsrv::basic_logger &logger,
     const binsrv::encryption_config &encryption_config) {
   log_config_param<"format">(logger, encryption_config,
                              "binlog storage encryption format");
-  log_config_param<"keyring_uri">(logger, encryption_config,
-                                  "binlog storage encryption keyring URI");
+  log_config_param<"kek_id">(logger, encryption_config,
+                             "binlog storage encryption KEK identifier");
+  log_config_param<"cipher">(logger, encryption_config,
+                             "binlog storage encryption data cipher");
 }
 
 void log_storage_config_info(binsrv::basic_logger &logger,
@@ -304,9 +311,12 @@ void log_storage_info(binsrv::basic_logger &logger,
   }
   logger.log(binsrv::log_severity::info, msg);
   logger.log(binsrv::log_severity::info,
-             "keyring status: " + storage.get_keyring_description());
+             "storage keyring status: " + storage.get_keyring_description());
   logger.log(binsrv::log_severity::info,
-             "active KEK: " + storage.get_active_kek_description());
+             "storage active KEK: " + storage.get_active_kek_description());
+  logger.log(binsrv::log_severity::info,
+             "storage encryption format: " +
+                 storage.get_encryption_format_description());
 }
 
 void log_library_info(binsrv::basic_logger &logger,
@@ -1019,12 +1029,14 @@ bool handle_list(std::string_view config_file_path) {
 
   try {
     const binsrv::main_config config{config_file_path};
+    const auto &keyring_config = config.root().get<"keyring">();
     const auto &storage_config = config.root().get<"storage">();
     const auto &replication_config = config.root().get<"replication">();
     const auto replication_mode{replication_config.get<"mode">()};
 
     const binsrv::storage storage{
-        storage_config, binsrv::storage_construction_mode_type::querying_only,
+        keyring_config, storage_config,
+        binsrv::storage_construction_mode_type::querying_only,
         replication_mode};
 
     binsrv::models::search_response response;
@@ -1054,12 +1066,14 @@ bool handle_search_by_timestamp(std::string_view config_file_path,
     }
 
     const binsrv::main_config config{config_file_path};
+    const auto &keyring_config = config.root().get<"keyring">();
     const auto &storage_config = config.root().get<"storage">();
     const auto &replication_config = config.root().get<"replication">();
     const auto replication_mode{replication_config.get<"mode">()};
 
     const binsrv::storage storage{
-        storage_config, binsrv::storage_construction_mode_type::querying_only,
+        keyring_config, storage_config,
+        binsrv::storage_construction_mode_type::querying_only,
         replication_mode};
 
     binsrv::models::search_response response;
@@ -1099,11 +1113,12 @@ bool handle_purge_binlogs(std::string_view config_file_path,
         binsrv::events::composite_binlog_name::parse(subcommand_value)};
 
     const binsrv::main_config config{config_file_path};
+    const auto &keyring_config = config.root().get<"keyring">();
     const auto &storage_config = config.root().get<"storage">();
     const auto &replication_config = config.root().get<"replication">();
     const auto replication_mode{replication_config.get<"mode">()};
 
-    binsrv::storage storage{storage_config,
+    binsrv::storage storage{keyring_config, storage_config,
                             binsrv::storage_construction_mode_type::purging,
                             replication_mode};
 
@@ -1147,12 +1162,14 @@ bool handle_search_by_gtid_set(std::string_view config_file_path,
     binsrv::gtids::gtid_set remaining_gtids{subcommand_value};
 
     const binsrv::main_config config{config_file_path};
+    const auto &keyring_config = config.root().get<"keyring">();
     const auto &storage_config = config.root().get<"storage">();
     const auto &replication_config = config.root().get<"replication">();
     const auto replication_mode{replication_config.get<"mode">()};
 
     const binsrv::storage storage{
-        storage_config, binsrv::storage_construction_mode_type::querying_only,
+        keyring_config, storage_config,
+        binsrv::storage_construction_mode_type::querying_only,
         replication_mode};
 
     const auto &binlog_records{storage.get_binlog_records()};
@@ -1325,6 +1342,14 @@ int main(int argc, char *argv[]) {
                 "set custom handlers for SIGINT and SIGTERM signals");
     const volatile std::atomic_flag &termination_flag{global_termination_flag};
 
+    const auto &keyring_config = config.root().get<"keyring">();
+    if (keyring_config.has_value()) {
+      log_keyring_config_info(*logger, *keyring_config);
+    } else {
+      logger->log(binsrv::log_severity::info,
+                  "keyring configuration options are not specified");
+    }
+
     const auto &storage_config = config.root().get<"storage">();
     log_storage_config_info(*logger, storage_config);
 
@@ -1340,7 +1365,7 @@ int main(int argc, char *argv[]) {
     const auto replication_mode{replication_config.get<"mode">()};
     const auto optional_rewrite_config{replication_config.get<"rewrite">()};
 
-    binsrv::storage storage{storage_config,
+    binsrv::storage storage{keyring_config, storage_config,
                             binsrv::storage_construction_mode_type::streaming,
                             replication_mode};
     log_storage_info(*logger, storage);

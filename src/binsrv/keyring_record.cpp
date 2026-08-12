@@ -13,31 +13,30 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef BINSRV_ENCRYPTION_CONFIG_HPP
-#define BINSRV_ENCRYPTION_CONFIG_HPP
+#include "binsrv/keyring_record.hpp"
 
-#include "binsrv/encryption_config_fwd.hpp" // IWYU pragma: export
-
+#include <stdexcept>
 #include <string>
 
-#include "binsrv/encryption_format_type_fwd.hpp"
-
-#include "util/nv_tuple.hpp"
+#include "opensslpp/cipher_context.hpp"
+#include "util/exception_location_helpers.hpp"
 
 namespace binsrv {
 
-struct [[nodiscard]] encryption_config
-    : util::nv_tuple<
-          // clang-format off
-          util::nv<"format", encryption_format_type>,
-          util::nv<"kek_id", std::string>,
-          util::nv<"cipher", std::string>
-          // clang-format on
-          > {
+void keyring_record::validate() const {
+  const auto &cipher_name = get<"cipher">();
 
-  void validate() const;
-};
+  const auto &key_id = get<"id">();
+  if (!opensslpp::cipher_context::is_cipher_name_supported(cipher_name)) {
+    util::exception_location().raise<std::invalid_argument>(
+        "unsupported cipher in keyring record: '" + key_id + "'");
+  }
+
+  if (get<"data_hex">().get_size() !=
+      opensslpp::cipher_context::get_key_size_in_bytes(cipher_name)) {
+    util::exception_location().raise<std::invalid_argument>(
+        "key data length mismatch in keyring record '" + key_id + "'");
+  }
+}
 
 } // namespace binsrv
-
-#endif // BINSRV_ENCRYPTION_CONFIG_HPP

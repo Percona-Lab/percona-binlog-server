@@ -20,6 +20,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <unordered_set>
 
 #include <boost/json/parse.hpp>
 
@@ -62,14 +63,20 @@ void keyring_record_collection::validate() const {
     util::exception_location().raise<std::invalid_argument>(
         "unsupported keyring record collection version");
   }
-  // TODO: make sure that all the keys have unique IDs
+  const auto &keys{root().get<"keys">()};
 
-  // TODO: make sure that all keys have ciphers known in OpenSSL
-  //       (currently only ECB, CBC, CTR, GCM modes are supported by
-  //       opensslpp::cipher_context)
+  using key_id_container = std::unordered_set<std::string>;
+  key_id_container unique_ids{};
 
-  // TODO: make sure that all keys have data_hex values of the correct length
-  //       that matches with the cipher
+  for (const auto &key : keys) {
+    const auto &key_id = key.get<"id">();
+    if (!unique_ids.insert(key_id).second) {
+      util::exception_location().raise<std::invalid_argument>(
+          "duplicate key id in keyring record collection: '" + key_id + "'");
+    }
+
+    key.validate();
+  }
 }
 
 [[nodiscard]] std::string keyring_record_collection::get_description() const {

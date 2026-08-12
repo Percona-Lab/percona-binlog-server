@@ -514,6 +514,9 @@ The Percona Binary Log Server configuration file has the following format.
       "file_size": "128M"
     }
   },
+  "keyring": {
+    "uri": "file:///var/lib/pbs/keyring/keyring_data.json"
+  },
   "storage": {
     "backend": "s3",
     "uri": "https://key_id:secret@192.168.0.100:9000/binsrv-bucket/vault",
@@ -522,7 +525,6 @@ The Percona Binary Log Server configuration file has the following format.
     "checkpoint_interval": "30s",
     "encryption": {
       "format": "generic",
-      "keyring_uri": "file:///var/lib/pbs/keyring/keyring_data.json",
       "kek_id": "alpha",
       "cipher": "AES-256-CTR"
     }
@@ -581,6 +583,10 @@ Note: you should specify either `<connection.host>` / `<connection.port>` pair o
 If this section is present, then the utility will not split binlog events the same way as they were on the original MySQL server. Instead, it will generate its own binlog file name sequence (based on the `<replication.rewrite.base_file_name>`) and will change to a new binary log file when the size of the previous one riches the specified value (`<replication.rewrite.file_size>`). Having this section requires `<replication.mode>` to be set to `gtid`. Also, please notice that currently the utility can properly operate in 'rewrite' mode only when all binlog events received from the MySQL server have checksums (were generated on a server that had '@@global.binlog_checksum' set to 'CRC32').
 - `<replication.rewrite.base_file_name>` - the base name of the generated binlog file names in the "rewrite" mode. E.g. `rewritten_binlog` will cause `rewritten_binlog.000001`, `rewritten_binlog.000002`, etc. file names to be generated.
 - `<replication.rewrite.file_size>` - the maximum individual binlog file size after reaching which the utility will switch to a new one. The value is expected to be a string containing an integer followed by an optional suffix 'K' / 'M' / 'G' / 'T' / 'P', e.g. /\d+\[KMGTP\]?/. The minimal allowed value of this parameter is `1024` bytes.
+
+#### \<keyring\> section
+If this an optional section that specifies keyring configuration parameters. It must be present if the storage has at least one encrypted binlog file.
+- `<keyring.uri>` - specifies location of the keyring JSON data file (currently only 'file://' scheme is supported meaning that the file should be taken from the local file sytem from the path specified in this URI, e.g. `file:///var/lib/pbs/keyring/keyring_data.json`).
 
 #### \<storage\> section
 - `<storage.backend>` - the type of the storage where the received binary logs should be stored:
@@ -645,9 +651,10 @@ Please note that S3 API does not provide a way to append a portion of data to an
 #### \<storage.encryption\> section
 If this section is present, then all the binlog data files will be encrypted before written to the storage.
 - `<storage.encryption.format>` - specifies the encryption format (currently only `generic` is supported).
-- `<storage.encryption.keyring_uri>` - specifies location of the keyring JSON data file (currently only 'file://' scheme is supported meaning that the file should be taken from the local file sytem from the path specified in this URI, e.g. `file:///var/lib/pbs/keyring/keyring_data.json`).
 - `<storage.encryption.kek_id>` - specifies the ID of the key that must be used as a key-encryption-key (KEK). This ID must be present in the keyring.
-- `<storage.encryption.cipher>` - specifies the data-encryption cipher name used binlog data file encryption (e.g. `AES-256-CTR`).
+- `<storage.encryption.cipher>` - specifies the data-encryption cipher name used binlog data file encryption (e.g. `AES-256-CTR`). The cipher name specified here must be in `CTR` mode.
+
+Please also notice that not all combinations of the `cipher` and KEK identified by `kek_id` are supported. For instance, if the cipher from the keyring record identified by `kek_id` is either `AES-NNN-ECB` or `AES-NNN-CBC`, then they can encrypt only file keys with lengths that are a multiple of `16` bytes. In other words, in this case it is OK for `<storage.encryption.cipher>` to be `XXX-128-CTR` or `XXX-256-CTR`, but not OK to be `XXX-192-CTR`.
 
 ##### Keyring file format
 ```json
@@ -669,10 +676,13 @@ If this section is present, then all the binlog data files will be encrypted bef
 ```
 Keyring JSON file should represent a top-level JSON object with the following keys.
 - `version` - currently should always be equal to `1`.
-- `keys` - should be an array of objects tith the following keys
+- `keys` - should be an array of objects with the following keys
   - `id` - a unique string identifier of the key in the keyring.
   - `cipher` - the name of the symmetric cypher which should be used with this key (e.g `AES-256-GCM`).
   - `data_hex` - key bytes in hex format (typically `16`, `24`, or `32` bytes, meaning `32`, `48`, or `64` characters)
+
+Make sure that the mode of the `cipher` is one of the `ECB`, `CBC`, `CTR`, or `GCM`. Also, make sure that the key size identified from the cipher name matches the actual `data_hex` length (for instance, for `AES-256-GCM`, the key length should be `256` bits, meaning `32` bytes, meaning `64` hexadecimal characters).
+As for the `algoritm` part of the cipher name, PBS has been tested with `AES`, `AREA`, and `CAMELLIA`. However, other algorithms be supported as well.
 
 ### Resuming previous operation
 

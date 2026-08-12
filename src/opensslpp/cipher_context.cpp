@@ -25,6 +25,8 @@
 #include <type_traits>
 #include <utility>
 
+#include <boost/algorithm/string/case_conv.hpp>
+
 #include <boost/container/container_fwd.hpp>
 #include <boost/container/static_vector.hpp>
 
@@ -33,6 +35,7 @@
 #include <openssl/evp.h>
 #include <openssl/types.h>
 
+#include "opensslpp/cipher_mode_type.hpp"
 #include "opensslpp/core_error.hpp"
 
 #include "util/byte_span_fwd.hpp"
@@ -49,44 +52,60 @@ struct cipher_context::native_helper {
   }
 
   [[nodiscard]] static const auto *
-  get_native_cipher_by_name(const std::string &cipher_name) {
-    const auto *evp_cipher{EVP_get_cipherbyname(cipher_name.c_str())};
-    if (evp_cipher == nullptr) {
+  get_cipher_by_name_internal(const std::string &cipher_name) noexcept {
+    return EVP_get_cipherbyname(cipher_name.c_str());
+  }
+  [[nodiscard]] static cipher_mode_type
+  convert_mode_internal(int native_mode) noexcept {
+    switch (native_mode) {
+    case EVP_CIPH_ECB_MODE:
+      return cipher_mode_type::ecb;
+    case EVP_CIPH_CBC_MODE:
+      return cipher_mode_type::cbc;
+    case EVP_CIPH_CFB_MODE:
+      return cipher_mode_type::cfb;
+    case EVP_CIPH_OFB_MODE:
+      return cipher_mode_type::ofb;
+    case EVP_CIPH_CTR_MODE:
+      return cipher_mode_type::ctr;
+    case EVP_CIPH_GCM_MODE:
+      return cipher_mode_type::gcm;
+    case EVP_CIPH_CCM_MODE:
+      return cipher_mode_type::ccm;
+    case EVP_CIPH_XTS_MODE:
+      return cipher_mode_type::xts;
+    case EVP_CIPH_WRAP_MODE:
+      return cipher_mode_type::wrap;
+    case EVP_CIPH_OCB_MODE:
+      return cipher_mode_type::ocb;
+    case EVP_CIPH_SIV_MODE:
+      return cipher_mode_type::siv;
+    default:
+      return cipher_mode_type::delimiter;
+    }
+  }
+
+  [[nodiscard]] static const auto *
+  get_validated_cipher_by_name_internal(const std::string &cipher_name) {
+    const auto *cipher{get_cipher_by_name_internal(cipher_name)};
+    if (cipher == nullptr) {
       util::exception_location().raise<core_error>("unknown cipher name");
     }
-    const auto mode{EVP_CIPHER_get_mode(evp_cipher)};
-    switch (mode) {
-    case EVP_CIPH_ECB_MODE:
-    case EVP_CIPH_CBC_MODE:
-    case EVP_CIPH_CTR_MODE:
-    case EVP_CIPH_GCM_MODE:
-      break;
-    default:
-      // EVP_CIPH_CFB_MODE
-      // EVP_CIPH_OFB_MODE
-      // EVP_CIPH_CCM_MODE
-      // EVP_CIPH_XTS_MODE
-      // EVP_CIPH_WRAP_MODE
-      // EVP_CIPH_OCB_MODE
-      // EVP_CIPH_SIV_MODE
-      // EVP_CIPH_STREAM_CIPHER
-      util::exception_location().raise<core_error>("unsupported cipher mode");
-    }
-    return evp_cipher;
+    return cipher;
   }
 
   [[nodiscard]] static std::size_t
-  get_block_size_in_bytes_internal(const EVP_CIPHER *cipher) {
+  get_block_size_in_bytes_internal(const EVP_CIPHER *cipher) noexcept {
     assert(cipher != nullptr);
     return static_cast<std::size_t>(EVP_CIPHER_get_block_size(cipher));
   }
   [[nodiscard]] static std::size_t
-  get_key_size_in_bytes_internal(const EVP_CIPHER *cipher) {
+  get_key_size_in_bytes_internal(const EVP_CIPHER *cipher) noexcept {
     assert(cipher != nullptr);
     return static_cast<std::size_t>(EVP_CIPHER_get_key_length(cipher));
   }
   [[nodiscard]] static std::size_t
-  get_iv_size_in_bytes_internal(const EVP_CIPHER *cipher) {
+  get_iv_size_in_bytes_internal(const EVP_CIPHER *cipher) noexcept {
     assert(cipher != nullptr);
     return static_cast<std::size_t>(EVP_CIPHER_get_iv_length(cipher));
   }
@@ -98,7 +117,7 @@ void cipher_context::impl_deleter::operator()(void *cipher_ctx) const noexcept {
   }
 }
 
-cipher_context::cipher_context(cipher_context_mode_type mode,
+cipher_context::cipher_context(cipher_context_operation_type operation,
                                const std::string &cipher_name,
                                util::const_byte_span key,
                                util::const_byte_span ivec,
@@ -108,7 +127,14 @@ cipher_context::cipher_context(cipher_context_mode_type mode,
     util::exception_location().raise<core_error>(
         "cannot create cipher context");
   }
-  const auto *evp_cipher{native_helper::get_native_cipher_by_name(cipher_name)};
+  const auto *evp_cipher{
+      native_helper::get_validated_cipher_by_name_internal(cipher_name)};
+  const auto mode{
+      native_helper::convert_mode_internal(EVP_CIPHER_get_mode(evp_cipher))};
+  if (!is_mode_supported(mode)) {
+    util::exception_location().raise<core_error>("unsupported cipher mode");
+  }
+
   if (std::size(key) !=
       native_helper::get_key_size_in_bytes_internal(evp_cipher)) {
     util::exception_location().raise<core_error>(
@@ -119,7 +145,7 @@ cipher_context::cipher_context(cipher_context_mode_type mode,
     util::exception_location().raise<core_error>(
         "invalid iv size for the specified cipher");
   }
-  if (mode == cipher_context_mode_type::encryption) {
+  if (operation == cipher_context_operation_type::encryption) {
     if (!tag.empty()) {
       util::exception_location().raise<core_error>(
           "tag must not be specified for encryption cipher context");
@@ -134,7 +160,8 @@ cipher_context::cipher_context(cipher_context_mode_type mode,
           reinterpret_cast<const unsigned char *>(std::data(key)), // key
           // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
           reinterpret_cast<const unsigned char *>(std::data(ivec)), // iv
-          (mode == cipher_context_mode_type::encryption ? 1 : 0)    // enc
+          (operation == cipher_context_operation_type::encryption ? 1
+                                                                  : 0) // enc
           ) == 0) {
     util::exception_location().raise<core_error>(
         "cannot initialize cipher context");
@@ -145,7 +172,7 @@ cipher_context::cipher_context(cipher_context_mode_type mode,
         "cannot disable padding for cipher context");
   }
 
-  if (mode == cipher_context_mode_type::decryption) {
+  if (operation == cipher_context_operation_type::decryption) {
     if (get_tag_size_in_bytes() != std::size(tag)) {
       util::exception_location().raise<core_error>(
           "invalid tag size for the specified cipher");
@@ -164,12 +191,18 @@ cipher_context::cipher_context(cipher_context_mode_type mode,
   }
 }
 
-[[nodiscard]] cipher_context_mode_type
-cipher_context::get_mode() const noexcept {
+[[nodiscard]] cipher_context_operation_type
+cipher_context::get_operation() const noexcept {
   assert(!is_empty());
   return (EVP_CIPHER_CTX_encrypting(native_helper::deimpl(impl_))
-              ? cipher_context_mode_type::encryption
-              : cipher_context_mode_type::decryption);
+              ? cipher_context_operation_type::encryption
+              : cipher_context_operation_type::decryption);
+}
+
+[[nodiscard]] cipher_mode_type cipher_context::get_mode() const noexcept {
+  assert(!is_empty());
+  return native_helper::convert_mode_internal(
+      EVP_CIPHER_CTX_get_mode(native_helper::deimpl(impl_)));
 }
 
 [[nodiscard]] std::size_t
@@ -200,22 +233,69 @@ cipher_context::get_tag_size_in_bytes() const noexcept {
       EVP_CIPHER_CTX_get_tag_length(native_helper::deimpl(impl_)));
 }
 
+[[nodiscard]] bool
+cipher_context::is_cipher_name_known(const std::string &cipher_name) noexcept {
+  return native_helper::get_cipher_by_name_internal(cipher_name) != nullptr;
+}
+
+[[nodiscard]] bool
+cipher_context::is_mode_supported(cipher_mode_type mode) noexcept {
+  switch (mode) {
+  case cipher_mode_type::ecb:
+  case cipher_mode_type::cbc:
+  case cipher_mode_type::ctr:
+  case cipher_mode_type::gcm:
+    return true;
+  default:
+    // cipher_mode_type::cfb:
+    // cipher_mode_type::ofb:
+    // cipher_mode_type::ccm:
+    // cipher_mode_type::xts:
+    // cipher_mode_type::wrap:
+    // cipher_mode_type::ocb:
+    // cipher_mode_type::siv:
+    return false;
+  }
+}
+
+[[nodiscard]] bool cipher_context::is_cipher_name_supported(
+    const std::string &cipher_name) noexcept {
+  const auto *evp_cipher{
+      native_helper::get_cipher_by_name_internal(cipher_name)};
+  if (evp_cipher == nullptr) {
+    return false;
+  }
+  const auto mode{
+      native_helper::convert_mode_internal(EVP_CIPHER_get_mode(evp_cipher))};
+  return is_mode_supported(mode);
+}
+
+[[nodiscard]] cipher_mode_type
+cipher_context::get_mode(const std::string &cipher_name) noexcept {
+  const auto *evp_cipher{
+      native_helper::get_cipher_by_name_internal(cipher_name)};
+  if (evp_cipher == nullptr) {
+    return cipher_mode_type::delimiter;
+  }
+  return native_helper::convert_mode_internal(EVP_CIPHER_get_mode(evp_cipher));
+}
+
 [[nodiscard]] std::size_t
 cipher_context::get_block_size_in_bytes(const std::string &cipher_name) {
   return native_helper::get_block_size_in_bytes_internal(
-      native_helper::get_native_cipher_by_name(cipher_name));
+      native_helper::get_validated_cipher_by_name_internal(cipher_name));
 }
 
 [[nodiscard]] std::size_t
 cipher_context::get_key_size_in_bytes(const std::string &cipher_name) {
   return native_helper::get_key_size_in_bytes_internal(
-      native_helper::get_native_cipher_by_name(cipher_name));
+      native_helper::get_validated_cipher_by_name_internal(cipher_name));
 }
 
 [[nodiscard]] std::size_t
 cipher_context::get_iv_size_in_bytes(const std::string &cipher_name) {
   return native_helper::get_iv_size_in_bytes_internal(
-      native_helper::get_native_cipher_by_name(cipher_name));
+      native_helper::get_validated_cipher_by_name_internal(cipher_name));
 }
 
 void cipher_context::extract_updated_iv(util::byte_span ivec) {
@@ -292,15 +372,15 @@ void cipher_context::update(util::const_byte_span input,
 void cipher_context::finalize(util::byte_span output_tag) {
   assert(!is_empty());
 
-  const auto mode{get_mode()};
-  if (mode == cipher_context_mode_type::decryption) {
+  const auto operation{get_operation()};
+  if (operation == cipher_context_operation_type::decryption) {
     if (!output_tag.empty()) {
       util::exception_location().raise<core_error>(
           "in cipher context finalize the output tag must only be specified "
           "for the encryption mode");
     }
   } else {
-    // cipher_context_mode_type::encryption mode
+    // cipher_context_operation_type::encryption operation
     if (std::size(output_tag) != get_tag_size_in_bytes()) {
       util::exception_location().raise<core_error>(
           "in cipher context finalize the output tag size does not match the "
@@ -329,7 +409,7 @@ void cipher_context::finalize(util::byte_span output_tag) {
         "in cipher context finalize the actual output size is not zero");
   }
 
-  if (mode == cipher_context_mode_type::encryption) {
+  if (operation == cipher_context_operation_type::encryption) {
     const auto tag_size_native{static_cast<int>(std::size(output_tag))};
     void *const tag_ptr{
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
@@ -347,15 +427,27 @@ void cipher_context::finalize(util::byte_span output_tag) {
 }
 
 cipher_context cipher_context::create_with_offset(
-    std::uint64_t offset, cipher_context_mode_type mode,
+    std::uint64_t offset, cipher_context_operation_type operation,
     const std::string &cipher_name, util::const_byte_span key,
     util::const_byte_span ivec, util::const_byte_span tag) {
   if (offset == 0ULL) {
     // early return when offset is zero to avoid unnecessary copying
-    return cipher_context{mode, cipher_name, key, ivec, tag};
+    return cipher_context{operation, cipher_name, key, ivec, tag};
   }
 
-  // TODO: check if this function is called for one of the CTR ciphers
+  static constexpr cipher_mode_type expected_mode{cipher_mode_type::ctr};
+  static constexpr cipher_mode_type non_streaming_mode{cipher_mode_type::ecb};
+
+  if (get_mode(cipher_name) != expected_mode) {
+    util::exception_location().raise<core_error>(
+        "in cipher context creation with offset the specified cipher is not a "
+        "CTR cipher");
+  }
+  if (std::size(ivec) != get_iv_size_in_bytes(cipher_name)) {
+    util::exception_location().raise<core_error>(
+        "in cipher context creation with offset the size of the iv does not "
+        "match the expected iv size for the specified cipher");
+  }
   if (std::size(ivec) < sizeof(std::uint64_t)) {
     util::exception_location().raise<core_error>(
         "in cipher context creation with offset the size of the iv is too "
@@ -368,13 +460,49 @@ cipher_context cipher_context::create_with_offset(
       // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
       reinterpret_cast<const unsigned char *>(original_ivec_ptr))};
 
-  // this is true for most of the algorithms, including AES -
   // we cannot use get_block_size_in_bytes() because it returns 1 for CTR and
   // GCM
 
-  // TODO: rework with calling get_block_size_in_bytes() with modified cipher
-  //       name (change the mode part to "-ECB")
-  static constexpr std::uint64_t block_size{16ULL};
+  // a helper lambda that modifies the mode part of the provided cipher name
+  // from expected 'expected_mode' ('CTR') to 'non_streaming_mode' ('ECB')
+  // preserving the case
+  const auto cipher_name_mofifier{[](std::string &inplace_cipher_name) -> bool {
+    static constexpr char delimiter{'-'};
+    const auto pos{inplace_cipher_name.rfind(delimiter)};
+    if (pos == std::string::npos) {
+      return false;
+    }
+    const auto extracted_mode_str{inplace_cipher_name.substr(pos + 1)};
+    std::string expected_mode_str{to_string_view(expected_mode)};
+    bool expected_mode_found{false};
+    bool upper_case_extracted_mode{false};
+    if (extracted_mode_str == expected_mode_str) {
+      expected_mode_found = true;
+    } else {
+      boost::algorithm::to_upper(expected_mode_str);
+      if (extracted_mode_str == expected_mode_str) {
+        expected_mode_found = true;
+        upper_case_extracted_mode = true;
+      }
+    }
+    if (!expected_mode_found) {
+      return false;
+    }
+    inplace_cipher_name.resize(pos + 1);
+    std::string new_mode{to_string_view(non_streaming_mode)};
+    if (upper_case_extracted_mode) {
+      boost::algorithm::to_upper(new_mode);
+    }
+    inplace_cipher_name += new_mode;
+    return true;
+  }};
+  std::string modified_cipher_name{cipher_name};
+  if (!cipher_name_mofifier(modified_cipher_name)) {
+    util::exception_location().raise<core_error>(
+        "in cipher context creation with offset the specified cipher name does "
+        "not have the expected format");
+  }
+  const std::uint64_t block_size{get_block_size_in_bytes(modified_cipher_name)};
   counter += offset / block_size;
 
   using buffer_type = boost::container::static_vector<
@@ -389,8 +517,10 @@ cipher_context cipher_context::create_with_offset(
   boost::endian::store_big_u64(reinterpret_cast<unsigned char *>(dest_ptr),
                                counter);
 
-  cipher_context result{mode, cipher_name, key, modified_ivec, tag};
+  cipher_context result{operation, cipher_name, key, modified_ivec, tag};
 
+  // TODO: consider using EVP_CIPHER_CTX_set_num() instead of a dummy block
+  //       trick
   buffer_type source_dummy_block{offset % block_size,
                                  boost::container::default_init};
   buffer_type dest_dummy_block{offset % block_size};

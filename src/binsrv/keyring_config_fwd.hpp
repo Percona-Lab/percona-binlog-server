@@ -13,31 +13,16 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef BINSRV_ENCRYPTION_CONFIG_HPP
-#define BINSRV_ENCRYPTION_CONFIG_HPP
+#ifndef BINSRV_KEYRING_CONFIG_FWD_HPP
+#define BINSRV_KEYRING_CONFIG_FWD_HPP
 
-#include "binsrv/encryption_config_fwd.hpp" // IWYU pragma: export
-
-#include <string>
-
-#include "binsrv/encryption_format_type_fwd.hpp"
-
-#include "util/nv_tuple.hpp"
+#include <optional>
 
 namespace binsrv {
 
-struct [[nodiscard]] encryption_config
-    : util::nv_tuple<
-          // clang-format off
-          util::nv<"format", encryption_format_type>,
-          util::nv<"kek_id", std::string>,
-          util::nv<"cipher", std::string>
-          // clang-format on
-          > {
-
-  void validate() const;
-};
+struct keyring_config;
+using optional_keyring_config = std::optional<keyring_config>;
 
 } // namespace binsrv
 
-#endif // BINSRV_ENCRYPTION_CONFIG_HPP
+#endif // BINSRV_KEYRING_CONFIG_FWD_HPP

@@ -36,6 +36,9 @@
       "file_size": "128M"
     }
   },
+  "keyring": {
+    "uri": "file:///home/user/keyring/keyring/keyring_data.json"
+  },
   "storage": {
     "backend": "file",
     "uri": "file:///home/user/vault",
@@ -44,7 +47,6 @@
     "checkpoint_interval": "30s",
     "encryption": {
       "format": "generic",
-      "keyring_uri": "file:///home/user/keyring/keyring/keyring_data.json",
       "kek_id": "alpha",
       "cipher": "AES-256-CTR"
     }

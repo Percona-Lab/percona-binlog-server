@@ -169,6 +169,9 @@ add_library(binsrv::lib_util ALIAS lib_util)
 
 # OpenSSL++ files
 set(opensslpp_source_files
+  src/opensslpp/cipher_mode_type_fwd.hpp
+  src/opensslpp/cipher_mode_type.hpp
+
   src/opensslpp/cipher_context_fwd.hpp
   src/opensslpp/cipher_context.hpp
   src/opensslpp/cipher_context.cpp
@@ -522,6 +525,9 @@ set(binsrv_source_files
   src/binsrv/logger_factory.hpp
   src/binsrv/logger_factory.cpp
 
+  src/binsrv/keyring_config_fwd.hpp
+  src/binsrv/keyring_config.hpp
+
   src/binsrv/keyring_factory.hpp
   src/binsrv/keyring_factory.cpp
 
@@ -531,6 +537,7 @@ set(binsrv_source_files
 
   src/binsrv/keyring_record_fwd.hpp
   src/binsrv/keyring_record.hpp
+  src/binsrv/keyring_record.cpp
 
   src/binsrv/main_config_fwd.hpp
   src/binsrv/main_config.hpp

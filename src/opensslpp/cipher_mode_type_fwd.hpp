@@ -13,20 +13,33 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef OPENSSLPP_CIPHER_CONTEXT_FWD_HPP
-#define OPENSSLPP_CIPHER_CONTEXT_FWD_HPP
+#ifndef OPENSSLPP_CIPHER_MODE_TYPE_FWD_HPP
+#define OPENSSLPP_CIPHER_MODE_TYPE_FWD_HPP
 
+#include <concepts>
 #include <cstdint>
+#include <iosfwd>
+
+#include "util/nv_tuple_json_support.hpp"
 
 namespace opensslpp {
 
-enum class cipher_context_operation_type : std::uint8_t {
-  encryption,
-  decryption
-};
+enum class cipher_mode_type : std::uint8_t;
 
-class cipher_context;
+template <typename Char, typename Traits>
+  requires std::same_as<Char, char>
+std::basic_ostream<Char, Traits> &
+operator<<(std::basic_ostream<Char, Traits> &output, cipher_mode_type mode);
+
+template <typename Char, typename Traits>
+  requires std::same_as<Char, char>
+std::basic_istream<Char, Traits> &
+operator>>(std::basic_istream<Char, Traits> &input, cipher_mode_type &mode);
 
 } // namespace opensslpp
 
-#endif // OPENSSLPP_CIPHER_CONTEXT_FWD_HPP
+template <>
+struct util::is_string_convertible<opensslpp::cipher_mode_type>
+    : std::true_type {};
+
+#endif // OPENSSLPP_CIPHER_MODE_TYPE_FWD_HPP

@@ -26,7 +26,9 @@
 
 #include "binsrv/basic_keyring_fwd.hpp"
 #include "binsrv/basic_storage_backend_fwd.hpp"
+#include "binsrv/encryption_config_fwd.hpp"
 #include "binsrv/encryption_format_type_fwd.hpp"
+#include "binsrv/keyring_config_fwd.hpp"
 #include "binsrv/replication_mode_type_fwd.hpp"
 #include "binsrv/storage_config_fwd.hpp"
 
@@ -91,7 +93,8 @@ public:
   static constexpr std::size_t default_event_buffer_size_in_bytes{16384U};
 
   // passing by value as we are going to move from this unique_ptr
-  storage(const storage_config &config,
+  storage(const optional_keyring_config &keyring_config,
+          const storage_config &config,
           storage_construction_mode_type construction_mode,
           replication_mode_type replication_mode);
 
@@ -192,11 +195,16 @@ public:
   [[nodiscard]] std::string
   get_binlog_uri(const events::composite_binlog_name &binlog_name) const;
 
-  [[nodiscard]] bool is_encryption_enabled() const noexcept {
+  [[nodiscard]] bool is_keyring_initialized() const noexcept {
     return static_cast<bool>(keyring_);
   }
   [[nodiscard]] std::string get_keyring_description() const;
   [[nodiscard]] std::string get_active_kek_description() const;
+  [[nodiscard]] std::string get_encryption_format_description() const;
+
+  [[nodiscard]] bool has_active_kek() const noexcept {
+    return !active_kek_id_.empty();
+  }
 
 private:
   storage_construction_mode_type construction_mode_;
@@ -225,6 +233,9 @@ private:
   util::ctime_timestamp_range incomplete_transaction_timestamps_{};
   events::seq_no_t ready_to_flush_last_sequence_number_{0ULL};
   events::seq_no_t incomplete_transaction_last_sequence_number_{0ULL};
+
+  void initialize_storage_encryption(
+      const optional_encryption_config &encryption_config);
 
   void ensure_streaming_mode() const;
   void ensure_purging_mode() const;

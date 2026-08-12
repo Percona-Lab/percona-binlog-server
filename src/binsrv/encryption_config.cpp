@@ -21,6 +21,9 @@
 
 #include "util/exception_location_helpers.hpp"
 
+#include "opensslpp/cipher_context.hpp"
+#include "opensslpp/cipher_mode_type.hpp"
+
 namespace binsrv {
 
 void encryption_config::validate() const {
@@ -28,8 +31,13 @@ void encryption_config::validate() const {
     util::exception_location().raise<std::invalid_argument>(
         "error validating storage encryption config: unsupported format");
   }
-  // TODO: make sure that data encryption cipher is supported by OpenSSL
-  //       and has CTR mode
+
+  if (opensslpp::cipher_context::get_mode(get<"cipher">()) !=
+      opensslpp::cipher_mode_type::ctr) {
+    util::exception_location().raise<std::invalid_argument>(
+        "error validating storage encryption config: only CTR mode is "
+        "supported for data encryption cipher");
+  }
 }
 
 } // namespace binsrv

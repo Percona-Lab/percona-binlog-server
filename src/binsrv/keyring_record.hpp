@@ -41,6 +41,7 @@ struct [[nodiscard]] keyring_record
     result += ')';
     return result;
   }
+  void validate() const;
 };
 
 } // namespace binsrv

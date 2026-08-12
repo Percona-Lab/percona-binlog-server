@@ -33,13 +33,15 @@
 #include <boost/test/tools/old/interface.hpp>
 
 #include "opensslpp/cipher_context.hpp"
+#include "opensslpp/cipher_mode_type.hpp"
 #include "opensslpp/core_error.hpp"
 #include "opensslpp/crypto_rng.hpp"
 
 #include "util/byte_span.hpp"
 
 using buffer_type = std::vector<std::byte>;
-static const char *const invalid_cipher_name{"INVALID-CIPHER-NAME"};
+static const char *const invalid_cipher_name{"INVALID-256-BBB"};
+static const char *const unsupported_cipher_name{"AES-128-CFB"};
 
 BOOST_AUTO_TEST_CASE(CipherContextDefaultConstruction) {
   const opensslpp::cipher_context empty_ctx{};
@@ -56,7 +58,8 @@ BOOST_AUTO_TEST_CASE(CipherContextValidCipherNameConstruction) {
   opensslpp::crypto_rng::generate(ivec);
 
   const opensslpp::cipher_context empty_ctx(
-      opensslpp::cipher_context_mode_type::encryption, cipher_name, key, ivec);
+      opensslpp::cipher_context_operation_type::encryption, cipher_name, key,
+      ivec);
   BOOST_CHECK(!empty_ctx.is_empty());
 }
 
@@ -67,18 +70,18 @@ BOOST_AUTO_TEST_CASE(CipherContextInvalidCipherNameConstruction) {
   buffer_type ivec(default_ivec_size);
   opensslpp::crypto_rng::generate(key);
   opensslpp::crypto_rng::generate(ivec);
-  BOOST_CHECK_THROW(
-      opensslpp::cipher_context(opensslpp::cipher_context_mode_type::encryption,
-                                invalid_cipher_name, key, ivec),
-      opensslpp::core_error);
+  BOOST_CHECK_THROW(opensslpp::cipher_context(
+                        opensslpp::cipher_context_operation_type::encryption,
+                        invalid_cipher_name, key, ivec),
+                    opensslpp::core_error);
 }
 
 BOOST_AUTO_TEST_CASE(CipherContextUnsupportedCipherModeConstruction) {
-  BOOST_CHECK_THROW(
-      opensslpp::cipher_context(opensslpp::cipher_context_mode_type::encryption,
-                                "AES-128-CFB", util::const_byte_span{},
-                                util::const_byte_span{}),
-      opensslpp::core_error);
+  BOOST_CHECK_THROW(opensslpp::cipher_context(
+                        opensslpp::cipher_context_operation_type::encryption,
+                        unsupported_cipher_name, util::const_byte_span{},
+                        util::const_byte_span{}),
+                    opensslpp::core_error);
 }
 
 static const std::initializer_list<const char *> modes{"ECB", "CBC", "CTR",
@@ -128,10 +131,39 @@ BOOST_DATA_TEST_CASE(CipherContextInvalidKeyLengthIVLengthConstruction,
   opensslpp::crypto_rng::generate(key);
   opensslpp::crypto_rng::generate(ivec);
 
-  BOOST_CHECK_THROW(
-      opensslpp::cipher_context(opensslpp::cipher_context_mode_type::encryption,
-                                cipher_name, key, ivec),
-      opensslpp::core_error);
+  BOOST_CHECK_THROW(opensslpp::cipher_context(
+                        opensslpp::cipher_context_operation_type::encryption,
+                        cipher_name, key, ivec),
+                    opensslpp::core_error);
+}
+
+BOOST_AUTO_TEST_CASE(CipherContextGetModeStatic) {
+  BOOST_CHECK(opensslpp::cipher_context::get_mode(invalid_cipher_name) ==
+              opensslpp::cipher_mode_type::delimiter);
+  BOOST_CHECK(opensslpp::cipher_context::get_mode("AES-128-ECB") ==
+              opensslpp::cipher_mode_type::ecb);
+  BOOST_CHECK(opensslpp::cipher_context::get_mode("AES-192-ECB") ==
+              opensslpp::cipher_mode_type::ecb);
+  BOOST_CHECK(opensslpp::cipher_context::get_mode("AES-256-ECB") ==
+              opensslpp::cipher_mode_type::ecb);
+  BOOST_CHECK(opensslpp::cipher_context::get_mode("AES-128-CBC") ==
+              opensslpp::cipher_mode_type::cbc);
+  BOOST_CHECK(opensslpp::cipher_context::get_mode("AES-192-CBC") ==
+              opensslpp::cipher_mode_type::cbc);
+  BOOST_CHECK(opensslpp::cipher_context::get_mode("AES-256-CBC") ==
+              opensslpp::cipher_mode_type::cbc);
+  BOOST_CHECK(opensslpp::cipher_context::get_mode("AES-128-CTR") ==
+              opensslpp::cipher_mode_type::ctr);
+  BOOST_CHECK(opensslpp::cipher_context::get_mode("AES-192-CTR") ==
+              opensslpp::cipher_mode_type::ctr);
+  BOOST_CHECK(opensslpp::cipher_context::get_mode("AES-256-CTR") ==
+              opensslpp::cipher_mode_type::ctr);
+  BOOST_CHECK(opensslpp::cipher_context::get_mode("AES-128-GCM") ==
+              opensslpp::cipher_mode_type::gcm);
+  BOOST_CHECK(opensslpp::cipher_context::get_mode("AES-192-GCM") ==
+              opensslpp::cipher_mode_type::gcm);
+  BOOST_CHECK(opensslpp::cipher_context::get_mode("AES-256-GCM") ==
+              opensslpp::cipher_mode_type::gcm);
 }
 
 BOOST_AUTO_TEST_CASE(CipherContextGetBlockSizeStatic) {
@@ -229,7 +261,7 @@ BOOST_AUTO_TEST_CASE(CipherContextGetIVSizeStatic) {
 
 class cipher_context_fixture {
 protected:
-  auto create_encryption_context(opensslpp::cipher_context_mode_type mode,
+  auto create_encryption_context(opensslpp::cipher_context_operation_type mode,
                                  const std::string &cipher_name) {
     key_.resize(opensslpp::cipher_context::get_key_size_in_bytes(cipher_name));
     ivec_.resize(opensslpp::cipher_context::get_iv_size_in_bytes(cipher_name));
@@ -239,11 +271,11 @@ protected:
   }
   auto create_encryption_context(const std::string &cipher_name) {
     return create_encryption_context(
-        opensslpp::cipher_context_mode_type::encryption, cipher_name);
+        opensslpp::cipher_context_operation_type::encryption, cipher_name);
   }
   auto create_decryption_context(const std::string &cipher_name) {
     return create_encryption_context(
-        opensslpp::cipher_context_mode_type::decryption, cipher_name);
+        opensslpp::cipher_context_operation_type::decryption, cipher_name);
   }
 
 private:
@@ -251,13 +283,40 @@ private:
   buffer_type ivec_;
 };
 
-BOOST_FIXTURE_TEST_CASE(CipherContextGetMode, cipher_context_fixture) {
+BOOST_FIXTURE_TEST_CASE(CipherContextGetOperation, cipher_context_fixture) {
   auto encryption_context{create_encryption_context("AES-128-ECB")};
-  BOOST_CHECK(encryption_context.get_mode() ==
-              opensslpp::cipher_context_mode_type::encryption);
+  BOOST_CHECK(encryption_context.get_operation() ==
+              opensslpp::cipher_context_operation_type::encryption);
   auto decryption_context{create_decryption_context("AES-128-ECB")};
-  BOOST_CHECK(decryption_context.get_mode() ==
-              opensslpp::cipher_context_mode_type::decryption);
+  BOOST_CHECK(decryption_context.get_operation() ==
+              opensslpp::cipher_context_operation_type::decryption);
+}
+
+BOOST_FIXTURE_TEST_CASE(CipherContextGetMode, cipher_context_fixture) {
+  BOOST_CHECK(create_encryption_context("AES-128-ECB").get_mode() ==
+              opensslpp::cipher_mode_type::ecb);
+  BOOST_CHECK(create_encryption_context("AES-192-ECB").get_mode() ==
+              opensslpp::cipher_mode_type::ecb);
+  BOOST_CHECK(create_encryption_context("AES-256-ECB").get_mode() ==
+              opensslpp::cipher_mode_type::ecb);
+  BOOST_CHECK(create_encryption_context("AES-128-CBC").get_mode() ==
+              opensslpp::cipher_mode_type::cbc);
+  BOOST_CHECK(create_encryption_context("AES-192-CBC").get_mode() ==
+              opensslpp::cipher_mode_type::cbc);
+  BOOST_CHECK(create_encryption_context("AES-256-CBC").get_mode() ==
+              opensslpp::cipher_mode_type::cbc);
+  BOOST_CHECK(create_encryption_context("AES-128-CTR").get_mode() ==
+              opensslpp::cipher_mode_type::ctr);
+  BOOST_CHECK(create_encryption_context("AES-192-CTR").get_mode() ==
+              opensslpp::cipher_mode_type::ctr);
+  BOOST_CHECK(create_encryption_context("AES-256-CTR").get_mode() ==
+              opensslpp::cipher_mode_type::ctr);
+  BOOST_CHECK(create_encryption_context("AES-128-GCM").get_mode() ==
+              opensslpp::cipher_mode_type::gcm);
+  BOOST_CHECK(create_encryption_context("AES-192-GCM").get_mode() ==
+              opensslpp::cipher_mode_type::gcm);
+  BOOST_CHECK(create_encryption_context("AES-256-GCM").get_mode() ==
+              opensslpp::cipher_mode_type::gcm);
 }
 
 BOOST_FIXTURE_TEST_CASE(CipherContextGetBlockSize, cipher_context_fixture) {
@@ -350,9 +409,10 @@ BOOST_DATA_TEST_CASE(CipherContextRoundtripECB,
 
   const std::size_t valid_key_size{
       opensslpp::cipher_context::get_key_size_in_bytes(cipher_name)};
-  const std::size_t fake_ivec_size{16U}; // ECB mode does not use an IV
-  static constexpr std::size_t fake_tag_length{
-      16U}; // ECB mode does not use a tag
+  // ECB mode does not use an IV
+  const std::size_t fake_ivec_size{16U};
+  // ECB mode does not use a tag
+  static constexpr std::size_t fake_tag_length{16U};
 
   buffer_type key{valid_key_size};
   buffer_type fake_ivec{fake_ivec_size};
@@ -364,20 +424,20 @@ BOOST_DATA_TEST_CASE(CipherContextRoundtripECB,
   buffer_type restored_message{message_size};
   opensslpp::crypto_rng::generate(message);
 
-  BOOST_CHECK_THROW(
-      opensslpp::cipher_context(opensslpp::cipher_context_mode_type::encryption,
-                                cipher_name, key, fake_ivec, fake_tag),
-      opensslpp::core_error);
-  BOOST_CHECK_THROW(
-      opensslpp::cipher_context(opensslpp::cipher_context_mode_type::encryption,
-                                cipher_name, key, fake_ivec),
-      opensslpp::core_error);
-  BOOST_CHECK_THROW(
-      opensslpp::cipher_context(opensslpp::cipher_context_mode_type::encryption,
-                                cipher_name, key, {}, fake_tag),
-      opensslpp::core_error);
+  BOOST_CHECK_THROW(opensslpp::cipher_context(
+                        opensslpp::cipher_context_operation_type::encryption,
+                        cipher_name, key, fake_ivec, fake_tag),
+                    opensslpp::core_error);
+  BOOST_CHECK_THROW(opensslpp::cipher_context(
+                        opensslpp::cipher_context_operation_type::encryption,
+                        cipher_name, key, fake_ivec),
+                    opensslpp::core_error);
+  BOOST_CHECK_THROW(opensslpp::cipher_context(
+                        opensslpp::cipher_context_operation_type::encryption,
+                        cipher_name, key, {}, fake_tag),
+                    opensslpp::core_error);
   opensslpp::cipher_context encryption_context(
-      opensslpp::cipher_context_mode_type::encryption, cipher_name, key);
+      opensslpp::cipher_context_operation_type::encryption, cipher_name, key);
   BOOST_CHECK(encryption_context.get_tag_size_in_bytes() == 0U);
   BOOST_CHECK(encryption_context.get_block_size_in_bytes() != 1U);
   message.resize(message_size + 1U);
@@ -393,20 +453,20 @@ BOOST_DATA_TEST_CASE(CipherContextRoundtripECB,
                     opensslpp::core_error);
   encryption_context.finalize();
 
-  BOOST_CHECK_THROW(
-      opensslpp::cipher_context(opensslpp::cipher_context_mode_type::decryption,
-                                cipher_name, key, fake_ivec, fake_tag),
-      opensslpp::core_error);
-  BOOST_CHECK_THROW(
-      opensslpp::cipher_context(opensslpp::cipher_context_mode_type::decryption,
-                                cipher_name, key, fake_ivec),
-      opensslpp::core_error);
-  BOOST_CHECK_THROW(
-      opensslpp::cipher_context(opensslpp::cipher_context_mode_type::decryption,
-                                cipher_name, key, {}, fake_tag),
-      opensslpp::core_error);
+  BOOST_CHECK_THROW(opensslpp::cipher_context(
+                        opensslpp::cipher_context_operation_type::decryption,
+                        cipher_name, key, fake_ivec, fake_tag),
+                    opensslpp::core_error);
+  BOOST_CHECK_THROW(opensslpp::cipher_context(
+                        opensslpp::cipher_context_operation_type::decryption,
+                        cipher_name, key, fake_ivec),
+                    opensslpp::core_error);
+  BOOST_CHECK_THROW(opensslpp::cipher_context(
+                        opensslpp::cipher_context_operation_type::decryption,
+                        cipher_name, key, {}, fake_tag),
+                    opensslpp::core_error);
   opensslpp::cipher_context decryption_context(
-      opensslpp::cipher_context_mode_type::decryption, cipher_name, key);
+      opensslpp::cipher_context_operation_type::decryption, cipher_name, key);
   BOOST_CHECK(decryption_context.get_tag_size_in_bytes() == 0U);
   BOOST_CHECK(decryption_context.get_block_size_in_bytes() != 1U);
   encrypted_message.resize(message_size + 1U);
@@ -439,8 +499,8 @@ BOOST_DATA_TEST_CASE(CipherContextRoundtripCBC,
       opensslpp::cipher_context::get_key_size_in_bytes(cipher_name)};
   const std::size_t valid_ivec_size{
       opensslpp::cipher_context::get_iv_size_in_bytes(cipher_name)};
-  static constexpr std::size_t fake_tag_length{
-      16U}; // CBC mode does not use a tag
+  // CBC mode does not use a tag
+  static constexpr std::size_t fake_tag_length{16U};
 
   buffer_type key{valid_key_size};
   buffer_type ivec{valid_ivec_size};
@@ -453,12 +513,13 @@ BOOST_DATA_TEST_CASE(CipherContextRoundtripCBC,
   buffer_type restored_message{message_size};
   opensslpp::crypto_rng::generate(message);
 
-  BOOST_CHECK_THROW(
-      opensslpp::cipher_context(opensslpp::cipher_context_mode_type::encryption,
-                                cipher_name, key, ivec, fake_tag),
-      opensslpp::core_error);
+  BOOST_CHECK_THROW(opensslpp::cipher_context(
+                        opensslpp::cipher_context_operation_type::encryption,
+                        cipher_name, key, ivec, fake_tag),
+                    opensslpp::core_error);
   opensslpp::cipher_context encryption_context(
-      opensslpp::cipher_context_mode_type::encryption, cipher_name, key, ivec);
+      opensslpp::cipher_context_operation_type::encryption, cipher_name, key,
+      ivec);
   BOOST_CHECK(encryption_context.get_tag_size_in_bytes() == 0U);
   BOOST_CHECK(encryption_context.get_block_size_in_bytes() != 1U);
   message.resize(message_size + 1U);
@@ -474,12 +535,13 @@ BOOST_DATA_TEST_CASE(CipherContextRoundtripCBC,
                     opensslpp::core_error);
   encryption_context.finalize();
 
-  BOOST_CHECK_THROW(
-      opensslpp::cipher_context(opensslpp::cipher_context_mode_type::decryption,
-                                cipher_name, key, ivec, fake_tag),
-      opensslpp::core_error);
+  BOOST_CHECK_THROW(opensslpp::cipher_context(
+                        opensslpp::cipher_context_operation_type::decryption,
+                        cipher_name, key, ivec, fake_tag),
+                    opensslpp::core_error);
   opensslpp::cipher_context decryption_context(
-      opensslpp::cipher_context_mode_type::decryption, cipher_name, key, ivec);
+      opensslpp::cipher_context_operation_type::decryption, cipher_name, key,
+      ivec);
   BOOST_CHECK(decryption_context.get_tag_size_in_bytes() == 0U);
   BOOST_CHECK(decryption_context.get_block_size_in_bytes() != 1U);
   encrypted_message.resize(message_size + 1U);
@@ -512,8 +574,8 @@ BOOST_DATA_TEST_CASE(CipherContextRoundtripCTR,
       opensslpp::cipher_context::get_key_size_in_bytes(cipher_name)};
   const std::size_t valid_ivec_size{
       opensslpp::cipher_context::get_iv_size_in_bytes(cipher_name)};
-  static constexpr std::size_t fake_tag_length{
-      16U}; // CTR mode does not use a tag
+  // CTR mode does not use a tag
+  static constexpr std::size_t fake_tag_length{16U};
 
   buffer_type key{valid_key_size};
   buffer_type ivec{valid_ivec_size};
@@ -526,12 +588,13 @@ BOOST_DATA_TEST_CASE(CipherContextRoundtripCTR,
   buffer_type restored_message{message_size};
   opensslpp::crypto_rng::generate(message);
 
-  BOOST_CHECK_THROW(
-      opensslpp::cipher_context(opensslpp::cipher_context_mode_type::encryption,
-                                cipher_name, key, ivec, fake_tag),
-      opensslpp::core_error);
+  BOOST_CHECK_THROW(opensslpp::cipher_context(
+                        opensslpp::cipher_context_operation_type::encryption,
+                        cipher_name, key, ivec, fake_tag),
+                    opensslpp::core_error);
   opensslpp::cipher_context encryption_context(
-      opensslpp::cipher_context_mode_type::encryption, cipher_name, key, ivec);
+      opensslpp::cipher_context_operation_type::encryption, cipher_name, key,
+      ivec);
   BOOST_CHECK(encryption_context.get_tag_size_in_bytes() == 0U);
   BOOST_CHECK(encryption_context.get_block_size_in_bytes() == 1U);
   encrypted_message.resize(message_size + 1U);
@@ -543,12 +606,13 @@ BOOST_DATA_TEST_CASE(CipherContextRoundtripCTR,
                     opensslpp::core_error);
   encryption_context.finalize();
 
-  BOOST_CHECK_THROW(
-      opensslpp::cipher_context(opensslpp::cipher_context_mode_type::decryption,
-                                cipher_name, key, ivec, fake_tag),
-      opensslpp::core_error);
+  BOOST_CHECK_THROW(opensslpp::cipher_context(
+                        opensslpp::cipher_context_operation_type::decryption,
+                        cipher_name, key, ivec, fake_tag),
+                    opensslpp::core_error);
   opensslpp::cipher_context decryption_context(
-      opensslpp::cipher_context_mode_type::decryption, cipher_name, key, ivec);
+      opensslpp::cipher_context_operation_type::decryption, cipher_name, key,
+      ivec);
   BOOST_CHECK(decryption_context.get_tag_size_in_bytes() == 0U);
   BOOST_CHECK(decryption_context.get_block_size_in_bytes() == 1U);
   restored_message.resize(message_size + 1U);
@@ -588,12 +652,13 @@ BOOST_DATA_TEST_CASE(CipherContextRoundtripGCM,
   opensslpp::crypto_rng::generate(message);
 
   tag.resize(1U);
-  BOOST_CHECK_THROW(
-      opensslpp::cipher_context(opensslpp::cipher_context_mode_type::encryption,
-                                cipher_name, key, ivec, tag),
-      opensslpp::core_error);
+  BOOST_CHECK_THROW(opensslpp::cipher_context(
+                        opensslpp::cipher_context_operation_type::encryption,
+                        cipher_name, key, ivec, tag),
+                    opensslpp::core_error);
   opensslpp::cipher_context encryption_context(
-      opensslpp::cipher_context_mode_type::encryption, cipher_name, key, ivec);
+      opensslpp::cipher_context_operation_type::encryption, cipher_name, key,
+      ivec);
   const std::size_t tag_length{encryption_context.get_tag_size_in_bytes()};
   BOOST_CHECK(tag_length != 0U);
   BOOST_CHECK(encryption_context.get_block_size_in_bytes() == 1U);
@@ -608,19 +673,19 @@ BOOST_DATA_TEST_CASE(CipherContextRoundtripGCM,
   tag.resize(tag_length);
   encryption_context.finalize(tag);
 
-  BOOST_CHECK_THROW(
-      opensslpp::cipher_context(opensslpp::cipher_context_mode_type::decryption,
-                                cipher_name, key, ivec),
-      opensslpp::core_error);
+  BOOST_CHECK_THROW(opensslpp::cipher_context(
+                        opensslpp::cipher_context_operation_type::decryption,
+                        cipher_name, key, ivec),
+                    opensslpp::core_error);
   tag.resize(tag_length + 1U);
-  BOOST_CHECK_THROW(
-      opensslpp::cipher_context(opensslpp::cipher_context_mode_type::decryption,
-                                cipher_name, key, ivec, tag),
-      opensslpp::core_error);
+  BOOST_CHECK_THROW(opensslpp::cipher_context(
+                        opensslpp::cipher_context_operation_type::decryption,
+                        cipher_name, key, ivec, tag),
+                    opensslpp::core_error);
   tag.resize(tag_length);
   opensslpp::cipher_context decryption_context(
-      opensslpp::cipher_context_mode_type::decryption, cipher_name, key, ivec,
-      tag);
+      opensslpp::cipher_context_operation_type::decryption, cipher_name, key,
+      ivec, tag);
   BOOST_CHECK(decryption_context.get_tag_size_in_bytes() == tag_length);
   BOOST_CHECK(decryption_context.get_block_size_in_bytes() == 1U);
   restored_message.resize(message_size + 1U);
@@ -656,17 +721,108 @@ BOOST_DATA_TEST_CASE(CipherContextUpdatedIVCTR,
   opensslpp::crypto_rng::generate(message);
 
   opensslpp::cipher_context encryption_context(
-      opensslpp::cipher_context_mode_type::encryption, cipher_name, key, ivec);
+      opensslpp::cipher_context_operation_type::encryption, cipher_name, key,
+      ivec);
   encryption_context.update(message, encrypted_message);
 
   buffer_type updated_ivec{valid_ivec_size};
   encryption_context.extract_updated_iv(updated_ivec);
 
   auto fast_encryption_context{opensslpp::cipher_context::create_with_offset(
-      std::size(message), opensslpp::cipher_context_mode_type::encryption,
+      std::size(message), opensslpp::cipher_context_operation_type::encryption,
       cipher_name, key, ivec)};
   buffer_type fast_updated_ivec{valid_ivec_size};
   fast_encryption_context.extract_updated_iv(fast_updated_ivec);
 
   BOOST_CHECK(updated_ivec == fast_updated_ivec);
+}
+
+BOOST_DATA_TEST_CASE(CipherContextCTRResume,
+                     boost::unit_test::data::make(bit_lengths) *
+                         boost::unit_test::data::make(stream_message_sizes),
+                     bit_length, message_size) {
+  const std::string cipher_name{"AES-" + std::to_string(bit_length) + "-CTR"};
+
+  const std::size_t valid_key_size{
+      opensslpp::cipher_context::get_key_size_in_bytes(cipher_name)};
+  const std::size_t valid_ivec_size{
+      opensslpp::cipher_context::get_iv_size_in_bytes(cipher_name)};
+
+  buffer_type key{valid_key_size};
+  buffer_type ivec{valid_ivec_size};
+  opensslpp::crypto_rng::generate(key);
+  opensslpp::crypto_rng::generate(ivec);
+
+  const std::size_t first_part_size{message_size / 2U};
+  const std::size_t second_part_size{message_size - first_part_size};
+
+  buffer_type message{message_size};
+  opensslpp::crypto_rng::generate(message);
+
+  const util::const_byte_span message_v{message};
+  const util::const_byte_span message_first_part_v{
+      message_v.first(first_part_size)};
+  const util::const_byte_span message_second_part_v{
+      message_v.last(second_part_size)};
+
+  // single pass encryption
+  buffer_type encrypted_message_single_pass{message_size};
+  {
+    opensslpp::cipher_context encryption_context(
+        opensslpp::cipher_context_operation_type::encryption, cipher_name, key,
+        ivec);
+    encryption_context.update(message_v, encrypted_message_single_pass);
+    encryption_context.finalize();
+  }
+
+  // encrypting with 2 update calls
+  buffer_type encrypted_message_partial_updates{message_size};
+  {
+    const util::byte_span encrypted_message_partial_updates_v{
+        encrypted_message_partial_updates};
+    const util::byte_span encrypted_message_partial_updates_first_part_v{
+        encrypted_message_partial_updates_v.first(first_part_size)};
+    const util::byte_span encrypted_message_partial_updates_second_part_v{
+        encrypted_message_partial_updates_v.last(second_part_size)};
+
+    opensslpp::cipher_context encryption_context(
+        opensslpp::cipher_context_operation_type::encryption, cipher_name, key,
+        ivec);
+    encryption_context.update(message_first_part_v,
+                              encrypted_message_partial_updates_first_part_v);
+    encryption_context.update(message_second_part_v,
+                              encrypted_message_partial_updates_second_part_v);
+    encryption_context.finalize();
+  }
+
+  BOOST_CHECK(encrypted_message_partial_updates ==
+              encrypted_message_single_pass);
+
+  // encrypting with context re-creation (resume)
+  buffer_type encrypted_message_resume{message_size};
+  {
+    const util::byte_span encrypted_message_resume_v{encrypted_message_resume};
+    const util::byte_span encrypted_message_resume_first_part_v{
+        encrypted_message_resume_v.first(first_part_size)};
+    const util::byte_span encrypted_message_resume_second_part_v{
+        encrypted_message_resume_v.last(second_part_size)};
+
+    opensslpp::cipher_context initial_encryption_context(
+        opensslpp::cipher_context_operation_type::encryption, cipher_name, key,
+        ivec);
+    initial_encryption_context.update(message_first_part_v,
+                                      encrypted_message_resume_first_part_v);
+    initial_encryption_context.finalize();
+
+    auto resumed_encryption_context{
+        opensslpp::cipher_context::create_with_offset(
+            first_part_size,
+            opensslpp::cipher_context_operation_type::encryption, cipher_name,
+            key, ivec)};
+    resumed_encryption_context.update(message_second_part_v,
+                                      encrypted_message_resume_second_part_v);
+    resumed_encryption_context.finalize();
+  }
+
+  BOOST_CHECK(encrypted_message_resume == encrypted_message_single_pass);
 }

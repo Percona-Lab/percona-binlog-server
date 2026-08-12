@@ -21,6 +21,8 @@
 #include <memory>
 #include <string>
 
+#include "opensslpp/cipher_mode_type_fwd.hpp"
+
 #include "util/byte_span_fwd.hpp"
 
 namespace opensslpp {
@@ -28,8 +30,8 @@ namespace opensslpp {
 class cipher_context {
 public:
   cipher_context() noexcept = default;
-  // * 'mode' must be either cipher_context_mode_type::encryption or
-  //   cipher_context_mode_type::decryption
+  // * 'operation' must be either cipher_context_operation_type::encryption or
+  //   cipher_context_operation_type::decryption
   // * 'cipher_name' must be a valid cipher name supported by OpenSSL
   //   (currently only 'XXX-ECB', 'XXX-CBC', 'XXX-CTR', and'XXX-GCM')
   // * 'key' must be of proper length for the given cipher (see
@@ -47,7 +49,7 @@ public:
   // block size.
   cipher_context(
       // no std::string_view for 'cipher' as it needs to be null-terminated
-      cipher_context_mode_type mode, const std::string &cipher_name,
+      cipher_context_operation_type operation, const std::string &cipher_name,
       util::const_byte_span key, util::const_byte_span ivec = {},
       util::const_byte_span tag = {});
   ~cipher_context() noexcept = default;
@@ -62,13 +64,21 @@ public:
 
   [[nodiscard]] bool is_empty() const noexcept { return !impl_; }
 
-  [[nodiscard]] cipher_context_mode_type get_mode() const noexcept;
+  [[nodiscard]] cipher_context_operation_type get_operation() const noexcept;
 
+  [[nodiscard]] cipher_mode_type get_mode() const noexcept;
   [[nodiscard]] std::size_t get_block_size_in_bytes() const noexcept;
   [[nodiscard]] std::size_t get_key_size_in_bytes() const noexcept;
   [[nodiscard]] std::size_t get_iv_size_in_bytes() const noexcept;
   [[nodiscard]] std::size_t get_tag_size_in_bytes() const noexcept;
 
+  [[nodiscard]] static bool
+  is_cipher_name_known(const std::string &cipher_name) noexcept;
+  [[nodiscard]] static bool is_mode_supported(cipher_mode_type mode) noexcept;
+  [[nodiscard]] static bool
+  is_cipher_name_supported(const std::string &cipher_name) noexcept;
+  [[nodiscard]] static cipher_mode_type
+  get_mode(const std::string &cipher_name) noexcept;
   [[nodiscard]] static std::size_t
   get_block_size_in_bytes(const std::string &cipher_name);
   [[nodiscard]] static std::size_t
@@ -86,12 +96,10 @@ public:
   void update(util::const_byte_span input, util::byte_span output);
   void finalize(util::byte_span output_tag = {});
 
-  static cipher_context create_with_offset(std::uint64_t offset,
-                                           cipher_context_mode_type mode,
-                                           const std::string &cipher_name,
-                                           util::const_byte_span key,
-                                           util::const_byte_span ivec = {},
-                                           util::const_byte_span tag = {});
+  static cipher_context create_with_offset(
+      std::uint64_t offset, cipher_context_operation_type operation,
+      const std::string &cipher_name, util::const_byte_span key,
+      util::const_byte_span ivec = {}, util::const_byte_span tag = {});
 
 private:
   struct native_helper;
