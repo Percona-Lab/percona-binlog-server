@@ -195,13 +195,25 @@ install_deps() {
         fi
         yum -y install git wget
         yum -y install rpm-build make rpmdevtools cmake3 libcurl-devel zlib-devel
+        if [ "${RHEL}" = "8" ]; then
+           dnf install -y oracle-epel-release-el8
+           dnf config-manager --set-enabled ol8_developer_EPEL
+           yum install openssl3-devel
+        fi
         if [ "${RHEL}" != "10" ]; then
            yum -y install rpmlint
         fi
         yum -y install gcc gcc-c++
         yum -y install libatomic
         if [ "x${RHEL}" != "x2023" ]; then
-            yum -y install curl openssl-devel
+            if [ "${RHEL}" = "8" ]; then
+                dnf install -y oracle-epel-release-el8
+                dnf config-manager --set-enabled ol8_developer_EPEL
+                yum -y install openssl3-devel
+            else
+                yum -y install openssl-devel
+            fi
+            yum -y install curl
             if [ "x$RHEL" = "x8" -o "x$RHEL" = "x9" ]; then
                 yum -y install gcc-toolset-14-gcc gcc-toolset-14-gcc-c++ gcc-toolset-14-binutils
                 source /opt/rh/gcc-toolset-14/enable
