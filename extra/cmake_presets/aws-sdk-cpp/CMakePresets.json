@@ -21,7 +21,8 @@
         "FORCE_SHARED_CRT": "OFF",
         "ENABLE_TESTING": "OFF",
         "AUTORUN_UNIT_TESTS": "OFF",
-        "BUILD_ONLY": "s3-crt"
+        "BUILD_ONLY": "s3-crt",
+        "ENFORCE_SUBMODULE_VERSIONS": "OFF"
       }
     },
 

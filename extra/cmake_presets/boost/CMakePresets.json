@@ -18,7 +18,8 @@
         "CMAKE_CXX_EXTENSIONS": "OFF",
         "CMAKE_CXX_FLAGS_INIT": "$env{ASAN_FLAGS} $env{STDLIB_FLAGS}",
         "BUILD_SHARED_LIBS": "OFF",
-        "BUILD_TESTING": "OFF"
+        "BUILD_TESTING": "OFF",
+        "BOOST_INCLUDE_LIBRARIES": "algorithm;align;asio;container;date_time;describe;icl;io;json;lexical_cast;math;mp11;mpl;scope;system;test;url;uuid"
       }
     },
 

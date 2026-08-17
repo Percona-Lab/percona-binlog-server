@@ -1,0 +1,267 @@
+name: Packages
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: packages-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  RPM_RELEASE: 1
+  DEB_RELEASE: 1
+
+jobs:
+  source:
+    name: Source tarball
+    runs-on: ubuntu-latest
+    container: oraclelinux:8
+    timeout-minutes: 60
+    steps:
+      - name: Install checkout prerequisites
+        run: dnf -y install git tar gzip findutils
+
+      - name: Checking out source tree
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Mark workspace safe for git
+        run: git config --global --add safe.directory '*'
+
+      - name: Extract version
+        id: version
+        run: |
+          version=$(sed -n \
+            's/.*app_version{\([0-9]*\)U,[[:space:]]*\([0-9]*\)U,[[:space:]]*\([0-9]*\)U}.*/\1.\2.\3/p' \
+            src/app_version.hpp)
+          test -n "${version}"
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "Building version ${version}"
+
+      - name: Create source tarballs
+        run: |
+          mkdir -p "${GITHUB_WORKSPACE}/build"
+          ./packaging/scripts/binlog-server_builder.sh \
+            --builddir="${GITHUB_WORKSPACE}/build" \
+            --install_deps=0 \
+            --get_sources=1 \
+            --repo="file://${GITHUB_WORKSPACE}" \
+            --branch="$(git rev-parse HEAD)" \
+            --version="${{ steps.version.outputs.version }}" \
+            --rpm_release="${RPM_RELEASE}" \
+            --deb_release="${DEB_RELEASE}"
+
+      - name: Uploading source tarballs
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: source-tarball
+          path: source_tarball/*.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+  srpm:
+    name: Source RPM
+    needs: source
+    runs-on: ubuntu-latest
+    container: oraclelinux:8
+    timeout-minutes: 60
+    steps:
+      - name: Install checkout prerequisites
+        run: dnf -y install git tar gzip findutils rpm-build
+
+      - name: Checking out source tree
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Downloading source tarballs
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: source-tarball
+          path: source_tarball
+
+      - name: Building source RPM
+        run: |
+          mkdir -p "${GITHUB_WORKSPACE}/build"
+          ./packaging/scripts/binlog-server_builder.sh \
+            --builddir="${GITHUB_WORKSPACE}/build" \
+            --install_deps=0 \
+            --get_sources=0 \
+            --build_src_rpm=1 \
+            --rpm_release="${RPM_RELEASE}"
+
+      - name: Uploading source RPM
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: srpm
+          path: srpm/*.src.rpm
+          if-no-files-found: error
+          retention-days: 30
+
+  sdeb:
+    name: Source DEB
+    needs: source
+    runs-on: ubuntu-latest
+    container: ubuntu:jammy
+    timeout-minutes: 60
+    env:
+      DEBIAN_FRONTEND: noninteractive
+    steps:
+      - name: Install checkout prerequisites
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            git ca-certificates tar gzip xz-utils lsb-release \
+            devscripts debhelper dpkg-dev
+
+      - name: Checking out source tree
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Downloading source tarballs
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: source-tarball
+          path: source_tarball
+
+      - name: Building source DEB
+        run: |
+          mkdir -p "${GITHUB_WORKSPACE}/build"
+          ./packaging/scripts/binlog-server_builder.sh \
+            --builddir="${GITHUB_WORKSPACE}/build" \
+            --install_deps=1 \
+            --get_sources=0 \
+            --build_src_deb=1 \
+            --deb_release="${DEB_RELEASE}"
+
+      - name: Uploading source DEB
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: source-deb
+          path: |
+            source_deb/*.dsc
+            source_deb/*.tar.gz
+            source_deb/*.tar.xz
+            source_deb/*_source.changes
+          if-no-files-found: error
+          retention-days: 7
+
+  rpm:
+    name: RPM ${{ matrix.target.name }} ${{ matrix.arch.name }}
+    needs: srpm
+    runs-on: ${{ matrix.arch.runner }}
+    container: ${{ matrix.target.image }}
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - { image: 'oraclelinux:9', name: 'el9' }
+          - { image: 'oraclelinux:10', name: 'el10' }
+          - { image: 'amazonlinux:2023', name: 'amzn2023' }
+        arch:
+          - { runner: 'ubuntu-latest', name: 'x86_64' }
+          - { runner: 'ubuntu-24.04-arm', name: 'aarch64' }
+    steps:
+      - name: Install checkout prerequisites
+        run: dnf -y install git tar gzip findutils
+
+      - name: Checking out source tree
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Downloading source RPM
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: srpm
+          path: srpm
+
+      - name: Building RPM
+        run: |
+          mkdir -p "${GITHUB_WORKSPACE}/build"
+          ./packaging/scripts/binlog-server_builder.sh \
+            --builddir="${GITHUB_WORKSPACE}/build" \
+            --install_deps=1 \
+            --get_sources=0 \
+            --build_rpm=1 \
+            --rpm_release="${RPM_RELEASE}"
+
+      - name: Package contents
+        run: |
+          for package in rpm/*.rpm; do
+            echo "=== ${package}"
+            rpm -qlp "${package}"
+            rpm -qp --requires "${package}"
+          done
+
+      - name: Uploading RPM
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: rpm-${{ matrix.target.name }}-${{ matrix.arch.name }}
+          path: rpm/*.rpm
+          if-no-files-found: error
+          retention-days: 30
+
+  deb:
+    name: DEB ${{ matrix.target.name }} ${{ matrix.arch.name }}
+    needs: sdeb
+    runs-on: ${{ matrix.arch.runner }}
+    container: ${{ matrix.target.image }}
+    timeout-minutes: 180
+    env:
+      DEBIAN_FRONTEND: noninteractive
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - { image: 'ubuntu:jammy', name: 'jammy' }
+          - { image: 'ubuntu:noble', name: 'noble' }
+          - { image: 'ubuntu:resolute', name: 'resolute' }
+          - { image: 'debian:bookworm', name: 'bookworm' }
+          - { image: 'debian:trixie', name: 'trixie' }
+        arch:
+          - { runner: 'ubuntu-latest', name: 'x86_64' }
+          - { runner: 'ubuntu-24.04-arm', name: 'aarch64' }
+    steps:
+      - name: Install checkout prerequisites
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            git ca-certificates tar gzip xz-utils lsb-release
+
+      - name: Checking out source tree
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Downloading source DEB
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: source-deb
+          path: source_deb
+
+      - name: Building DEB
+        run: |
+          mkdir -p "${GITHUB_WORKSPACE}/build"
+          ./packaging/scripts/binlog-server_builder.sh \
+            --builddir="${GITHUB_WORKSPACE}/build" \
+            --install_deps=1 \
+            --get_sources=0 \
+            --build_deb=1 \
+            --deb_release="${DEB_RELEASE}"
+
+      - name: Package contents
+        run: |
+          for package in deb/*.deb; do
+            echo "=== ${package}"
+            dpkg -c "${package}"
+            dpkg -I "${package}"
+          done
+
+      - name: Uploading DEB
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: deb-${{ matrix.target.name }}-${{ matrix.arch.name }}
+          path: deb/*.deb
+          if-no-files-found: error
+          retention-days: 30
