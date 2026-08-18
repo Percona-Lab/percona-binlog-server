@@ -1,11 +1,17 @@
 %global percona_binlog_server_version @@PBS_RELEASE@@
 %global rpm_release @@RPM_RELEASE@@
-%global BUILD_PRESET_DEBUG debug_gcc14
-%global BUILD_PRESET_RELEASE release_gcc14
-%global BOOST_VERSION 1.90.0
-%global AWS_VERSION 1.11.774
+%global build_preset_debug debug_gcc14
+%global build_preset_release release_gcc14
+%global boost_version 1.90.0
+%global aws_sdk_version 1.11.774
 %global release %{rpm_release}%{?dist}
 %global optflags %(echo %{optflags} | sed 's/-specs=[^ ]*annobin[^ ]*//g')
+
+%global boost_src %{_builddir}/boost-%{boost_version}
+%global aws_src %{_builddir}/aws-sdk-cpp-%{aws_sdk_version}
+%global app_src %{_builddir}/%{name}-%{version}
+%global boost_install %{_builddir}/boost-%{boost_version}-install-%{build_preset_release}
+%global aws_install %{_builddir}/aws-sdk-cpp-%{aws_sdk_version}-install-%{build_preset_release}
 
 Name:           percona-binlog-server
 Version:        %{percona_binlog_server_version}
@@ -15,123 +21,108 @@ Summary:        Percona Binary Log Server
 License:        GPLv2
 URL:            https://github.com/Percona-Lab/percona-binlog-server
 Source0:        %{name}-%{version}.tar.gz
+Source1:        boost-%{boost_version}.tar.gz
+Source2:        aws-sdk-cpp-%{aws_sdk_version}.tar.gz
+
+BuildRequires:  cmake >= 3.21
+BuildRequires:  make
+BuildRequires:  libcurl-devel
+BuildRequires:  zlib-devel
+BuildRequires:  percona-server-devel
+%if 0%{?amzn}
+BuildRequires:  gcc14
+BuildRequires:  gcc14-c++
+%else
+BuildRequires:  openssl-devel
+%if 0%{?rhel} && 0%{?rhel} < 10
+BuildRequires:  gcc-toolset-14-gcc
+BuildRequires:  gcc-toolset-14-gcc-c++
+BuildRequires:  gcc-toolset-14-binutils
+%else
+BuildRequires:  gcc
+BuildRequires:  gcc-c++
+%endif
+%endif
 
 %description
 Percona Binary Log Server is a command-line utility that acts as an enhanced version of mysqlbinlog in --read-from-remote-server mode. It serves as a replication client and can stream binary log events from a remote Oracle MySQL Server / Percona Server for MySQL both to a local filesystem and to a cloud storage (currently AWS S3). The tool is capable of automatically reconnecting to the remote server and resuming operations from the point where it was previously stopped.
 
 %prep
 %setup -q
+tar -xf %{SOURCE1} -C %{_builddir}
+tar -xf %{SOURCE2} -C %{_builddir}
+cp -v extra/cmake_presets/boost/CMakePresets.json %{boost_src}/
+cp -v extra/cmake_presets/aws-sdk-cpp/CMakePresets.json %{aws_src}/
 
 %build
-# Build Debug version
-mkdir -p debug
-(
 %if 0%{?amzn}
-  echo "Running Amazon Linux–specific command"
-  sed -i 's:gcc-14:gcc14-gcc:' ../percona-binlog-server-%{version}/extra/cmake_presets/boost/CMakePresets.json
-  sed -i 's:g++-14:gcc14-g++:' ../percona-binlog-server-%{version}/extra/cmake_presets/boost/CMakePresets.json
-  export CFLAGS="${CFLAGS//-Werror*/}"
-  export CXXFLAGS="${CXXFLAGS//-Werror*/}"
-  export LDFLAGS="${LDFLAGS//-Werror*/}"
-  export CFLAGS="${CFLAGS//-specs*annobin*/}"
-  export CXXFLAGS="${CXXFLAGS//-specs*annobin*/}"
-  export LDFLAGS="${LDFLAGS//-specs*annobin*/}"
-  export CFLAGS="${CFLAGS//-specs*redhat-hardened-cc1*/}"
-  export CXXFLAGS="${CXXFLAGS//-specs*redhat-hardened-cc1*/}"
-  export LDFLAGS="${LDFLAGS//-specs*redhat-hardened-ld*/}"
+echo "Running Amazon Linux-specific command"
+export CFLAGS="${CFLAGS//-Werror*/}"
+export CXXFLAGS="${CXXFLAGS//-Werror*/}"
+export LDFLAGS="${LDFLAGS//-Werror*/}"
+export CFLAGS="${CFLAGS//-specs*annobin*/}"
+export CXXFLAGS="${CXXFLAGS//-specs*annobin*/}"
+export LDFLAGS="${LDFLAGS//-specs*annobin*/}"
+export CFLAGS="${CFLAGS//-specs*redhat-hardened-cc1*/}"
+export CXXFLAGS="${CXXFLAGS//-specs*redhat-hardened-cc1*/}"
+export LDFLAGS="${LDFLAGS//-specs*redhat-hardened-ld*/}"
+compiler_args="-DCMAKE_C_COMPILER=gcc14-gcc -DCMAKE_CXX_COMPILER=gcc14-g++"
+%else
+%if 0%{?rhel} && 0%{?rhel} < 10
+. /opt/rh/gcc-toolset-14/enable
 %endif
-  sed -i 's:/boost-install-:/percona-binlog-server-%{version}/debug/boost-install-:' ../percona-binlog-server-%{version}/CMakePresets.json
-  sed -i 's:/aws-sdk-cpp-install-:/percona-binlog-server-%{version}/debug/aws-sdk-cpp-install-:' ../percona-binlog-server-%{version}/CMakePresets.json
-  cd debug
-  # Build Boost Libraries
-  git clone --recurse-submodules -b boost-%{BOOST_VERSION} --jobs=8 https://github.com/boostorg/boost.git boost
-  cd boost
-  git switch -c required_release
-  cd ..
-  cp -v ../../percona-binlog-server-%{version}/extra/cmake_presets/boost/CMakePresets.json boost
-
-  cmake ./boost \
-    --preset %{BUILD_PRESET_DEBUG}
-  cmake --build ./boost-build-%{BUILD_PRESET_DEBUG} --parallel
-  cmake --install ./boost-build-%{BUILD_PRESET_DEBUG}
-
-  # Build AWS SDK for C++ Libraries
-  git clone --recurse-submodules --jobs=8 https://github.com/aws/aws-sdk-cpp.git aws-sdk-cpp
-  cd aws-sdk-cpp
-  git checkout --recurse-submodules -b required_release %{AWS_VERSION}
-  cd ..
-  cp -v ../../percona-binlog-server-%{version}/extra/cmake_presets/aws-sdk-cpp/CMakePresets.json aws-sdk-cpp
-  cmake ./aws-sdk-cpp --preset %{BUILD_PRESET_DEBUG}
-  cmake --build ./aws-sdk-cpp-build-%{BUILD_PRESET_DEBUG} --parallel
-  cmake --install ./aws-sdk-cpp-build-%{BUILD_PRESET_DEBUG}
-
-  # Build Percona Binlog Server
-  cd ../..
-  cmake ./percona-binlog-server-%{version} --preset %{BUILD_PRESET_DEBUG}
-  cmake --build ./percona-binlog-server-%{version}-build-%{BUILD_PRESET_DEBUG} --parallel
-)
-
-# Build Release version
-mkdir -p release
-(
-%if 0%{?amzn}
-  echo "Running Amazon Linux–specific command"
-  export CFLAGS="${CFLAGS//-Werror*/}"
-  export CXXFLAGS="${CXXFLAGS//-Werror*/}"
-  export LDFLAGS="${LDFLAGS//-Werror*/}"
-  export CFLAGS="${CFLAGS//-specs*annobin*/}"
-  export CXXFLAGS="${CXXFLAGS//-specs*annobin*/}"
-  export LDFLAGS="${LDFLAGS//-specs*annobin*/}"
-  export CFLAGS="${CFLAGS//-specs*redhat-hardened-cc1*/}"
-  export CXXFLAGS="${CXXFLAGS//-specs*redhat-hardened-cc1*/}"
-  export LDFLAGS="${LDFLAGS//-specs*redhat-hardened-ld*/}"
+compiler_args="-DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++"
 %endif
-  sed -i 's:debug/boost-install-:release/boost-install-:' ../percona-binlog-server-%{version}/CMakePresets.json
-  sed -i 's:debug/aws-sdk-cpp-install-:release/aws-sdk-cpp-install-:' ../percona-binlog-server-%{version}/CMakePresets.json
-  cd release
-  # Build Boost Libraries
-  git clone --recurse-submodules -b boost-%{BOOST_VERSION} --jobs=8 https://github.com/boostorg/boost.git boost
-  cd boost
-  git switch -c required_release
-  cd ..
-  cp -v ../../percona-binlog-server-%{version}/extra/cmake_presets/boost/CMakePresets.json boost
 
-  cmake ./boost \
-    --preset %{BUILD_PRESET_RELEASE}
-  cmake --build ./boost-build-%{BUILD_PRESET_RELEASE} --parallel
-  cmake --install ./boost-build-%{BUILD_PRESET_RELEASE}
+build_jobs=%{?_smp_build_ncpus}%{!?_smp_build_ncpus:$(nproc)}
 
-  # Build AWS SDK for C++ Libraries
-  git clone --recurse-submodules --jobs=8 https://github.com/aws/aws-sdk-cpp.git aws-sdk-cpp
-  cd aws-sdk-cpp
-  git checkout --recurse-submodules -b required_release %{AWS_VERSION}
-  cd ..
-  cp -v ../../percona-binlog-server-%{version}/extra/cmake_presets/aws-sdk-cpp/CMakePresets.json aws-sdk-cpp
-  cmake ./aws-sdk-cpp --preset %{BUILD_PRESET_RELEASE}
-  cmake --build ./aws-sdk-cpp-build-%{BUILD_PRESET_RELEASE} --parallel
-  cmake --install ./aws-sdk-cpp-build-%{BUILD_PRESET_RELEASE}
+build_dependency() {
+  local src="$1"
+  local build_dir="$2"
+  cmake "${src}" --preset %{build_preset_release} ${compiler_args}
+  cmake --build "${build_dir}" --parallel "${build_jobs}"
+  cmake --install "${build_dir}"
+}
 
-  # Build Percona Binlog Server
-  cd ../..
-  cmake ./percona-binlog-server-%{version} --preset %{BUILD_PRESET_RELEASE}
-  cmake --build ./percona-binlog-server-%{version}-build-%{BUILD_PRESET_RELEASE} --parallel
-)
+build_dependency %{boost_src} \
+  %{_builddir}/boost-%{boost_version}-build-%{build_preset_release}
+build_dependency %{aws_src} \
+  %{_builddir}/aws-sdk-cpp-%{aws_sdk_version}-build-%{build_preset_release}
+
+for preset in %{build_preset_debug} %{build_preset_release}; do
+  testing=ON
+  if [ "${preset}" = "%{build_preset_debug}" ]; then
+    testing=OFF
+  fi
+  cmake %{app_src} --preset "${preset}" ${compiler_args} \
+    -DCMAKE_PREFIX_PATH="%{aws_install};%{boost_install}" \
+    -DBUILD_TESTING="${testing}"
+  cmake --build %{_builddir}/%{name}-%{version}-build-"${preset}" \
+    --parallel "${build_jobs}"
+done
+
+%check
+cd %{_builddir}/%{name}-%{version}-build-%{build_preset_release}
+./binlog_server version
+ctest --output-on-failure
 
 %install
-install -d %{buildroot}/usr/bin
-install -m 755 ../percona-binlog-server-%{version}-build-%{BUILD_PRESET_DEBUG}/binlog_server %{buildroot}/usr/bin/binlog_server-debug
-install -m 755 ../percona-binlog-server-%{version}-build-%{BUILD_PRESET_RELEASE}/binlog_server %{buildroot}/usr/bin/binlog_server
-install -m 0755 -d %{buildroot}/%{_sysconfdir}
-install -D -m 0644  main_config.json %{buildroot}/%{_sysconfdir}/percona-binlog-server/main_config.json
-
+install -Dpm 0755 \
+  %{_builddir}/%{name}-%{version}-build-%{build_preset_release}/binlog_server \
+  %{buildroot}%{_bindir}/binlog_server
+install -Dpm 0755 \
+  %{_builddir}/%{name}-%{version}-build-%{build_preset_debug}/binlog_server \
+  %{buildroot}%{_bindir}/binlog_server-debug
+install -Dpm 0640 main_config.json \
+  %{buildroot}%{_sysconfdir}/%{name}/main_config.json
 
 %files
 %license LICENSE
 %doc README.md
-%config(noreplace) %attr(0640,root,root) /%{_sysconfdir}/percona-binlog-server/main_config.json
-/usr/bin/binlog_server-debug
-/usr/bin/binlog_server
-
+%dir %{_sysconfdir}/%{name}
+%config(noreplace) %attr(0640,root,root) %{_sysconfdir}/%{name}/main_config.json
+%{_bindir}/binlog_server
+%{_bindir}/binlog_server-debug
 
 %changelog
 * Thu Jun 11 2026 Yura Sorokin <yura.sorokin@percona.com> - 0.3.1-1
