@@ -7,6 +7,17 @@
 %global release %{rpm_release}%{?dist}
 %global optflags %(echo %{optflags} | sed 's/-specs=[^ ]*annobin[^ ]*//g')
 
+# el8's system openssl-devel is OpenSSL 1.1.1, but the opensslpp module
+# (PBS-39 encryption support) needs OpenSSL 3.0 EVP APIs. openssl3-devel
+# (from EPEL, or oracle-epel-release-el8 on Oracle Linux) installs side by
+# side under /usr/{include,lib64}/openssl3, so it has to be pointed to
+# explicitly instead of relying on CMake's default OpenSSL discovery.
+%if 0%{?rhel} == 8
+%global pbs_openssl3_cmake_opts -DOPENSSL_ROOT_DIR=/usr/lib64/openssl3 -DOPENSSL_INCLUDE_DIR=/usr/include/openssl3 -DOPENSSL_CRYPTO_LIBRARY=/usr/lib64/openssl3/libcrypto.so -DOPENSSL_SSL_LIBRARY=/usr/lib64/openssl3/libssl.so
+%else
+%global pbs_openssl3_cmake_opts %{nil}
+%endif
+
 Name:           percona-binlog-server
 Version:        %{percona_binlog_server_version}
 Release:        %{release}
@@ -15,6 +26,10 @@ Summary:        Percona Binary Log Server
 License:        GPLv2
 URL:            https://github.com/Percona-Lab/percona-binlog-server
 Source0:        %{name}-%{version}.tar.gz
+
+%if 0%{?rhel} == 8
+BuildRequires: openssl3-devel
+%endif
 
 %description
 Percona Binary Log Server is a command-line utility that acts as an enhanced version of mysqlbinlog in --read-from-remote-server mode. It serves as a replication client and can stream binary log events from a remote Oracle MySQL Server / Percona Server for MySQL both to a local filesystem and to a cloud storage (currently AWS S3). The tool is capable of automatically reconnecting to the remote server and resuming operations from the point where it was previously stopped.
@@ -67,7 +82,7 @@ mkdir -p debug
 
   # Build Percona Binlog Server
   cd ../..
-  cmake ./percona-binlog-server-%{version} --preset %{BUILD_PRESET_DEBUG}
+  cmake ./percona-binlog-server-%{version} --preset %{BUILD_PRESET_DEBUG} %{pbs_openssl3_cmake_opts}
   cmake --build ./percona-binlog-server-%{version}-build-%{BUILD_PRESET_DEBUG} --parallel
 )
 
@@ -113,7 +128,7 @@ mkdir -p release
 
   # Build Percona Binlog Server
   cd ../..
-  cmake ./percona-binlog-server-%{version} --preset %{BUILD_PRESET_RELEASE}
+  cmake ./percona-binlog-server-%{version} --preset %{BUILD_PRESET_RELEASE} %{pbs_openssl3_cmake_opts}
   cmake --build ./percona-binlog-server-%{version}-build-%{BUILD_PRESET_RELEASE} --parallel
 )
 

@@ -134,17 +134,24 @@ get_system() {
         ARCH=$(echo $(uname -m) | sed -e 's:i686:i386:g')
         OS_NAME="el$RHEL"
         OS="rpm"
+        if [ -f /etc/oracle-release ]; then
+            IS_ORACLE=1
+        else
+            IS_ORACLE=0
+        fi
     elif [ -f /etc/amazon-linux-release ]; then
         GLIBC_VER_TMP="$(rpm glibc -qa --qf %{VERSION})"
         RHEL=$(rpm --eval %amzn)
         ARCH=$(echo $(uname -m) | sed -e 's:i686:i386:g')
         OS_NAME="amzn$RHEL"
         OS="rpm"
+        IS_ORACLE=0
     else
         GLIBC_VER_TMP="$(dpkg-query -W -f='${Version}' libc6 | awk -F'-' '{print $1}')"
         ARCH=$(uname -m)
         OS_NAME="$( . /etc/os-release && echo $VERSION_CODENAME)"
         OS="deb"
+        IS_ORACLE=0
     fi
     export GLIBC_VER=".glibc${GLIBC_VER_TMP}"
     return
@@ -189,6 +196,10 @@ install_deps() {
             if [ "x${RHEL}" = "x10" ]; then
                 dnf install https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm
                 /usr/bin/crb enable
+            elif [ "x${RHEL}" = "x8" -a "x${IS_ORACLE}" = "x1" ]; then
+                # Oracle Linux mirrors EPEL under ol8_developer_EPEL but needs
+                # its own release package rather than Fedora's epel-release
+                yum -y install oracle-epel-release-el8
             else
                 yum -y install epel-release
             fi
@@ -202,6 +213,14 @@ install_deps() {
         yum -y install libatomic
         if [ "x${RHEL}" != "x2023" ]; then
             yum -y install curl openssl-devel
+            if [ "x${RHEL}" = "x8" ]; then
+                # PBS-39 encryption support needs OpenSSL 3.0 EVP APIs that
+                # el8's system openssl-devel (1.1.1) does not provide.
+                # openssl3-devel from EPEL installs side by side under
+                # /usr/{include,lib64}/openssl3 and is pointed to explicitly
+                # in packaging/rpm/binlog-server.spec's cmake configure step.
+                yum -y install openssl3-devel
+            fi
             if [ "x$RHEL" = "x8" -o "x$RHEL" = "x9" ]; then
                 yum -y install gcc-toolset-14-gcc gcc-toolset-14-gcc-c++ gcc-toolset-14-binutils
                 source /opt/rh/gcc-toolset-14/enable
