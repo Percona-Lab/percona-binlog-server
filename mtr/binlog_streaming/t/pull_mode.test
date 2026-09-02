@@ -1,3 +1,7 @@
+# temporarily marking this test as non-parallel because of the hardcoded
+# listening port
+--source include/not_parallel.inc
+
 --source ../include/have_binsrv.inc
 
 --source ../include/v80_v84_compatibility_defines.inc
