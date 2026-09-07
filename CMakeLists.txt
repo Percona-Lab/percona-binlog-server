@@ -486,10 +486,6 @@ set(operations_source_files
   src/operations/fetch_operation.hpp
   src/operations/fetch_operation.cpp
 
-  src/operations/flag_signal_guard_fwd.hpp
-  src/operations/flag_signal_guard.hpp
-  src/operations/flag_signal_guard.cpp
-
   src/operations/generic_operation_fwd.hpp
 
   src/operations/list_operation.hpp
@@ -641,25 +637,6 @@ set(binsrv_source_files
   src/binsrv/time_unit.cpp
 )
 
-add_executable(binlog_server ${binsrv_source_files} ${operations_source_files})
-target_link_libraries(binlog_server
-  PRIVATE
-    binlog_server_compiler_flags
-    binsrv::lib_util
-    binsrv::lib_easymysql
-    binsrv::lib_gtids
-    binsrv::lib_events
-    binsrv::lib_models
-    binsrv::lib_opensslpp
-    Boost::headers Boost::json Boost::url
-    aws-cpp-sdk-s3-crt
-)
-# it is not possible to propagate CXX_EXTENSIONS and CXX_STANDARD_REQUIRED
-# via interface library (binlog_server_compiler_flags)
-set_target_properties(binlog_server PROPERTIES
-  CXX_STANDARD_REQUIRED YES
-  CXX_EXTENSIONS NO
-)
 set(mysql_harness_source_files
   extra/mysql_protocol/mysql/harness/net_ts/buffer.h
 
@@ -687,7 +664,8 @@ set(mysql_protocol_source_files
   extra/mysql_protocol/mysqlrouter/classic_protocol_frame.h
   extra/mysql_protocol/mysqlrouter/classic_protocol_message.h
   extra/mysql_protocol/mysqlrouter/classic_protocol_session_track.h
-  extra/mysql_protocol/mysqlrouter/classic_protocol_wire.h)
+  extra/mysql_protocol/mysqlrouter/classic_protocol_wire.h
+)
 
 set(minimysql_source_files
   src/minimysql/caching_sha2_password_authenticator.hpp
@@ -702,25 +680,32 @@ set(minimysql_source_files
   src/minimysql/network_service.cpp
   src/minimysql/sample_event_collection.hpp
   src/minimysql/sample_event_collection.cpp
-
-  src/minimysql_app.cpp
 )
 
-add_executable(minimysql_server ${minimysql_source_files} ${mysql_protocol_source_files} ${mysql_harness_source_files})
-
-target_compile_definitions(minimysql_server PRIVATE BOOST_ASIO_NO_DEPRECATED)
-target_link_libraries(minimysql_server
+add_executable(binlog_server
+  ${binsrv_source_files}
+  ${operations_source_files}
+  ${minimysql_source_files}
+  ${mysql_protocol_source_files}
+  ${mysql_harness_source_files}
+)
+target_include_directories(binlog_server PRIVATE "${PROJECT_SOURCE_DIR}/extra/mysql_protocol")
+target_link_libraries(binlog_server
   PRIVATE
     binlog_server_compiler_flags
-    Boost::headers Boost::asio
+    binsrv::lib_util
+    binsrv::lib_easymysql
+    binsrv::lib_gtids
+    binsrv::lib_events
+    binsrv::lib_models
+    binsrv::lib_opensslpp
+    Boost::headers Boost::json Boost::url Boost::asio
+    aws-cpp-sdk-s3-crt
     OpenSSL::Crypto
 )
-
-target_include_directories(minimysql_server PRIVATE "${PROJECT_SOURCE_DIR}/extra/mysql_protocol")
-
 # it is not possible to propagate CXX_EXTENSIONS and CXX_STANDARD_REQUIRED
 # via interface library (binlog_server_compiler_flags)
-set_target_properties(minimysql_server PROPERTIES
+set_target_properties(binlog_server PROPERTIES
   CXX_STANDARD_REQUIRED YES
   CXX_EXTENSIONS NO
 )

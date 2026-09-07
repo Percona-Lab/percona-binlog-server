@@ -17,7 +17,17 @@
 #include <cassert>
 #include <csignal>
 #include <cstddef>
+#include <exception>
 #include <memory>
+#include <thread>
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wnull-dereference"
+
+#include <boost/asio/io_context.hpp>
+#include <boost/asio/signal_set.hpp>
+
+#pragma GCC diagnostic pop
 
 #include "binsrv/basic_logger.hpp"
 #include "binsrv/exception_handling_helpers.hpp"
@@ -28,7 +38,6 @@
 
 #include "operations/basic_operation.hpp"
 #include "operations/collector_context.hpp"
-#include "operations/flag_signal_guard.hpp"
 #include "operations/mode_type.hpp"
 
 #include "util/command_line_helpers_fwd.hpp"
@@ -53,16 +62,45 @@ generic_operation<mode_type::fetch>::generic_operation(
     logger->log(binsrv::log_severity::delimiter,
                 "'fetch' operation mode specified");
 
-    const auto &termination_flag{flag_signal_guard::instance()};
+    boost::asio::io_context io_ctx;
+    boost::asio::signal_set signals(io_ctx, SIGINT, SIGTERM);
+    // calling this 'async_wait()' method on a 'signal_set' created on the
+    // same 'io_context' will make sure that the 'io_context::run()' method
+    // will not return immediately and will wait for the signal to be received
+    // or for the 'io_context::stop()' method to be called explicitly
+    signals.async_wait([&io_ctx](auto, auto) { io_ctx.stop(); });
     logger->log(binsrv::log_severity::info,
                 "set custom handlers for SIGINT and SIGTERM signals");
 
     operations::collector_context collector_ctx{
         easymysql::connection_replication_mode_type::non_blocking, config,
-        logger, termination_flag};
-    const auto receive_result{collector_ctx.receive_binlog_events()};
+        logger};
 
-    if (receive_result) {
+    std::exception_ptr operation_exception{};
+    bool operation_result{};
+    {
+      const std::jthread operation_thread{
+          [&io_ctx, &collector_ctx, &operation_exception, &operation_result]() {
+            // 'io_ctx.stop()' should be called regardless of whether the
+            // 'receive_binlog_events()' method throws or returns normally
+
+            // it is also OK if this 'io_ctx.stop()' method is called multiple
+            // times (in the signal handler and here)
+            try {
+              operation_result = collector_ctx.receive_binlog_events(io_ctx);
+            } catch (...) {
+              operation_exception = std::current_exception();
+            }
+            io_ctx.stop();
+          }};
+
+      io_ctx.run();
+    }
+    if (operation_exception) {
+      std::rethrow_exception(operation_exception);
+    }
+
+    if (operation_result) {
       logger->log(binsrv::log_severity::info,
                   "successfully fetched everything and disconnected");
       result = true;

@@ -21,6 +21,8 @@
 #include <atomic>
 #include <string_view>
 
+#include <boost/asio/ts/netfwd.hpp>
+
 #include "binsrv/basic_logger_fwd.hpp"
 #include "binsrv/main_config_fwd.hpp"
 #include "binsrv/storage_fwd.hpp"
@@ -31,8 +33,6 @@
 #include "easymysql/connection_fwd.hpp"
 #include "easymysql/library_fwd.hpp"
 
-#include "operations/flag_signal_guard_fwd.hpp"
-
 #include "util/command_line_helpers_fwd.hpp"
 
 namespace operations {
@@ -42,8 +42,7 @@ public:
   // deliberately passing by value as we will be moving from these objects
   collector_context(
       easymysql::connection_replication_mode_type connection_replication_mode,
-      binsrv::main_config_ptr config, binsrv::basic_logger_ptr logger,
-      const flag_signal_guard &termination_flag);
+      binsrv::main_config_ptr config, binsrv::basic_logger_ptr logger);
 
   collector_context(const collector_context &) = delete;
   collector_context &operator=(const collector_context &) = delete;
@@ -58,13 +57,12 @@ public:
                                   const binsrv::main_config &config);
 
   // deliberately not marked as [[nodiscard]]
-  bool receive_binlog_events();
+  bool receive_binlog_events(const boost::asio::io_context &io_ctx);
 
 private:
   easymysql::connection_replication_mode_type connection_replication_mode_;
   binsrv::main_config_ptr config_;
   binsrv::basic_logger_ptr logger_;
-  const flag_signal_guard *termination_flag_;
   binsrv::storage_ptr storage_{};
   easymysql::library_ptr mysql_lib_{};
 

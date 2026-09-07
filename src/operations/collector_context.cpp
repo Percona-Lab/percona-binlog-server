@@ -26,6 +26,8 @@
 
 #include <boost/lexical_cast.hpp>
 
+#include <boost/asio/io_context.hpp>
+
 #include "binsrv/basic_logger.hpp"
 #include "binsrv/log_severity.hpp"
 #include "binsrv/logger_factory.hpp"
@@ -48,7 +50,6 @@
 #include "easymysql/library.hpp"
 
 #include "operations/event_generation_helpers.hpp"
-#include "operations/flag_signal_guard.hpp"
 #include "operations/logger_helpers.hpp"
 
 #include "util/byte_span_fwd.hpp"
@@ -59,11 +60,9 @@ namespace operations {
 
 collector_context::collector_context(
     easymysql::connection_replication_mode_type connection_replication_mode,
-    binsrv::main_config_ptr config, binsrv::basic_logger_ptr logger,
-    const flag_signal_guard &termination_flag)
+    binsrv::main_config_ptr config, binsrv::basic_logger_ptr logger)
     : connection_replication_mode_{connection_replication_mode},
-      config_{std::move(config)}, logger_{std::move(logger)},
-      termination_flag_{&termination_flag} {
+      config_{std::move(config)}, logger_{std::move(logger)} {
   const auto &keyring_config{config_->root().get<"keyring">()};
   if (keyring_config.has_value()) {
     log_keyring_config_info(*logger_, *keyring_config);
@@ -141,7 +140,8 @@ void collector_context::reinitialize_logger_from_config(
               "application version: " + app_version.get_string());
 }
 
-bool collector_context::receive_binlog_events() {
+bool collector_context::receive_binlog_events(
+    const boost::asio::io_context &io_ctx) {
   const auto &replication_config{config_->root().get<"replication">()};
 
   const auto verify_checksum{replication_config.get<"verify_checksum">()};
@@ -166,7 +166,7 @@ bool collector_context::receive_binlog_events() {
   bool fetch_result{};
 
   const auto &optional_rewrite_config{replication_config.get<"rewrite">()};
-  while (!termination_flag_->is_flag_set() &&
+  while (!io_ctx.stopped() &&
          (fetch_result = connection.fetch_binlog_event(portion)) &&
          !portion.empty()) {
     if (portion[0] != expected_event_packet_prefix) {
@@ -193,7 +193,7 @@ bool collector_context::receive_binlog_events() {
   // 2) connection timed out waiting for events (fetch_result is false)
   // 3) fetched everything and disconnected (fetch_result is true)
   //    (can only happen in "fetch", non-blocking node)
-  if (termination_flag_->is_flag_set()) {
+  if (io_ctx.stopped()) {
     // case (1)
     logger_->log(binsrv::log_severity::info,
                  "fetching binlog events loop terminated by signal");
