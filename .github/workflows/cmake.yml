@@ -89,9 +89,13 @@ jobs:
             name: "GCC 14 Valgrind",
             label: "debug_gcc14",
             run_mtr: true,
-            mtr_options: "--valgrind",
             run_ctest: true,
-            ctest_options: "-T memcheck"
+            ctest_options: "-T memcheck",
+            # Disabling PCLMULQDQ instruction availability for OpenSSL
+            # which causes Valgrind false positives
+            # (Conditional jump or move depends on uninitialised value)
+            openssl_ia32cap_fix: "OPENSSL_ia32cap=~0x200000000",
+            valgrind_options: "valgrind --error-exitcode=42 --leak-check=full --show-leak-kinds=all --errors-for-leak-kinds=all --num-callers=64"
           }
         - {
             name: "Clang 20 Debug",
@@ -322,7 +326,8 @@ jobs:
       if: matrix.config.run_mtr && !endsWith(matrix.config.name, 'Valgrind')
       working-directory: ${{github.workspace}}/dist/${{format('mysql-{0}-{1}', env.MYSQL_80_VERSION, env.MYSQL_GLIBC_SUFFIX)}}/mysql-test
       run: |
-        BINSRV=${{github.workspace}}/src-build-${{matrix.config.label}}/binlog_server ./mtr \
+        ${{matrix.config.openssl_ia32cap_fix}} \
+        BINSRV="${{matrix.config.valgrind_options}} ${{github.workspace}}/src-build-${{matrix.config.label}}/binlog_server" ./mtr \
           --vardir=${{runner.temp}}/mtrvardir80 \
           --force --max-test-fail=0 --retry=0 --nounit-tests --big-test --parallel=${{steps.cpu-cores.outputs.count}} \
           --testcase-timeout=30 --suite-timeout=60 --shutdown-timeout=600 \
@@ -332,7 +337,8 @@ jobs:
       if: matrix.config.run_mtr
       working-directory: ${{github.workspace}}/dist/${{format('mysql-{0}-{1}-minimal', env.MYSQL_84_VERSION, env.MYSQL_GLIBC_SUFFIX)}}/mysql-test
       run: |
-        BINSRV=${{github.workspace}}/src-build-${{matrix.config.label}}/binlog_server ./mtr \
+        ${{matrix.config.openssl_ia32cap_fix}} \
+        BINSRV="${{matrix.config.valgrind_options}} ${{github.workspace}}/src-build-${{matrix.config.label}}/binlog_server" ./mtr \
           --vardir=${{runner.temp}}/mtrvardir84 \
           --force --max-test-fail=0 --retry=0 --nounit-tests --big-test --parallel=${{steps.cpu-cores.outputs.count}} \
           --testcase-timeout=30 --suite-timeout=60 --shutdown-timeout=600 \
@@ -343,7 +349,9 @@ jobs:
       working-directory: ${{github.workspace}}/src-build-${{matrix.config.label}}
       # Execute tests defined by the CMake configuration.
       # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
-      run: ctest --parallel --output-on-failure ${{matrix.config.ctest_options}}
+      run: |
+        ${{matrix.config.openssl_ia32cap_fix}} \
+        ctest --parallel --output-on-failure ${{matrix.config.ctest_options}}
 
     - name: Info Build artifacts
       run: |
