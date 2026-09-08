@@ -179,6 +179,43 @@ void connection_context::parse_client_greeting(
 }
 
 [[nodiscard]] network_buffer_type
+connection_context::generate_encoded_auth_method_switch() {
+  std::string result_buffer{};
+
+  classic_protocol::message::server::AuthMethodSwitch auth_method_switch{
+      get_server_auth_method(), generate_server_auth_method_switch_data()};
+  using auth_method_switch_frame = classic_protocol::frame::Frame<
+      classic_protocol::message::server::AuthMethodSwitch>;
+  auto encode_result{classic_protocol::encode<auth_method_switch_frame>(
+      {generate_sequence_number(), auth_method_switch},
+      get_shared_capabilities(), boost::asio::dynamic_buffer(result_buffer))};
+
+  if (!encode_result) {
+    throw boost::system::system_error{encode_result.error()};
+  }
+  return result_buffer;
+}
+
+void connection_context::parse_client_auth_method_data(
+    const network_buffer_type &payload) {
+  auto buffer{boost::asio::buffer(payload)};
+  using auth_method_data_frame = classic_protocol::frame::Frame<
+      classic_protocol::message::client::AuthMethodData>;
+  auto decode_result{classic_protocol::decode<auth_method_data_frame>(
+      buffer, get_shared_capabilities())};
+  if (!decode_result) {
+    throw boost::system::system_error{decode_result.error()};
+  }
+
+  validate_and_update_sequence_number(decode_result.value().second.seq_id());
+
+  // after the auth method switch the client uses the server's auth method
+  client_auth_method_ = server_auth_method_;
+  client_auth_method_data_ =
+      decode_result.value().second.payload().auth_method_data();
+}
+
+[[nodiscard]] network_buffer_type
 connection_context::generate_encoded_fast_auth() {
   std::string result_buffer{};
 
@@ -427,6 +464,18 @@ connection_context::generate_server_auth_method_data() {
   // be 20 random bytes)
   server_auth_method_data_ = "01234567890123456789";
   return server_auth_method_data_;
+}
+
+[[nodiscard]] std::string
+connection_context::generate_server_auth_method_switch_data() const {
+  if (get_server_auth_method() ==
+      caching_sha2_password_authenticator::plugin_name) {
+    // caching_sha2_password follows the historical handshake seed shape:
+    // 20 bytes of challenge data plus a trailing NUL filler.
+    return get_server_auth_method_data() + '\0';
+  }
+
+  return get_server_auth_method_data();
 }
 
 [[nodiscard]] std::uint8_t connection_context::generate_sequence_number() {

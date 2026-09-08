@@ -130,6 +130,9 @@ public:
   [[nodiscard]] network_buffer_type generate_encoded_server_greeting();
   void parse_client_greeting(const network_buffer_type &payload);
 
+  [[nodiscard]] network_buffer_type generate_encoded_auth_method_switch();
+  void parse_client_auth_method_data(const network_buffer_type &payload);
+
   [[nodiscard]] network_buffer_type generate_encoded_fast_auth();
   [[nodiscard]] network_buffer_type generate_encoded_ok();
   [[nodiscard]] network_buffer_type generate_encoded_eof();
@@ -228,6 +231,7 @@ private:
   [[nodiscard]] static capability_bitset
   get_default_server_capabilities() noexcept;
   [[nodiscard]] const std::string &generate_server_auth_method_data();
+  [[nodiscard]] std::string generate_server_auth_method_switch_data() const;
   [[nodiscard]] std::uint8_t generate_sequence_number();
   void validate_and_update_sequence_number(std::uint8_t sequence_number);
 
