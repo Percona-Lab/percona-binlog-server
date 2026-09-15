@@ -27,21 +27,32 @@ namespace binsrv {
 // Settings for the MySQL-protocol listener the Binlog Server exposes to
 // downstream clients when running in the 'pull' operation (the source-side
 // half of the replication graph). The whole block is optional in
-// main_config; when omitted the listener has no server-side RSA key pair
-// and any caching_sha2_password full-authentication attempt (0x04) will
-// fail per-session - matching the authenticator's own "both empty is OK"
-// acceptance at construction.
+// main_config.
 //
-// When the block IS present, both 'rsa_public_key_path' and
-// 'rsa_private_key_path' must be non-empty and readable PEM files - the
-// authenticator loads them to serve --get-server-public-key and to
-// RSA-OAEP-decrypt password ciphertext (see PBS-33 and
-// minimysql::caching_sha2_password_authenticator).
+// The block carries two independent pairs of options, each validated on
+// its own (both fields set together, or both left empty):
+//
+//   * 'rsa_public_key_path' / 'rsa_private_key_path' - server-side RSA
+//     key pair used by the caching_sha2_password authenticator to serve
+//     --get-server-public-key and to RSA-OAEP-decrypt password ciphertext
+//     (PBS-33). When empty, any caching_sha2_password full-auth attempt
+//     (0x04) fails per-session - matching the authenticator's own "both
+//     empty is OK" acceptance at construction. See
+//     minimysql::caching_sha2_password_authenticator.
+//
+//   * 'ssl_cert_path' / 'ssl_key_path' - server-side TLS cert / key pair
+//     for the optional TLS listener (PBS-31). When set, the listener
+//     advertises CLIENT_SSL in its greeting and honours
+//     Protocol::SSLRequest by upgrading the transport to TLS; when empty,
+//     the listener runs in plaintext-only mode. See
+//     minimysql::ssl_acceptor_context.
 struct [[nodiscard]] pbs_listener_config
     : util::nv_tuple<
           // clang-format off
                                                util::nv<"rsa_public_key_path" , std::string>,
-                                               util::nv<"rsa_private_key_path", std::string>
+                                               util::nv<"rsa_private_key_path", std::string>,
+                                               util::nv<"ssl_cert_path"       , std::string>,
+                                               util::nv<"ssl_key_path"        , std::string>
           // clang-format on
           > {
   void validate() const;

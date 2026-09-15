@@ -22,16 +22,29 @@
 namespace binsrv {
 
 void pbs_listener_config::validate() const {
-  // When the block is present at all, both paths must be non-empty; the
-  // authenticator loads them together and a one-sided configuration would
-  // fail deep inside opensslpp with a less actionable error.
-  const auto &public_key{get<"rsa_public_key_path">()};
-  const auto &private_key{get<"rsa_private_key_path">()};
-  if (public_key.empty() || private_key.empty()) {
+  // The two field pairs are validated independently. Each pair uses the
+  // "both set or both empty" invariant - a one-sided configuration is a
+  // mis-configuration that would fail deeper in the load path (opensslpp
+  // for RSA, boost::asio::ssl::context for TLS) with a less actionable
+  // error. Both-empty for a pair means "not configured", which is fine:
+  // the caching_sha2_password authenticator accepts empty RSA paths (any
+  // 0x04 full-auth attempt then fails per-session) and the network layer
+  // accepts empty SSL paths (listener stays plaintext-only).
+  const auto &rsa_public_key{get<"rsa_public_key_path">()};
+  const auto &rsa_private_key{get<"rsa_private_key_path">()};
+  if (rsa_public_key.empty() != rsa_private_key.empty()) {
     util::exception_location().raise<std::invalid_argument>(
         "error validating pbs_listener config: "
-        "rsa_public_key_path and rsa_private_key_path must both be "
-        "non-empty when 'pbs_listener' is set");
+        "rsa_public_key_path and rsa_private_key_path must both be set "
+        "or both be empty");
+  }
+
+  const auto &ssl_cert{get<"ssl_cert_path">()};
+  const auto &ssl_key{get<"ssl_key_path">()};
+  if (ssl_cert.empty() != ssl_key.empty()) {
+    util::exception_location().raise<std::invalid_argument>(
+        "error validating pbs_listener config: "
+        "ssl_cert_path and ssl_key_path must both be set or both be empty");
   }
 }
 

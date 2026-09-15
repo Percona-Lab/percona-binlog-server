@@ -50,6 +50,7 @@
 #pragma GCC diagnostic ignored "-Wnull-dereference"
 
 #include <boost/asio/io_context.hpp>
+#include <boost/asio/steady_timer.hpp>
 
 #pragma GCC diagnostic pop
 
@@ -57,6 +58,11 @@
 #include <boost/asio/use_awaitable.hpp>
 
 #include <boost/asio/ip/tcp.hpp>
+
+#include <boost/asio/experimental/awaitable_operators.hpp>
+
+#include <boost/asio/ssl/stream.hpp>
+#include <boost/asio/ssl/stream_base.hpp>
 
 #include <boost/describe/enum_to_string.hpp>
 
@@ -66,6 +72,7 @@
 #include "minimysql/connection_context.hpp"
 #include "minimysql/network_io_operations.hpp"
 #include "minimysql/sample_event_collection.hpp"
+#include "minimysql/ssl_acceptor_context.hpp"
 
 namespace minimysql {
 
@@ -490,11 +497,41 @@ boost::asio::awaitable<void> session_body(
   }
 }
 
-// MySQL session handling coroutine - writes server greeting, receives and
-// parses the client greeting, then delegates to the templated post-greeting
-// body. The socket type is left as a plain tcp::socket for now; a future
-// change adds an optional TLS-upgrade branch that hands session_body an
-// ssl::stream<tcp::socket> instead (PBS-31).
+// Perform a boost::asio::ssl::stream::async_handshake as server, bounded by
+// the same timeout used for the rest of the authentication phase. On timeout
+// or handshake error, throws a boost::system::system_error which the outer
+// session catch handler logs.
+boost::asio::awaitable<void> perform_ssl_handshake(
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
+    boost::asio::ssl::stream<boost::asio::ip::tcp::socket> &ssl_socket,
+    std::chrono::steady_clock::duration timeout) {
+  using namespace boost::asio::experimental::awaitable_operators;
+
+  boost::asio::steady_timer handshake_timer{ssl_socket.get_executor(), timeout};
+  auto timed_handshake_result{
+      co_await (ssl_socket.async_handshake(
+                    boost::asio::ssl::stream_base::server,
+                    boost::asio::as_tuple(boost::asio::use_awaitable)) ||
+                handshake_timer.async_wait(
+                    boost::asio::as_tuple(boost::asio::use_awaitable)))};
+
+  if (timed_handshake_result.index() != 0UZ) {
+    throw boost::system::system_error{boost::asio::error::timed_out,
+                                      "TLS handshake timeout"};
+  }
+
+  const auto &handshake_result{std::get<0UZ>(timed_handshake_result)};
+  const auto handshake_error_code{std::get<0UZ>(handshake_result)};
+  if (handshake_error_code) {
+    throw boost::system::system_error{handshake_error_code,
+                                      "TLS handshake error"};
+  }
+}
+
+// MySQL session handling coroutine - writes server greeting, then receives
+// and parses client greeting. On a Protocol::SSLRequest, upgrades the socket
+// to TLS and re-reads the full HandshakeResponse from the encrypted stream
+// before delegating to the templated post-greeting body.
 [[nodiscard]] boost::asio::awaitable<void> session(
     boost::asio::ip::tcp::socket socket,
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
@@ -504,7 +541,8 @@ boost::asio::awaitable<void> session_body(
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
     const std::string &server_rsa_public_key_path,
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
-    const std::string &server_rsa_private_key_path) {
+    const std::string &server_rsa_private_key_path,
+    minimysql::ssl_acceptor_context *ssl_ctx) {
   boost::system::error_code session_ec;
   const auto remote_endpoint{socket.remote_endpoint(session_ec)};
 
@@ -515,9 +553,10 @@ boost::asio::awaitable<void> session_body(
     minimysql::network_buffer_type data;
     data.reserve(network_service::expected_packet_size);
 
-    minimysql::connection_context context{username, password,
-                                          server_rsa_public_key_path,
-                                          server_rsa_private_key_path};
+    minimysql::connection_context context{
+        username, password, server_rsa_public_key_path,
+        server_rsa_private_key_path,
+        /* ssl_capability_enabled = */ ssl_ctx != nullptr};
 
     const auto server_greeting{context.generate_encoded_server_greeting()};
     print_server_greeting(remote_endpoint, context);
@@ -534,7 +573,50 @@ boost::asio::awaitable<void> session_body(
     context.parse_client_greeting(data);
     print_client_greeting(remote_endpoint, context);
 
-    co_await session_body(socket, context, remote_endpoint, data);
+    // Reject an SSL-requesting client the same way Percona Server does when
+    // its own SSL acceptor context is missing (see
+    // sql/auth/sql_authentication.cc: `if (!context.have_ssl()) return
+    // packet_error;`): drop the connection without sending an error frame,
+    // and log the reason for the operator. parse_client_greeting() is
+    // lenient enough to decode both the full form and the truncated
+    // SSLRequest form regardless of what the server advertised, so this
+    // decision is made after we have a fully populated context to inspect.
+    if (ssl_ctx == nullptr && context.client_requested_ssl()) {
+      std::cout << "client " << remote_endpoint
+                << " requested SSL (CLIENT_SSL capability bit set) but the "
+                   "server has no SSL context configured; set "
+                   "'pbs_listener.ssl_cert_path' and "
+                   "'pbs_listener.ssl_key_path' in the binlog_server "
+                   "config to enable TLS. Closing connection (matches "
+                   "Percona Server behaviour: no error frame is sent "
+                   "mid-handshake).\n";
+      co_return;
+    }
+
+    if (ssl_ctx != nullptr && context.is_sslrequest_greeting()) {
+      std::cout << "client requested TLS upgrade (SSLRequest) from "
+                << remote_endpoint << '\n';
+
+      boost::asio::ssl::stream<boost::asio::ip::tcp::socket> ssl_socket{
+          std::move(socket), ssl_ctx->native()};
+
+      co_await perform_ssl_handshake(
+          ssl_socket, network_service::session_authentication_timeout);
+
+      context.mark_transport_secure();
+      std::cout << "TLS handshake completed with " << remote_endpoint << '\n';
+
+      co_await minimysql::async_read_mysql_frame(
+          ssl_socket, data, network_service::session_authentication_timeout);
+      std::cout << "received encrypted client greeting (" << std::size(data)
+                << " bytes from " << remote_endpoint << ")\n";
+      context.parse_client_greeting(data);
+      print_client_greeting(remote_endpoint, context);
+
+      co_await session_body(ssl_socket, context, remote_endpoint, data);
+    } else {
+      co_await session_body(socket, context, remote_endpoint, data);
+    }
   } catch (...) {
     const std::string context{
         "session " + boost::lexical_cast<std::string>(remote_endpoint)};
@@ -555,7 +637,8 @@ boost::asio::awaitable<void> session_body(
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
     const std::string &server_rsa_public_key_path,
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
-    const std::string &server_rsa_private_key_path) {
+    const std::string &server_rsa_private_key_path,
+    minimysql::ssl_acceptor_context *ssl_ctx) {
   const scope_tracer tracer("listener");
 
   auto executor = acceptor.get_executor();
@@ -581,7 +664,7 @@ boost::asio::awaitable<void> session_body(
       boost::asio::co_spawn(executor,
                             session(std::move(socket), username, password,
                                     server_rsa_public_key_path,
-                                    server_rsa_private_key_path),
+                                    server_rsa_private_key_path, ssl_ctx),
                             boost::asio::detached);
     }
   } catch (...) {
@@ -596,11 +679,12 @@ network_service::network_service(
     // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
     std::string_view username, std::string_view password,
     std::string_view server_rsa_public_key_path,
-    std::string_view server_rsa_private_key_path)
+    std::string_view server_rsa_private_key_path,
+    std::unique_ptr<ssl_acceptor_context> ssl_ctx)
     : username_(username), password_(password),
       server_rsa_public_key_path_{server_rsa_public_key_path},
       server_rsa_private_key_path_{server_rsa_private_key_path},
-      context_{&context},
+      context_{&context}, ssl_ctx_{std::move(ssl_ctx)},
       acceptor_{std::make_unique<acceptor_type>(
           context, boost::asio::ip::tcp::endpoint{boost::asio::ip::tcp::v4(),
                                                   listening_port})} {
@@ -608,7 +692,7 @@ network_service::network_service(
   boost::asio::co_spawn(*context_,
                         listener(*acceptor_, username_, password_,
                                  server_rsa_public_key_path_,
-                                 server_rsa_private_key_path_),
+                                 server_rsa_private_key_path_, ssl_ctx_.get()),
                         boost::asio::detached);
 }
 

@@ -60,8 +60,8 @@
 //     |                                         |
 //     |   Client chooses password encoding (server accepts per transport):
 //     |                                         |
-//     |   (A) secure transport [TLS stub; connection_is_secure() false today]
-//     |--- cleartext password (0-terminated) ->|  verify_cleartext_password()
+//     |   (A) secure transport (TLS negotiated via PBS-31's SSLRequest branch)
+//     |--- cleartext password (0-terminated) -->|  verify_cleartext_password()
 //     |<-- OK / Access denied ------------------|
 //     |                                         |
 //     |   (B) plain TCP — client opts in to RSA (server expects ciphertext)
@@ -282,8 +282,10 @@ caching_sha2_password_authenticator::state() const noexcept {
 
 // True while the server must read another client AuthMoreData frame:
 // - awaiting_full_auth_response: client replies to 0x04 with either 0x02
-//   (request PEM) or RSA ciphertext when it already has the public key, or with
-//   a cleartext password when secure_transport_ is true (SSL/TLS stub).
+//   (request PEM) or RSA ciphertext when it already has the public key, or
+//   with a cleartext password when secure_transport_ is true (i.e. the
+//   network layer negotiated TLS and called
+//   connection_context::mark_transport_secure() before begin_authentication).
 // - awaiting_encrypted_password: client sends ciphertext after receiving PEM.
 bool caching_sha2_password_authenticator::expects_client_input()
     const noexcept {
@@ -449,8 +451,9 @@ authentication_state
 caching_sha2_password_authenticator::verify_cleartext_password(
     std::string_view password_payload) {
   // Full auth over a secure transport: client sends a 0-terminated password
-  // without RSA. PBS has no TLS yet (PBS-31); connection_is_secure() is always
-  // false, so this remains a placeholder until SSL is wired up.
+  // without RSA. Reached when the network layer upgraded the transport to
+  // TLS (see PBS-31) and connection_context::mark_transport_secure() was
+  // called so begin_authentication() observed secure_transport_ set.
   if (std::empty(password_payload) || password_payload.back() != '\0') {
     phase_ = phase::failed;
     return authentication_state::failed;

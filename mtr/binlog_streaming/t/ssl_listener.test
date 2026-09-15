@@ -1,0 +1,222 @@
+# Exercises the optional TLS listener on binlog_server pull (PBS-31). With
+# 'pbs_listener' set in the JSON config, the Binlog Server advertises
+# CLIENT_SSL and upgrades a client's Protocol::SSLRequest to TLS; once the
+# handshake completes, the caching_sha2_password full-auth branch takes the
+# cleartext-over-0x04 path instead of RSA (matches Percona Server on a
+# TLS-configured listener). TLS is per-session opt-in, so a non-TLS client
+# still connects to the same listener over plain TCP and completes
+# authentication via RSA (--get-server-public-key), matching Percona Server
+# behaviour with require_secure_transport=OFF.
+#
+# Reuses the standard MTR TLS materials shipped under $MYSQL_TEST_DIR
+# /std_data/ (the same server certificate ssl_connection.test uses when
+# exercising the replica-side TLS handshake); nothing new is shipped from
+# the Binlog Server suite for this test.
+
+# The Binlog Server listens on a hard-coded TCP port, so this test can not
+# run in parallel with other tests using the same port.
+--source include/not_parallel.inc
+
+--source ../include/have_binsrv.inc
+
+--source ../include/v80_v84_compatibility_defines.inc
+
+--source include/count_sessions.inc
+
+# in case of --repeat=N, we need to start from a fresh binary log to make
+# this test deterministic
+--echo *** Resetting replication at the very beginning of the test.
+--disable_query_log
+eval $stmt_reset_binary_logs_and_gtids;
+--enable_query_log
+
+# identifying backend storage type ('file' or 's3')
+--source ../include/identify_storage_backend.inc
+
+# creating data directory, configuration file, etc. The generated JSON gains
+# a 'pbs_listener' block because both ssl_cert / ssl_key vars are non-empty;
+# see mtr/binlog_streaming/include/generate_binsrv_config.inc.
+#
+# Scenario 2 below drives '--get-server-public-key' against the same
+# listener, so we also point pbs_listener at the RSA key pair shipped in
+# this suite's std_data - without it, the plain-TCP RSA branch of
+# caching_sha2_password full auth has no server public key to hand out
+# and the client's SELECT fails (see the memory
+# 'pbs-listener-rsa-key-mtr-dependency': any test that uses
+# --get-server-public-key or --server-public-key-path must configure the
+# RSA pair too).
+--let $binsrv_connect_timeout = 10
+--let $binsrv_read_timeout = 10
+--let $binsrv_idle_time = 1
+--let $binsrv_verify_checksum = TRUE
+--let $binsrv_replication_mode = position
+--let $binsrv_pbs_listener_rsa_public_key_path  = $MYSQL_TEST_DIR/suite/binlog_streaming/std_data/caching_sha2_full_auth_pubkey.pem
+--let $binsrv_pbs_listener_rsa_private_key_path = $MYSQL_TEST_DIR/suite/binlog_streaming/std_data/caching_sha2_full_auth_privkey.pem
+--let $binsrv_pbs_listener_ssl_cert = $MYSQL_TEST_DIR/std_data/server-cert-verify-san.pem
+--let $binsrv_pbs_listener_ssl_key  = $MYSQL_TEST_DIR/std_data/server-key-verify-san.pem
+--source ../include/set_up_binsrv_environment.inc
+
+--echo
+--echo *** Starting Binlog Server Utility in background in pull mode with
+--echo *** TLS enabled on its MySQL-protocol listener (server cert / key
+--echo *** taken from MYSQL_TEST_DIR/std_data).
+--echo *** stdout/stderr goes to a dedicated log so we can grep for TLS and
+--echo *** auth markers AFTER binsrv has exited (see auth_method_switch
+--echo *** .test for why we defer log inspection until after graceful
+--echo *** shutdown).
+--let $binsrv_pid_file = $MYSQL_TMP_DIR/ssl_listener_binsrv.pid
+--let $binsrv_stdout_log = $MYSQL_TMP_DIR/ssl_listener_binsrv_stdout.log
+--let $binsrv_spawn_cmd_line = $BINSRV pull $binsrv_config_file_path > $binsrv_stdout_log 2>&1 & echo \$! > $binsrv_pid_file
+
+# We route the spawn through Perl's system() rather than --exec because
+# mysqltest strips the shell's `$!` before it can be expanded, leaving the
+# PID file empty. Passing the command as an env var and executing it from
+# Perl leaves the shell metacharacters intact.
+--let EXPORTED_BINSRV_SPAWN_CMD_LINE = $binsrv_spawn_cmd_line
+--perl
+  use strict;
+  use warnings;
+  my $cmd = $ENV{'EXPORTED_BINSRV_SPAWN_CMD_LINE'};
+  system("$cmd");
+EOF
+
+--let $read_from_file = $binsrv_pid_file
+--source include/read_file_to_var.inc
+--let $binsrv_pid = $result
+
+# SELECT VERSION() is one of the queries the Binlog Server's command loop
+# recognises (see network_service.cpp). Only the mysql client exit code is
+# used as pass/fail; the row itself is discarded so the test stays stable
+# across changes to the Binlog Server's hard-coded version string.
+--let $probe_query = SELECT VERSION()
+
+--echo
+--echo *** Waiting for the Binlog Server listener to come up on
+--echo *** 127.0.0.1:3307. We probe with bash's /dev/tcp instead of the
+--echo *** mysql client because bash is not ASAN-instrumented and
+--echo *** /dev/tcp uses a plain connect(2), so each attempt is cheap and
+--echo *** measures exactly the "listening on the port" state we care
+--echo *** about.
+--let $max_wait = 300
+--let $iteration = 0
+--let $port_open = 0
+while ($iteration < $max_wait)
+{
+  if (!$port_open)
+  {
+    --error 0, 1
+    --exec bash -c "echo > /dev/tcp/127.0.0.1/3307" 2>/dev/null
+    --let $port_status = $__error
+    if ($port_status == 0)
+    {
+      --let $port_open = 1
+      --let $iteration = $max_wait
+    }
+    if ($port_status != 0)
+    {
+      --sleep 1
+      --inc $iteration
+    }
+  }
+}
+if (!$port_open)
+{
+  --die The Binlog Server listener did not become reachable on 3307 within 300 seconds
+}
+
+--echo
+--echo *** Scenario 1: TLS client. --ssl-mode=REQUIRED forces mysql to send
+--echo *** Protocol::SSLRequest first; the Binlog Server responds with a
+--echo *** TLS handshake, marks the transport secure, and then the
+--echo *** caching_sha2_password full-auth (0x04) branch takes the
+--echo *** cleartext-over-secure-transport path (verify_cleartext_password)
+--echo *** - no --get-server-public-key needed. A zero exit code from
+--echo *** mysql means the whole handshake + auth + probe round-trip
+--echo *** succeeded.
+--exec $MYSQL --protocol=TCP --host=127.0.0.1 --port=3307 --user=rpl --password=password --default-auth=caching_sha2_password --ssl-mode=REQUIRED --skip-column-names -e "$probe_query" >/dev/null 2>&1
+
+--echo
+--echo *** Scenario 2: non-TLS client on the same TLS-enabled listener.
+--echo *** --ssl-mode=DISABLED tells mysql to skip the TLS upgrade; the
+--echo *** session stays on plain TCP and full-auth (0x04) therefore
+--echo *** requires the RSA / PEM handshake (--get-server-public-key). A
+--echo *** zero exit code confirms TLS is per-session opt-in and does not
+--echo *** break plain-TCP clients (matches Percona Server behaviour with
+--echo *** require_secure_transport=OFF).
+--exec $MYSQL --protocol=TCP --host=127.0.0.1 --port=3307 --user=rpl --password=password --default-auth=caching_sha2_password --ssl-mode=DISABLED --get-server-public-key --skip-column-names -e "$probe_query" >/dev/null 2>&1
+
+--echo
+--echo *** Sending SIGTERM to the Binlog Server Utility and waiting for the
+--echo *** process to terminate (poll kill -0 until the pid is gone).
+--echo *** Graceful exit flushes std::cout, so any log line binsrv wrote
+--echo *** during its lifetime is now safely on disk.
+--replace_result $binsrv_pid <BINSRV_PID>
+--exec kill -s TERM $binsrv_pid
+
+--let $max_exit_wait = 30
+--let $iteration = 0
+--let $binsrv_running = 1
+while ($iteration < $max_exit_wait)
+{
+  if ($binsrv_running)
+  {
+    --error 0, 1
+    --exec kill -0 $binsrv_pid 2>/dev/null
+    --let $kill_status = $__error
+    if ($kill_status != 0)
+    {
+      --let $binsrv_running = 0
+      --let $iteration = $max_exit_wait
+    }
+    if ($kill_status == 0)
+    {
+      --sleep 1
+      --inc $iteration
+    }
+  }
+}
+if ($binsrv_running)
+{
+  --die Binlog Server Utility did not terminate within 30 seconds
+}
+
+--echo
+--echo *** Confirming end-to-end results by grepping the Binlog Server
+--echo *** stdout log (now complete and flushed):
+--echo ***   - "TLS handshake completed with" proves scenario 1 negotiated
+--echo ***     the TLS upgrade successfully
+--echo ***   - "(over TLS)" proves scenario 1's auth ran on the encrypted
+--echo ***     transport (cleartext-over-0x04 branch), not RSA
+--echo ***   - "(over plain TCP)" proves scenario 2 kept using plain TCP
+--echo ***     and completed via the RSA / PEM full-auth branch
+--let $grep_file = $binsrv_stdout_log
+--let $grep_pattern = TLS handshake completed with
+--let $wait_timeout = 30
+--source include/wait_for_pattern_in_file.inc
+
+--let $grep_file = $binsrv_stdout_log
+--let $grep_pattern = client authentication succeeded for rpl \(over TLS\)
+--let $wait_timeout = 30
+--source include/wait_for_pattern_in_file.inc
+
+--let $grep_file = $binsrv_stdout_log
+--let $grep_pattern = client authentication succeeded for rpl \(over plain TCP\)
+--let $wait_timeout = 30
+--source include/wait_for_pattern_in_file.inc
+
+--remove_file $binsrv_pid_file
+--remove_file $binsrv_stdout_log
+
+# cleaning up
+--source ../include/tear_down_binsrv_environment.inc
+
+# As the Binlog Server Utility interrupts the connection upon timeout, here we
+# need to close it on the MySQL server side as well in order to make sure that
+# MTR 'check-test' before and after the test produces the same output.
+--let $binlog_dump_connection_id = `SELECT ID FROM performance_schema.processlist WHERE COMMAND = 'Binlog Dump'`
+--replace_result $binlog_dump_connection_id <CONNECTION_ID>
+eval KILL CONNECTION $binlog_dump_connection_id;
+
+# Also, we use 'count_sessions' include files to make sure that 'Binlog Dump'
+# connection is indeed closed.
+--source include/wait_until_count_sessions.inc
