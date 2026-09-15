@@ -20,6 +20,7 @@
 #include <cstdint>
 #include <limits>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -54,6 +55,8 @@
 #include "minimysql/caching_sha2_password_authenticator.hpp"
 #include "minimysql/network_io_operations_fwd.hpp"
 
+#include "opensslpp/crypto_rng.hpp"
+
 namespace minimysql {
 
 namespace {
@@ -72,6 +75,15 @@ decode_client_command_frame(const network_buffer_type &payload,
   }
 
   return decode_result.value().second;
+}
+
+// for historical reasons the server auth data field on the wire carries a
+// trailing NUL filler byte (both in the initial Greeting packet and in the
+// AuthMethodSwitch packet)
+std::string fix_server_auth_data(std::string_view data) {
+  std::string result{data};
+  result.push_back('\0');
+  return result;
 }
 
 } // namespace
@@ -127,9 +139,8 @@ connection_context::generate_encoded_server_greeting() {
   server_capabilities_ = get_default_server_capabilities();
   server_auth_method_ = std::string{default_server_auth_method};
 
-  // for historical reasons sever auth data must include a trailing '\0' byte
-  const std::string fixed_server_auth_data{generate_server_auth_method_data() +
-                                           '\0'};
+  const std::string fixed_server_auth_data{
+      fix_server_auth_data(generate_server_auth_method_data())};
 
   const classic_protocol::message::server::Greeting server_greeting{
       default_server_protocol_version,
@@ -176,6 +187,49 @@ void connection_context::parse_client_greeting(
   client_collation_ = client_greeting.collation();
   client_max_packet_size_ = client_greeting.max_packet_size();
   client_attributes_ = client_greeting.attributes();
+}
+
+[[nodiscard]] network_buffer_type
+connection_context::generate_encoded_auth_method_switch() {
+  std::string result_buffer{};
+
+  // refresh the server scramble so the client hashes its password against a
+  // fresh challenge, then wrap it with the same trailing-NUL convention used
+  // in the initial Greeting packet
+  const std::string fixed_server_auth_data{
+      fix_server_auth_data(generate_server_auth_method_data())};
+
+  const classic_protocol::message::server::AuthMethodSwitch auth_method_switch{
+      get_server_auth_method(), fixed_server_auth_data};
+  using auth_method_switch_frame = classic_protocol::frame::Frame<
+      classic_protocol::message::server::AuthMethodSwitch>;
+  auto encode_result{classic_protocol::encode<auth_method_switch_frame>(
+      {generate_sequence_number(), auth_method_switch},
+      get_shared_capabilities(), boost::asio::dynamic_buffer(result_buffer))};
+
+  if (!encode_result) {
+    throw boost::system::system_error{encode_result.error()};
+  }
+  return result_buffer;
+}
+
+void connection_context::parse_client_auth_method_data(
+    const network_buffer_type &payload) {
+  auto buffer{boost::asio::buffer(payload)};
+  using auth_method_data_frame = classic_protocol::frame::Frame<
+      classic_protocol::message::client::AuthMethodData>;
+  auto decode_result{classic_protocol::decode<auth_method_data_frame>(
+      buffer, get_shared_capabilities())};
+  if (!decode_result) {
+    throw boost::system::system_error{decode_result.error()};
+  }
+
+  validate_and_update_sequence_number(decode_result.value().second.seq_id());
+
+  // after the auth method switch the client uses the server's auth method
+  client_auth_method_ = server_auth_method_;
+  client_auth_method_data_ =
+      decode_result.value().second.payload().auth_method_data();
 }
 
 [[nodiscard]] network_buffer_type
@@ -423,9 +477,26 @@ connection_context::get_default_server_capabilities() noexcept {
 
 [[nodiscard]] const std::string &
 connection_context::generate_server_auth_method_data() {
-  // TODO: generate random auth method data (for caching_sha2_password, it must
-  // be 20 random bytes)
-  server_auth_method_data_ = "01234567890123456789";
+  // caching_sha2_password (and mysql_native_password) expect a 20-byte
+  // scramble. Follows the shape of MySQL server's `generate_user_salt()` in
+  // mysys/crypt_genhash_impl.cc: OpenSSL's cryptographic RNG for entropy,
+  // masked to 7 bits and bumped away from '\0' and '$' so every byte stays
+  // a legal UTF-8, non-NUL character (the on-wire representation is
+  // NUL-terminated, so an interior NUL would truncate the field on the
+  // client side).
+  static constexpr std::size_t server_auth_method_data_length{20U};
+  static constexpr std::uint8_t seven_bit_mask{0x7FU};
+  server_auth_method_data_.assign(server_auth_method_data_length, '\0');
+
+  opensslpp::crypto_rng::generate(std::as_writable_bytes(std::span{
+      std::data(server_auth_method_data_), server_auth_method_data_length}));
+
+  for (auto &byte : server_auth_method_data_) {
+    byte = static_cast<char>(static_cast<std::uint8_t>(byte) & seven_bit_mask);
+    if (byte == '\0' || byte == '$') {
+      byte = static_cast<char>(byte + 1);
+    }
+  }
   return server_auth_method_data_;
 }
 
