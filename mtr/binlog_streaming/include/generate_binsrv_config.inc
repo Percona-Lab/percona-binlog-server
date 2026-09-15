@@ -21,6 +21,10 @@
 #   --let $binsrv_encryption_cipher = AES-256-CTR (optional)
 #   --let $binsrv_encryption_kek_id = alpha (optional)
 #   --let $binsrv_keyring_data_file_path = $MYSQL_TMP_DIR/keyring_data.json (optional)
+#   --let $binsrv_pbs_listener_rsa_public_key_path  = /path/to/pub.pem  (optional)
+#   --let $binsrv_pbs_listener_rsa_private_key_path = /path/to/priv.pem (optional)
+#   --let $binsrv_pbs_listener_ssl_cert             = /path/to/server-cert.pem (optional)
+#   --let $binsrv_pbs_listener_ssl_key              = /path/to/server-key.pem  (optional)
 #   --source set_up_binsrv_environment.inc
 
 --echo
@@ -166,6 +170,45 @@ if ($binsrv_encryption_enabled)
       'format', 'generic',
       'kek_id', '$binsrv_encryption_kek_id',
       'cipher', '$binsrv_encryption_cipher'
+    )
+  );
+}
+
+# Optional 'pbs_listener' block (see binsrv/pbs_listener_config.hpp).
+# The block carries two independent field pairs (RSA key pair for
+# caching_sha2_password full auth, and TLS cert/key pair for the SSL
+# listener); the block is emitted whenever at least one of the pairs is
+# fully set, but ALL FOUR fields are always written - the pair that the
+# caller did not set gets emitted as empty strings so nv_tuple_from_json
+# always sees every declared field and pbs_listener_config::validate()
+# sees the empty pair as "not configured" (which is fine per each pair's
+# own "both-set-or-both-empty" invariant). Tests that don't set either
+# pair get a plain plaintext-only, RSA-less listener config with no
+# 'pbs_listener' block at all.
+--let $binsrv_pbs_listener_needs_block = 0
+if ($binsrv_pbs_listener_rsa_public_key_path != "")
+{
+  if ($binsrv_pbs_listener_rsa_private_key_path != "")
+  {
+    --let $binsrv_pbs_listener_needs_block = 1
+  }
+}
+if ($binsrv_pbs_listener_ssl_cert != "")
+{
+  if ($binsrv_pbs_listener_ssl_key != "")
+  {
+    --let $binsrv_pbs_listener_needs_block = 1
+  }
+}
+if ($binsrv_pbs_listener_needs_block)
+{
+  eval SET @binsrv_config_json = JSON_INSERT(
+    @binsrv_config_json, '$.pbs_listener',
+    JSON_OBJECT(
+      'rsa_public_key_path',  '$binsrv_pbs_listener_rsa_public_key_path',
+      'rsa_private_key_path', '$binsrv_pbs_listener_rsa_private_key_path',
+      'ssl_cert_path',        '$binsrv_pbs_listener_ssl_cert',
+      'ssl_key_path',         '$binsrv_pbs_listener_ssl_key'
     )
   );
 }

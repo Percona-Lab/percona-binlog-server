@@ -21,6 +21,10 @@
 #   --let $binsrv_encryption_cipher = AES-256-CTR (optional)
 #   --let $binsrv_encryption_kek_id = alpha (optional)
 #   --let $binsrv_keyring_data_file_path = $MYSQL_TMP_DIR/keyring_data.json (optional)
+#   --let $binsrv_pbs_listener_rsa_public_key_path  = /path/to/pub.pem  (optional)
+#   --let $binsrv_pbs_listener_rsa_private_key_path = /path/to/priv.pem (optional)
+#   --let $binsrv_pbs_listener_ssl_cert             = /path/to/server-cert.pem (optional)
+#   --let $binsrv_pbs_listener_ssl_key              = /path/to/server-key.pem  (optional)
 #   --source set_up_binsrv_environment.inc
 
 --source ../include/generate_binsrv_config.inc

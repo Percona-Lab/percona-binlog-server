@@ -24,6 +24,7 @@
 #include <string>
 #include <string_view>
 #include <thread>
+#include <utility>
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wnull-dereference"
@@ -41,6 +42,7 @@
 #include "easymysql/connection_fwd.hpp"
 
 #include "minimysql/network_service.hpp"
+#include "minimysql/ssl_acceptor_context.hpp"
 
 #include "operations/basic_operation.hpp"
 #include "operations/collector_context.hpp"
@@ -112,8 +114,48 @@ generic_operation<mode_type::pull>::generic_operation(
     operations::collector_context collector_ctx{
         easymysql::connection_replication_mode_type::blocking, config, logger};
 
+    // The 'pbs_listener' JSON config block carries per-listener options:
+    //   * RSA key pair for the caching_sha2_password full-authentication
+    //     branch (PBS-33) - forwarded to network_service as-is. Empty
+    //     paths mean the authenticator has no RSA key material and any
+    //     0x04 attempt fails per-session.
+    //   * TLS cert / key pair for the optional TLS listener (PBS-31) -
+    //     when both non-empty we build an ssl_acceptor_context here so
+    //     any load failure (bad file, mismatched pair) surfaces before
+    //     network_service is instantiated, matching the ownership-
+    //     transfer contract on the network_service constructor.
+    // The block itself is optional; when absent we forward empty views
+    // for RSA and a null ssl_ctx for TLS.
+    std::string_view server_rsa_public_key_path{};
+    std::string_view server_rsa_private_key_path{};
+    std::unique_ptr<minimysql::ssl_acceptor_context> ssl_ctx;
+    const auto &optional_listener{config->root().get<"pbs_listener">()};
+    if (optional_listener.has_value()) {
+      server_rsa_public_key_path =
+          optional_listener->get<"rsa_public_key_path">();
+      server_rsa_private_key_path =
+          optional_listener->get<"rsa_private_key_path">();
+
+      const auto &ssl_cert_path{optional_listener->get<"ssl_cert_path">()};
+      const auto &ssl_key_path{optional_listener->get<"ssl_key_path">()};
+      if (!ssl_cert_path.empty() && !ssl_key_path.empty()) {
+        ssl_ctx = std::make_unique<minimysql::ssl_acceptor_context>(
+            ssl_cert_path, ssl_key_path);
+        logger->log(binsrv::log_severity::info,
+                    "SSL enabled for the Binlog Server listener (cert='" +
+                        ssl_cert_path + "', key='" + ssl_key_path + "')");
+      }
+    }
+    if (!ssl_ctx) {
+      logger->log(binsrv::log_severity::info,
+                  "SSL disabled for the Binlog Server listener (no "
+                  "'pbs_listener.ssl_cert_path' / 'ssl_key_path' in config)");
+    }
+
     const minimysql::network_service service(
-        io_ctx, listening_port, default_username, default_password);
+        io_ctx, listening_port, default_username, default_password,
+        server_rsa_public_key_path, server_rsa_private_key_path,
+        std::move(ssl_ctx));
 
     const auto idle_time_seconds{
         config->root().get<"replication">().get<"idle_time">()};
