@@ -687,7 +687,6 @@ set(minimysql_source_files
   src/minimysql/connection_context.cpp
   src/minimysql/network_io_operations_fwd.hpp
   src/minimysql/network_io_operations.hpp
-  src/minimysql/network_io_operations.cpp
   src/minimysql/network_service.hpp
   src/minimysql/network_service.cpp
   src/minimysql/sample_event_collection.hpp
