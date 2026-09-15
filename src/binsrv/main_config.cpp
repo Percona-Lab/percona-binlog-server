@@ -60,6 +60,10 @@ void main_config::validate() const {
   root().get<"connection">().validate();
   root().get<"storage">().validate();
   root().get<"replication">().validate();
+  const auto &optional_listener{root().get<"pbs_listener">()};
+  if (optional_listener.has_value()) {
+    optional_listener->validate();
+  }
 }
 
 } // namespace binsrv

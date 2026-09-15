@@ -1,0 +1,67 @@
+*** Resetting replication at the very beginning of the test.
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+
+*** Starting Binlog Server Utility in background in pull mode.
+*** Because PBS has no digest cache, every login this binsrv
+*** sees will be driven through the 0x04 full-auth branch.
+*** stdout/stderr goes to a dedicated log so we can grep for auth
+*** markers AFTER binsrv has exited.
+include/read_file_to_var.inc
+
+*** Waiting for the Binlog Server listener to come up on
+*** 127.0.0.1:3307. We probe with bash's /dev/tcp instead of the
+*** mysql client because bash is not ASAN-instrumented and
+*** /dev/tcp uses a plain connect(2), so each attempt is cheap and
+*** measures exactly the "listening on the port" state we care
+*** about.
+
+*** Scenario 1: correct password + --get-server-public-key. Server
+*** sends 0x04 (PBS default), client requests the PEM
+*** with 0x02, server enqueues the RSA public key, client OAEP-
+*** encrypts the password and sends the ciphertext, server
+*** rsa_private_key::decrypt_oaep recovers it and matches. A zero
+*** exit code from mysql means the whole PEM + RSA round-trip
+*** succeeded.
+
+*** Scenario 2: correct password + --server-public-key-path pointing
+*** at the PEM we wrote above. Server sends 0x04, client skips the
+*** 0x02 PEM-fetch step and OAEP-encrypts the password directly with
+*** the local key, server decrypts and matches. Confirms
+*** rsa_private_key::decrypt_oaep and the ciphertext-length check
+*** in the wrapper agree with what mysql's client-side OAEP produces
+*** for this key.
+
+*** Scenario 3: WRONG password + --get-server-public-key. Same full-
+*** auth handshake as scenario 1, but the RSA-decrypted plaintext no
+*** longer matches the configured password so
+*** verify_encrypted_password() returns failed and the server issues
+*** an access_denied. mysql exits non-zero, which we assert on to
+*** confirm the rejection path is graceful (no crash, no hang).
+
+*** Sending SIGTERM to the Binlog Server Utility and waiting for the
+*** process to terminate (poll kill -0 until the pid is gone).
+*** Graceful exit flushes std::cout, so any log line binsrv wrote
+*** during its lifetime is now safely on disk.
+
+*** Confirming end-to-end results by grepping the Binlog Server
+*** stdout log (now complete and flushed):
+***   - "client authentication succeeded for rpl" proves at least one
+***     full-auth session round-tripped correctly (scenarios 1 & 2)
+***   - "client authentication failed for rpl" proves the rejection
+***     path fired for the wrong-password session (scenario 3)
+include/wait_for_pattern_in_file.inc [client authentication succeeded for rpl]
+include/wait_for_pattern_in_file.inc [client authentication failed for rpl]
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.
+KILL CONNECTION <CONNECTION_ID>;

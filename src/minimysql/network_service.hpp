@@ -31,7 +31,9 @@ public:
 
   network_service(boost::asio::io_context &context,
                   std::uint16_t listening_port, std::string_view username,
-                  std::string_view password);
+                  std::string_view password,
+                  std::string_view server_rsa_public_key_path = {},
+                  std::string_view server_rsa_private_key_path = {});
 
   network_service(const network_service &) = delete;
   network_service &operator=(const network_service &) = delete;
@@ -43,6 +45,8 @@ public:
 private:
   std::string username_;
   std::string password_;
+  std::string server_rsa_public_key_path_;
+  std::string server_rsa_private_key_path_;
 
   boost::asio::io_context *context_;
   using acceptor_type =

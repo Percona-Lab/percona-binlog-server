@@ -179,6 +179,14 @@ set(opensslpp_source_files
   src/opensslpp/crypto_rng.hpp
   src/opensslpp/crypto_rng.cpp
 
+  src/opensslpp/digest_context_fwd.hpp
+  src/opensslpp/digest_context.hpp
+  src/opensslpp/digest_context.cpp
+
+  src/opensslpp/rsa_private_key_fwd.hpp
+  src/opensslpp/rsa_private_key.hpp
+  src/opensslpp/rsa_private_key.cpp
+
   src/opensslpp/core_error_fwd.hpp
   src/opensslpp/core_error.hpp
   src/opensslpp/core_error.cpp
@@ -590,6 +598,10 @@ set(binsrv_source_files
   src/binsrv/main_config_fwd.hpp
   src/binsrv/main_config.hpp
   src/binsrv/main_config.cpp
+
+  src/binsrv/pbs_listener_config_fwd.hpp
+  src/binsrv/pbs_listener_config.hpp
+  src/binsrv/pbs_listener_config.cpp
 
   src/binsrv/replication_config_fwd.hpp
   src/binsrv/replication_config.hpp

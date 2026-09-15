@@ -112,8 +112,27 @@ generic_operation<mode_type::pull>::generic_operation(
     operations::collector_context collector_ctx{
         easymysql::connection_replication_mode_type::blocking, config, logger};
 
+    // The 'pbs_listener' JSON config block carries the server-side RSA key
+    // pair the caching_sha2_password authenticator needs for the 0x04
+    // full-authentication branch (--get-server-public-key / --server-public
+    // -key-path clients). The block is optional at the main_config layer
+    // (see binsrv::pbs_listener_config); when absent we simply forward
+    // empty paths, mirroring the authenticator's "both empty is OK"
+    // acceptance at construction. Per-session RSA operations then fail if
+    // a client actually reaches the full-auth branch without keys.
+    std::string_view server_rsa_public_key_path{};
+    std::string_view server_rsa_private_key_path{};
+    const auto &optional_listener{config->root().get<"pbs_listener">()};
+    if (optional_listener.has_value()) {
+      server_rsa_public_key_path =
+          optional_listener->get<"rsa_public_key_path">();
+      server_rsa_private_key_path =
+          optional_listener->get<"rsa_private_key_path">();
+    }
+
     const minimysql::network_service service(
-        io_ctx, listening_port, default_username, default_password);
+        io_ctx, listening_port, default_username, default_password,
+        server_rsa_public_key_path, server_rsa_private_key_path);
 
     const auto idle_time_seconds{
         config->root().get<"replication">().get<"idle_time">()};
