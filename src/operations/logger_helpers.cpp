@@ -18,12 +18,10 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <iomanip>
-#include <ios>
+#include <format>
 #include <iterator>
 #include <locale>
 #include <optional>
-#include <sstream>
 #include <string>
 #include <string_view>
 
@@ -88,10 +86,8 @@ void log_config_param(binsrv::basic_logger &logger, const Config &config,
                       std::string_view label) {
   const auto opt_log_string{to_log_string(config.template get<CTS>())};
   if (opt_log_string.has_value()) {
-    std::string msg{label};
-    msg += ": ";
-    msg += *opt_log_string;
-    logger.log(binsrv::log_severity::info, msg);
+    logger.log_format(binsrv::log_severity::info, "{}: {}", label,
+                      *opt_log_string);
   }
 }
 
@@ -118,10 +114,8 @@ void log_tls_config_info(binsrv::basic_logger &logger,
 void log_connection_config_info(
     binsrv::basic_logger &logger,
     const easymysql::connection_config &connection_config) {
-  std::string msg;
-  msg = "mysql connection string: ";
-  msg += connection_config.get_connection_string();
-  logger.log(binsrv::log_severity::info, msg);
+  logger.log_format(binsrv::log_severity::info, "mysql connection string: {}",
+                    connection_config.get_connection_string());
 
   log_config_param<"connect_timeout">(logger, connection_config,
                                       "mysql connect timeout (seconds)");
@@ -186,9 +180,9 @@ void log_storage_config_info(binsrv::basic_logger &logger,
 
   log_config_param<"backend">(logger, storage_config,
                               "binlog storage backend type");
-  logger.log(binsrv::log_severity::info,
-             "binlog storage backend URI (masked): " +
-                 storage_config.get_masked_uri());
+  logger.log_format(binsrv::log_severity::info,
+                    "binlog storage backend URI (masked): {}",
+                    storage_config.get_masked_uri());
   log_config_param<"fs_buffer_directory">(
       logger, storage_config,
       "binlog storage backend filesystem buffer directory");
@@ -204,61 +198,48 @@ void log_storage_config_info(binsrv::basic_logger &logger,
 
 void log_storage_info(binsrv::basic_logger &logger,
                       const binsrv::storage &storage) {
-  std::string msg{"created binlog storage with the following backend: "};
-  msg += storage.get_backend_description();
-  logger.log(binsrv::log_severity::info, msg);
+  logger.log_format(binsrv::log_severity::info,
+                    "created binlog storage with the following backend: {}",
+                    storage.get_backend_description());
+  logger.log_format(
+      binsrv::log_severity::info, "binlog storage initialized in {} mode",
+      boost::lexical_cast<std::string>(storage.get_replication_mode()));
 
-  msg.clear();
-  msg = "binlog storage initialized in ";
-  msg += boost::lexical_cast<std::string>(storage.get_replication_mode());
-  msg += " mode";
-  logger.log(binsrv::log_severity::info, msg);
-
-  msg.clear();
   if (storage.is_empty()) {
-    msg = "binlog storage initialized on an empty directory";
+    logger.log(binsrv::log_severity::info,
+               "binlog storage initialized on an empty directory");
   } else {
-    msg = "binlog storage initialized at \"";
-    msg += storage.get_current_binlog_name().str();
-    msg += "\":";
-    msg += std::to_string(storage.get_current_position());
+    logger.log_format(binsrv::log_severity::info,
+                      "binlog storage initialized at \"{}\":{}",
+                      storage.get_current_binlog_name().str(),
+                      storage.get_current_position());
   }
-  logger.log(binsrv::log_severity::info, msg);
-  logger.log(binsrv::log_severity::info,
-             "storage keyring status: " + storage.get_keyring_description());
-  logger.log(binsrv::log_severity::info,
-             "storage active KEK: " + storage.get_active_kek_description());
-  logger.log(binsrv::log_severity::info,
-             "storage encryption format: " +
-                 storage.get_encryption_format_description());
+  logger.log_format(binsrv::log_severity::info, "storage keyring status: {}",
+                    storage.get_keyring_description());
+  logger.log_format(binsrv::log_severity::info, "storage active KEK: {}",
+                    storage.get_active_kek_description());
+  logger.log_format(binsrv::log_severity::info, "storage encryption format: {}",
+                    storage.get_encryption_format_description());
 }
 
 void log_library_info(binsrv::basic_logger &logger,
                       const easymysql::library &mysql_lib) {
-  std::string msg{};
-  msg = "mysql client version: ";
-  msg += mysql_lib.get_readable_client_version();
-  logger.log(binsrv::log_severity::info, msg);
+  logger.log_format(binsrv::log_severity::info, "mysql client version: {}",
+                    mysql_lib.get_readable_client_version());
 }
 
 void log_connection_info(binsrv::basic_logger &logger,
                          const easymysql::connection &connection) {
-  std::string msg{};
-  msg = "mysql server version: ";
-  msg += connection.get_readable_server_version();
-  logger.log(binsrv::log_severity::info, msg);
-
-  logger.log(binsrv::log_severity::info,
-             "mysql protocol version: " +
-                 std::to_string(connection.get_protocol_version()));
-
-  msg = "mysql server connection info: ";
-  msg += connection.get_server_connection_info();
-  logger.log(binsrv::log_severity::info, msg);
-
-  msg = "mysql connection character set: ";
-  msg += connection.get_character_set_name();
-  logger.log(binsrv::log_severity::info, msg);
+  logger.log_format(binsrv::log_severity::info, "mysql server version: {}",
+                    connection.get_readable_server_version());
+  logger.log_format(binsrv::log_severity::info, "mysql protocol version: {}",
+                    connection.get_protocol_version());
+  logger.log_format(binsrv::log_severity::info,
+                    "mysql server connection info: {}",
+                    connection.get_server_connection_info());
+  logger.log_format(binsrv::log_severity::info,
+                    "mysql connection character set: {}",
+                    connection.get_character_set_name());
 }
 
 void log_replication_info(
@@ -267,75 +248,71 @@ void log_replication_info(
     easymysql::connection_replication_mode_type blocking_mode) {
   const auto replication_mode{storage.get_replication_mode()};
 
-  std::string msg{"switched to replication (checksum "};
-  msg += (verify_checksum ? "enabled" : "disabled");
-  msg += ", ";
-  msg += boost::lexical_cast<std::string>(replication_mode);
-  msg += +" mode)";
-  logger.log(binsrv::log_severity::info, msg);
+  logger.log_format(binsrv::log_severity::info,
+                    "switched to replication (checksum {}, {} mode)",
+                    (verify_checksum ? "enabled" : "disabled"),
+                    boost::lexical_cast<std::string>(replication_mode));
 
-  msg = "replication info (server id ";
-  msg += std::to_string(server_id);
-  msg += ", ";
-  msg += (blocking_mode == easymysql::connection_replication_mode_type::blocking
-              ? "blocking"
-              : "non-blocking");
-  msg += ", starting from ";
+  std::string starting_from;
   if (replication_mode == binsrv::replication_mode_type::position) {
     if (storage.is_empty()) {
-      msg += "the very beginning";
+      starting_from = "the very beginning";
     } else {
-      msg += storage.get_current_binlog_name().str();
-      msg += ":";
-      msg += std::to_string(storage.get_current_position());
+      starting_from =
+          std::format("{}:{}", storage.get_current_binlog_name().str(),
+                      storage.get_current_position());
     }
   } else {
     const auto &gtids{storage.get_gtids()};
     if (gtids.is_empty()) {
-      msg += "an empty";
+      starting_from = "an empty GTID set";
     } else {
-      msg += "the ";
-      msg += boost::lexical_cast<std::string>(gtids);
+      starting_from = std::format("the {} GTID set",
+                                  boost::lexical_cast<std::string>(gtids));
     }
-    msg += " GTID set";
   }
-  msg += ")";
-  logger.log(binsrv::log_severity::info, msg);
+  logger.log_format(
+      binsrv::log_severity::info,
+      "replication info (server id {}, {}, starting from {})", server_id,
+      (blocking_mode == easymysql::connection_replication_mode_type::blocking
+           ? "blocking"
+           : "non-blocking"),
+      starting_from);
 }
 
 void log_span_dump(binsrv::basic_logger &logger,
                    util::const_byte_span portion) {
-  logger.log(binsrv::log_severity::debug,
-             "fetched " + std::to_string(std::size(portion)) +
-                 "-byte(s) event from binlog");
+  logger.log_format(binsrv::log_severity::debug,
+                    "fetched {}-byte(s) event from binlog", std::size(portion));
+  // explicitly checking log level and return early as computing
+  // hex dump is not a trivial operation
+  if (logger.get_min_level() > binsrv::log_severity::trace) {
+    return;
+  }
   static constexpr auto bytes_per_dump_line{16UZ};
   auto offset{0UZ};
   while (offset < std::size(portion)) {
-    std::ostringstream oss;
-    oss << '[';
-    oss << std::setfill('0') << std::hex;
     auto sub = portion.subspan(
         offset, std::min(bytes_per_dump_line, std::size(portion) - offset));
+
+    std::string line{"["};
     for (auto current_byte : sub) {
-      oss << ' ' << std::setw(2)
-          << std::to_integer<std::uint16_t>(current_byte);
+      std::format_to(std::back_inserter(line), " {:02x}",
+                     std::to_integer<std::uint8_t>(current_byte));
     }
-    const std::size_t filler_length =
-        (bytes_per_dump_line - std::size(sub)) * 3U;
-    oss << std::setfill(' ') << std::setw(static_cast<int>(filler_length))
-        << "";
-    oss << " ] ";
+    line.append((bytes_per_dump_line - std::size(sub)) * 3U, ' ');
+    line += " ] ";
+
     const auto &ctype_facet{
         std::use_facet<std::ctype<char>>(std::locale::classic())};
-
     for (auto current_byte : sub) {
       auto current_char{std::to_integer<char>(current_byte)};
       if (!ctype_facet.is(std::ctype_base::print, current_char)) {
         current_char = '.';
       }
-      oss.put(current_char);
+      line += current_char;
     }
-    logger.log(binsrv::log_severity::trace, oss.str());
+    logger.log(binsrv::log_severity::trace, line);
     offset += bytes_per_dump_line;
   }
 }

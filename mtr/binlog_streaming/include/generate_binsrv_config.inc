@@ -2,6 +2,7 @@
 # Creates a JSON configuration file for the Binlog Server Utility
 #
 # Usage:
+#   --let $binsrv_log_level = trace | debug | info | warning | error | fatal (optional, default: trace)
 #   --let $binsrv_connection_user = repl_user (optional)
 #   --let $binsrv_connection_host = 127.0.0.1 (optional)
 #   --let $binsrv_connection_password = password (optional)
@@ -71,6 +72,11 @@ if ($storage_backend == s3)
   }
 }
 
+if ($binsrv_log_level == "")
+{
+  --let $binsrv_log_level = trace
+}
+
 --let $binsrv_log_path = $MYSQL_TMP_DIR/binsrv_utility.log
 eval SET @log_path = '$binsrv_log_path';
 
@@ -84,7 +90,7 @@ if ($binsrv_connection_host == "")
 
 eval SET @binsrv_config_json = JSON_OBJECT(
   'logger', JSON_OBJECT(
-    'level', 'trace',
+    'level', '$binsrv_log_level',
     'file', @log_path
   ),
   'connection', JSON_OBJECT(

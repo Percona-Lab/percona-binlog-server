@@ -55,8 +55,9 @@ public:
   [[nodiscard]] std::uint32_t get_connection_id() const noexcept {
     return connection_id_;
   }
-  [[nodiscard]] std::uint8_t get_sequence_number() const noexcept {
-    return sequence_number_;
+  [[nodiscard]] std::uint8_t get_last_sequence_number() const noexcept {
+    return static_cast<std::uint8_t>(sequence_number_ -
+                                     static_cast<std::uint8_t>(1U));
   }
 
   [[nodiscard]] const capability_bitset &
@@ -131,7 +132,7 @@ public:
   void parse_client_greeting(const network_buffer_type &payload);
 
   [[nodiscard]] network_buffer_type generate_encoded_auth_method_switch();
-  void parse_client_auth_method_data(const network_buffer_type &payload);
+  void parse_client_auth_method_switch(const network_buffer_type &payload);
 
   [[nodiscard]] network_buffer_type generate_encoded_fast_auth();
   [[nodiscard]] network_buffer_type generate_encoded_ok();

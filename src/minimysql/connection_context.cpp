@@ -213,7 +213,7 @@ connection_context::generate_encoded_auth_method_switch() {
   return result_buffer;
 }
 
-void connection_context::parse_client_auth_method_data(
+void connection_context::parse_client_auth_method_switch(
     const network_buffer_type &payload) {
   auto buffer{boost::asio::buffer(payload)};
   using auth_method_data_frame = classic_protocol::frame::Frame<

@@ -18,7 +18,11 @@
 
 #include "binsrv/basic_logger_fwd.hpp" // IWYU pragma: export
 
+#include <atomic>
+#include <format>
+#include <mutex>
 #include <string_view>
+#include <utility>
 
 #include "binsrv/log_severity_fwd.hpp"
 
@@ -34,20 +38,38 @@ public:
   virtual ~basic_logger();
 
   [[nodiscard]] log_severity get_min_level() const noexcept {
-    return min_level_;
+    return min_level_.load(std::memory_order_relaxed);
   }
   void set_min_level(log_severity min_level) noexcept {
-    min_level_ = min_level;
+    min_level_.store(min_level, std::memory_order_relaxed);
   }
 
-  void log(log_severity level, std::string_view message);
+  void log(log_severity level, std::string_view message) {
+    if (level >= get_min_level()) {
+      log_internal(level, message);
+    }
+  }
+
+  template <typename... Args>
+  void log_format(log_severity level, std::format_string<Args...> fmt,
+                  Args &&...args) {
+    if (level >= get_min_level()) {
+      log_internal(level, std::format(fmt, std::forward<Args>(args)...));
+    }
+  }
 
 protected:
   explicit basic_logger(log_severity min_level) noexcept;
 
 private:
-  log_severity min_level_;
+  using atomic_log_severity = std::atomic<log_severity>;
+  atomic_log_severity min_level_;
+  std::mutex do_log_mutex_;
 
+  // called only after the severity check has already been performed
+  void log_internal(log_severity level, std::string_view message);
+
+  // called with 'do_log_mutex_' held, so implementations need not synchronize
   virtual void do_log(std::string_view message) = 0;
 };
 
