@@ -20,8 +20,11 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <format>
 #include <memory>
 #include <stdexcept>
+#include <string>
+#include <string_view>
 #include <utility>
 
 #include <boost/lexical_cast.hpp>
@@ -107,9 +110,10 @@ collector_context::initialize_console_logger(
       binsrv::logger_factory::create(initial_logger_config)};
   // logging with "delimiter" level has the highest priority and empty label
   const auto executable_name{util::extract_executable_name(cmd_args)};
-  logger->log(binsrv::log_severity::delimiter,
-              '"' + executable_name + '"' +
-                  " started with the following command line arguments:");
+  logger->log_format(
+      binsrv::log_severity::delimiter,
+      "\"{}\" started with the following command line arguments:",
+      executable_name);
   logger->log(binsrv::log_severity::delimiter,
               util::get_readable_command_line_arguments(cmd_args));
 
@@ -125,19 +129,19 @@ void collector_context::reinitialize_logger_from_config(
   if (!logger_config.has_file()) {
     logger->set_min_level(logger_config.get<"level">());
   } else {
-    logger->log(binsrv::log_severity::delimiter,
-                "redirecting logging to \"" + logger_config.get<"file">() +
-                    "\"");
+    logger->log_format(binsrv::log_severity::delimiter,
+                       "redirecting logging to \"{}\"",
+                       logger_config.get<"file">());
     auto new_logger = binsrv::logger_factory::create(logger_config);
     std::swap(logger, new_logger);
   }
 
   const auto log_level_label = binsrv::to_string_view(logger->get_min_level());
-  logger->log(binsrv::log_severity::delimiter,
-              "logging level set to \"" + std::string{log_level_label} + '"');
+  logger->log_format(binsrv::log_severity::delimiter,
+                     "logging level set to \"{}\"", log_level_label);
 
-  logger->log(binsrv::log_severity::delimiter,
-              "application version: " + app_version.get_string());
+  logger->log_format(binsrv::log_severity::delimiter, "application version: {}",
+                     app_version.get_string());
 }
 
 bool collector_context::receive_binlog_events(
@@ -250,11 +254,11 @@ bool collector_context::open_connection_and_switch_to_replication(
         storage_->set_purged_gtids(binsrv::gtids::gtid_set{
             connection.execute_select_query_string_result(
                 select_gtid_purged_query)});
-        logger_->log(
+        logger_->log_format(
             binsrv::log_severity::info,
             "extracted purged GTIDs from the mysql server for an empty "
-            "storage: " +
-                boost::lexical_cast<std::string>(storage_->get_purged_gtids()));
+            "storage: {}",
+            boost::lexical_cast<std::string>(storage_->get_purged_gtids()));
       }
 
       const auto gtids{storage_->get_gtids()};
@@ -340,12 +344,12 @@ void collector_context::rewrite_and_process_binlog_event(
     }
 
     const auto readable_flags{current_common_header_v.get_readable_flags()};
-    logger_->log(
+    logger_->log_format(
         binsrv::log_severity::info,
-        "rewrite: encountered " +
-            std::string{current_common_header_v.get_readable_type_code()} +
-            (readable_flags.empty() ? "" : " (" + readable_flags + ")") +
-            " event in the rewrite mode - skipping");
+        "rewrite: encountered {}{} event in the rewrite mode - skipping",
+        current_common_header_v.get_readable_type_code(),
+        (readable_flags.empty() ? std::string{}
+                                : std::format(" ({})", readable_flags)));
     return;
   }
 
@@ -449,14 +453,13 @@ void collector_context::process_binlog_event(
     binsrv::events::reader_context &context) {
   const auto current_common_header_v{current_event_v.get_common_header_view()};
   const auto readable_flags{current_common_header_v.get_readable_flags()};
-  logger_->log(
-      binsrv::log_severity::info,
-      "event  : " +
-          std::string{current_common_header_v.get_readable_type_code()} +
-          (readable_flags.empty() ? "" : " (" + readable_flags + ")"));
-  logger_->log(binsrv::log_severity::debug,
-               "event  : [parsed view] " +
-                   boost::lexical_cast<std::string>(current_event_v));
+  logger_->log_format(binsrv::log_severity::info, "event  : {}{}",
+                      current_common_header_v.get_readable_type_code(),
+                      (readable_flags.empty()
+                           ? std::string{}
+                           : std::format(" ({})", readable_flags)));
+  logger_->log_format(binsrv::log_severity::debug, "event  : [parsed view] {}",
+                      boost::lexical_cast<std::string>(current_event_v));
 
   const bool info_only{context.process_event_view(current_event_v)};
 
@@ -467,19 +470,17 @@ void collector_context::process_binlog_event(
   }
 
   if (context.is_at_transaction_boundary()) {
-    logger_->log(
-        binsrv::log_severity::info,
-        "event  : [end_of_transaction] " +
-            boost::lexical_cast<std::string>(context.get_transaction_gtid()));
+    logger_->log_format(
+        binsrv::log_severity::info, "event  : [end_of_transaction] {}",
+        boost::lexical_cast<std::string>(context.get_transaction_gtid()));
   }
 
   // here we additionally check for log level because event materialization
   // is not a trivial operation
   if (binsrv::log_severity::debug >= logger_->get_min_level()) {
     const binsrv::events::event current_event{current_event_v};
-    logger_->log(binsrv::log_severity::debug,
-                 "event  : [parsed] " +
-                     boost::lexical_cast<std::string>(current_event));
+    logger_->log_format(binsrv::log_severity::debug, "event  : [parsed] {}",
+                        boost::lexical_cast<std::string>(current_event));
   }
 
   const auto code = current_common_header_v.get_type_code();
@@ -553,11 +554,9 @@ void collector_context::process_artificial_rotate_event(
 
       binlog_opening_needed = false;
 
-      const std::string current_binlog_name{
-          storage_->get_current_binlog_name().str()};
-      logger_->log(binsrv::log_severity::info,
-                   "storage: reused already open binlog file: " +
-                       current_binlog_name);
+      logger_->log_format(binsrv::log_severity::info,
+                          "storage: reused already open binlog file: {}",
+                          storage_->get_current_binlog_name().str());
 
     } else {
       // if names do not match, we need to close the currently open
@@ -566,8 +565,9 @@ void collector_context::process_artificial_rotate_event(
       const std::string old_binlog_name{
           storage_->get_current_binlog_name().str()};
       storage_->close_binlog();
-      logger_->log(binsrv::log_severity::info,
-                   "storage: closed binlog file left open: " + old_binlog_name);
+      logger_->log_format(binsrv::log_severity::info,
+                          "storage: closed binlog file left open: {}",
+                          old_binlog_name);
       // binlog_opening_needed remains true in this branch
       assert(binlog_opening_needed);
     }
@@ -576,29 +576,26 @@ void collector_context::process_artificial_rotate_event(
     const auto binlog_open_result{
         storage_->open_binlog(current_rotate_body.get_parsed_binlog())};
 
-    std::string message{"storage: "};
+    std::string_view open_description{"opened an existing"};
     if (binlog_open_result == binsrv::open_binlog_status::created) {
-      message += "created a new";
-    } else {
-      message += "opened an existing";
-      if (binlog_open_result == binsrv::open_binlog_status::opened_empty) {
-        message += " (empty)";
-      } else if (binlog_open_result ==
-                 binsrv::open_binlog_status::opened_at_magic_payload_offset) {
-        message += " (with magic payload only)";
-      }
+      open_description = "created a new";
+    } else if (binlog_open_result == binsrv::open_binlog_status::opened_empty) {
+      open_description = "opened an existing (empty)";
+    } else if (binlog_open_result ==
+               binsrv::open_binlog_status::opened_at_magic_payload_offset) {
+      open_description = "opened an existing (with magic payload only)";
     }
-    message += " binlog file: ";
-    message += current_rotate_body.get_readable_binlog();
-    logger_->log(binsrv::log_severity::info, message);
+    logger_->log_format(binsrv::log_severity::info,
+                        "storage: {} binlog file: {}", open_description,
+                        current_rotate_body.get_readable_binlog());
   }
 }
 
 void collector_context::process_rotate_or_stop_event() {
   const std::string old_binlog_name{storage_->get_current_binlog_name().str()};
   storage_->close_binlog();
-  logger_->log(binsrv::log_severity::info,
-               "storage: closed binlog file: " + old_binlog_name);
+  logger_->log_format(binsrv::log_severity::info,
+                      "storage: closed binlog file: {}", old_binlog_name);
 }
 
 } // namespace operations

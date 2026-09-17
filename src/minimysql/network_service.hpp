@@ -21,6 +21,8 @@
 
 #include <boost/asio/ts/netfwd.hpp>
 
+#include "binsrv/basic_logger_fwd.hpp"
+
 namespace minimysql {
 
 class network_service {
@@ -29,7 +31,8 @@ public:
   static constexpr std::chrono::seconds session_authentication_timeout{10};
   static constexpr std::chrono::seconds session_command_timeout{120};
 
-  network_service(boost::asio::io_context &context,
+  network_service(binsrv::basic_logger_ptr logger,
+                  boost::asio::io_context &context,
                   std::uint16_t listening_port, std::string_view username,
                   std::string_view password);
 
@@ -41,6 +44,7 @@ public:
   ~network_service();
 
 private:
+  binsrv::basic_logger_ptr logger_;
   std::string username_;
   std::string password_;
 

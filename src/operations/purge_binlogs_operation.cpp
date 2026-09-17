@@ -16,9 +16,11 @@
 
 #include <exception>
 #include <iostream>
+#include <memory>
 #include <string>
 
 #include "binsrv/main_config.hpp"
+#include "binsrv/null_logger.hpp"
 #include "binsrv/storage.hpp"
 
 #include "binsrv/events/composite_binlog_name.hpp"
@@ -54,11 +56,9 @@ generic_operation<mode_type::purge_binlogs>::execute() const {
     const auto &replication_config = config.root().get<"replication">();
     const auto replication_mode{replication_config.get<"mode">()};
 
-    binsrv::storage storage{{},
-                            keyring_config,
-                            storage_config,
-                            binsrv::storage_construction_mode_type::purging,
-                            replication_mode};
+    binsrv::storage storage{
+        std::make_shared<binsrv::null_logger>(), keyring_config, storage_config,
+        binsrv::storage_construction_mode_type::purging, replication_mode};
 
     const auto [removed_records, cleanup_warning_message] =
         storage.purge_binlogs(target_name);

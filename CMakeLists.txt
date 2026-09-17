@@ -591,6 +591,8 @@ set(binsrv_source_files
   src/binsrv/main_config.hpp
   src/binsrv/main_config.cpp
 
+  src/binsrv/null_logger.hpp
+
   src/binsrv/replication_config_fwd.hpp
   src/binsrv/replication_config.hpp
   src/binsrv/replication_config.cpp

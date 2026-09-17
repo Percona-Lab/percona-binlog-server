@@ -34,8 +34,7 @@ eval $stmt_reset_binary_logs_and_gtids;
 --echo *** rely on any per-line buffering trick that could misbehave under
 --echo *** ASAN.
 --let $binsrv_pid_file = $MYSQL_TMP_DIR/auth_switch_binsrv.pid
---let $binsrv_stdout_log = $MYSQL_TMP_DIR/auth_switch_binsrv_stdout.log
---let $binsrv_spawn_cmd_line = $BINSRV pull $binsrv_config_file_path > $binsrv_stdout_log 2>&1 & echo \$! > $binsrv_pid_file
+--let $binsrv_spawn_cmd_line = $BINSRV pull $binsrv_config_file_path > /dev/null 2>&1 & echo \$! > $binsrv_pid_file
 
 # We route the spawn through Perl's system() rather than --exec because
 # mysqltest strips the shell's `$!` before it can be expanded, leaving the
@@ -152,13 +151,12 @@ if ($binsrv_running)
 --echo *** Server stdout log (now complete and flushed) for the marker
 --echo *** emitted after generate_encoded_auth_method_switch() writes its
 --echo *** frame.
---let $grep_file = $binsrv_stdout_log
+--let $grep_file = $binsrv_log_path
 --let $grep_pattern = sent server auth method switch
---let $wait_timeout = 30
+--let $wait_timeout = 60
 --source include/wait_for_pattern_in_file.inc
 
 --remove_file $binsrv_pid_file
---remove_file $binsrv_stdout_log
 
 # cleaning up
 --source ../include/tear_down_binsrv_environment.inc

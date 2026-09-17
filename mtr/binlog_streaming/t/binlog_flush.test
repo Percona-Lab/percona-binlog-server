@@ -47,7 +47,7 @@ while ($transaction_idx < $number_of_inserts)
 --source ../include/set_up_binsrv_environment.inc
 
 --let $binsrv_pid_file = $MYSQL_TMP_DIR/binsrv_non_gtid_flush_bug.pid
---let $binsrv_spawn_cmd_line = $BINSRV pull $binsrv_config_file_path > $binsrv_log_path 2>&1 & echo \$! > $binsrv_pid_file
+--let $binsrv_spawn_cmd_line = $BINSRV pull $binsrv_config_file_path > /dev/null 2>&1 & echo \$! > $binsrv_pid_file
 --let EXPORTED_BINSRV_SPAWN_CMD_LINE = $binsrv_spawn_cmd_line
 --perl
   use strict;
@@ -59,6 +59,10 @@ EOF
 --let $read_from_file = $binsrv_pid_file
 --source include/read_file_to_var.inc
 --let $binsrv_pid = $result
+
+# waiting for the log file to be created - this is a pre-requisite
+# for the 'wait_for_pattern_in_file.inc'
+--file_exists $binsrv_log_path 30
 
 --echo
 --echo *** Waiting until Binlog Server log confirms that it processed an

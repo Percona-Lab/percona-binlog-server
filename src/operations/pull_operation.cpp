@@ -21,7 +21,6 @@
 #include <cstdint>
 #include <exception>
 #include <memory>
-#include <string>
 #include <string_view>
 #include <thread>
 
@@ -113,7 +112,7 @@ generic_operation<mode_type::pull>::generic_operation(
         easymysql::connection_replication_mode_type::blocking, config, logger};
 
     const minimysql::network_service service(
-        io_ctx, listening_port, default_username, default_password);
+        logger, io_ctx, listening_port, default_username, default_password);
 
     const auto idle_time_seconds{
         config->root().get<"replication">().get<"idle_time">()};
@@ -131,22 +130,20 @@ generic_operation<mode_type::pull>::generic_operation(
         try {
           collector_ctx.receive_binlog_events(io_ctx);
 
-          std::string msg;
           auto iteration_number{1UZ};
           while (!io_ctx.stopped()) {
-            msg = "entering idle mode for ";
-            msg += std::to_string(idle_time_seconds);
-            msg += " seconds";
-            logger->log(binsrv::log_severity::info, msg);
+            logger->log_format(binsrv::log_severity::info,
+                               "entering idle mode for {} seconds",
+                               idle_time_seconds);
 
             if (!wait_for_interruptable(idle_time_seconds, io_ctx)) {
               break;
             }
 
-            msg = "awoke after sleeping and trying to reconnect (iteration ";
-            msg += std::to_string(iteration_number);
-            msg += ')';
-            logger->log(binsrv::log_severity::info, msg);
+            logger->log_format(
+                binsrv::log_severity::info,
+                "awoke after sleeping and trying to reconnect (iteration {})",
+                iteration_number);
 
             collector_ctx.receive_binlog_events(io_ctx);
             ++iteration_number;

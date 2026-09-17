@@ -30,7 +30,6 @@
 #include "binsrv/encryption_config_fwd.hpp"
 #include "binsrv/encryption_format_type_fwd.hpp"
 #include "binsrv/keyring_config_fwd.hpp"
-#include "binsrv/log_severity_fwd.hpp"
 #include "binsrv/replication_mode_type_fwd.hpp"
 #include "binsrv/storage_config_fwd.hpp"
 
@@ -237,7 +236,6 @@ private:
   events::seq_no_t ready_to_flush_last_sequence_number_{0ULL};
   events::seq_no_t incomplete_transaction_last_sequence_number_{0ULL};
 
-  void log(log_severity level, std::string_view message) const;
   void remove_temporary_objects(storage_object_name_container &object_names);
 
   void initialize_storage_encryption(

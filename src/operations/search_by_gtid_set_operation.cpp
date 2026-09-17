@@ -16,10 +16,12 @@
 
 #include <exception>
 #include <iostream>
+#include <memory>
 #include <stdexcept>
 #include <string>
 
 #include "binsrv/main_config.hpp"
+#include "binsrv/null_logger.hpp"
 #include "binsrv/storage.hpp"
 
 #include "binsrv/models/error_response.hpp"
@@ -54,9 +56,7 @@ generic_operation<mode_type::search_by_gtid_set>::execute() const {
     const auto replication_mode{replication_config.get<"mode">()};
 
     const binsrv::storage storage{
-        {},
-        keyring_config,
-        storage_config,
+        std::make_shared<binsrv::null_logger>(), keyring_config, storage_config,
         binsrv::storage_construction_mode_type::querying_only,
         replication_mode};
 

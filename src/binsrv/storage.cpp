@@ -129,6 +129,7 @@ storage::storage(basic_logger_ptr logger,
                  replication_mode_type replication_mode)
     : logger_{std::move(logger)}, construction_mode_{construction_mode},
       backend_{}, replication_mode_{replication_mode} {
+  assert(logger_);
   const auto &checkpoint_size_opt{config.get<"checkpoint_size">()};
   if (checkpoint_size_opt.has_value()) {
     checkpoint_size_bytes_ = checkpoint_size_opt->get_value();
@@ -514,12 +515,6 @@ storage::purge_binlogs(const events::composite_binlog_name &target) {
              : std::string{"encryption format is not set"};
 }
 
-void storage::log(log_severity level, std::string_view message) const {
-  if (logger_) {
-    logger_->log(level, message);
-  }
-}
-
 void storage::remove_temporary_objects(
     storage_object_name_container &object_names) {
   using remove_object_container = std::vector<std::string>;
@@ -530,9 +525,10 @@ void storage::remove_temporary_objects(
         object_name.extension() == tmp_storage_object_suffix) {
       auto object_node = object_names.extract(it++);
       remove_objects.emplace_back(std::move(object_node.key()));
-      log(log_severity::warning, "found temporary storage object '" +
-                                     object_name.string() +
-                                     "' left after improper shutdown");
+      logger_->log_format(log_severity::warning,
+                          "found temporary storage object '{}' left after "
+                          "improper shutdown",
+                          object_name.string());
     } else {
       ++it;
     }
@@ -548,9 +544,10 @@ void storage::remove_temporary_objects(
   }
 
   backend_->remove_objects(remove_objects);
-  log(log_severity::warning,
-      "removed " + std::to_string(remove_objects.size()) +
-          " temporary storage object(s) left after improper shutdown");
+  logger_->log_format(log_severity::warning,
+                      "removed {} temporary storage object(s) left after "
+                      "improper shutdown",
+                      remove_objects.size());
 }
 
 void storage::initialize_storage_encryption(
@@ -947,9 +944,10 @@ void storage::load_and_validate_binlog_metadata_set(
               "bigger than the actual binlog file size");
         }
         backend_->resize_object(binlog_file_name, loaded_binlog_metadata.size);
-        log(log_severity::warning,
-            "recovered binlog file '" + binlog_file_name +
-                "' by truncating it to the size from the metadata");
+        logger_->log_format(log_severity::warning,
+                            "recovered binlog file '{}' by truncating it to "
+                            "the size from the metadata",
+                            binlog_file_name);
       }
     }
     *record_it = std::move(loaded_binlog_metadata);
