@@ -1,7 +1,3 @@
-# temporarily marking this test as non-parallel because of the hardcoded
-# listening port
---source include/not_parallel.inc
-
 # The purpose of the test is to validate that PBS doesn't flush its internal binlog buffer
 # to the file every time the whole transaction is replicated.
 
