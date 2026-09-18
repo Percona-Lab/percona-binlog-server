@@ -600,6 +600,10 @@ set(binsrv_source_files
   src/binsrv/replication_mode_type_fwd.hpp
   src/binsrv/replication_mode_type.hpp
 
+  src/binsrv/replication_source_config_fwd.hpp
+  src/binsrv/replication_source_config.hpp
+  src/binsrv/replication_source_config.cpp
+
   src/binsrv/rewrite_config_fwd.hpp
   src/binsrv/rewrite_config.hpp
   src/binsrv/rewrite_config.cpp

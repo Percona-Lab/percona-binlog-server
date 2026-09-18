@@ -18,10 +18,11 @@
 
 #include "binsrv/main_config_fwd.hpp" // IWYU pragma: export
 
-#include "binsrv/keyring_config.hpp"     // IWYU pragma: export
-#include "binsrv/logger_config.hpp"      // IWYU pragma: export
-#include "binsrv/replication_config.hpp" // IWYU pragma: export
-#include "binsrv/storage_config.hpp"     // IWYU pragma: export
+#include "binsrv/keyring_config.hpp"            // IWYU pragma: export
+#include "binsrv/logger_config.hpp"             // IWYU pragma: export
+#include "binsrv/replication_config.hpp"        // IWYU pragma: export
+#include "binsrv/replication_source_config.hpp" // IWYU pragma: export
+#include "binsrv/storage_config.hpp"            // IWYU pragma: export
 
 #include "easymysql/connection_config.hpp" // IWYU pragma: export
 
@@ -33,11 +34,12 @@ class [[nodiscard]] main_config {
 private:
   using impl_type = util::nv_tuple<
       // clang-format off
-      util::nv<"logger"     , logger_config>,
-      util::nv<"connection" , easymysql::connection_config>,
-      util::nv<"replication", binsrv::replication_config>,
-      util::nv<"keyring"    , optional_keyring_config>,
-      util::nv<"storage"    , storage_config>
+      util::nv<"logger"            , logger_config>,
+      util::nv<"connection"        , easymysql::connection_config>,
+      util::nv<"replication"       , binsrv::replication_config>,
+      util::nv<"replication_source", binsrv::replication_source_config>,
+      util::nv<"keyring"           , optional_keyring_config>,
+      util::nv<"storage"           , storage_config>
       // clang-format on
       >;
 

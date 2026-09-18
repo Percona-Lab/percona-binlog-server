@@ -60,6 +60,7 @@ void main_config::validate() const {
   root().get<"connection">().validate();
   root().get<"storage">().validate();
   root().get<"replication">().validate();
+  root().get<"replication_source">().validate();
 }
 
 } // namespace binsrv
