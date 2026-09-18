@@ -16,7 +16,9 @@
 #ifndef MINIMYSQL_NETWORK_SERVICE_HPP
 #define MINIMYSQL_NETWORK_SERVICE_HPP
 
+#include <chrono>
 #include <cstdint>
+#include <string>
 #include <string_view>
 
 #include <boost/asio/ts/netfwd.hpp>
@@ -29,12 +31,12 @@ namespace minimysql {
 class network_service {
 public:
   static constexpr auto expected_packet_size{4096UZ};
-  static constexpr std::chrono::seconds session_authentication_timeout{10};
-  static constexpr std::chrono::seconds session_command_timeout{120};
 
   network_service(binsrv::basic_logger_ptr logger,
                   boost::asio::io_context &context, binsrv::storage_ptr storage,
-                  std::uint16_t listening_port, std::string_view username,
+                  std::uint16_t listening_port,
+                  std::chrono::seconds read_timeout,
+                  std::chrono::seconds write_timeout, std::string_view username,
                   std::string_view password);
 
   network_service(const network_service &) = delete;

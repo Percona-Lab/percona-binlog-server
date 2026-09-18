@@ -514,6 +514,11 @@ The Percona Binary Log Server configuration file has the following format.
       "file_size": "128M"
     }
   },
+  "replication_source": {
+    "port": 3307,
+    "read_timeout": 60,
+    "write_timeout": 60
+  },
   "keyring": {
     "uri": "file:///var/lib/pbs/keyring/keyring_data.json"
   },
@@ -583,6 +588,12 @@ Note: you should specify either `<connection.host>` / `<connection.port>` pair o
 If this section is present, then the utility will not split binlog events the same way as they were on the original MySQL server. Instead, it will generate its own binlog file name sequence (based on the `<replication.rewrite.base_file_name>`) and will change to a new binary log file when the size of the previous one riches the specified value (`<replication.rewrite.file_size>`). Having this section requires `<replication.mode>` to be set to `gtid`. Also, please notice that currently the utility can properly operate in 'rewrite' mode only when all binlog events received from the MySQL server have checksums (were generated on a server that had '@@global.binlog_checksum' set to 'CRC32').
 - `<replication.rewrite.base_file_name>` - the base name of the generated binlog file names in the "rewrite" mode. E.g. `rewritten_binlog` will cause `rewritten_binlog.000001`, `rewritten_binlog.000002`, etc. file names to be generated.
 - `<replication.rewrite.file_size>` - the maximum individual binlog file size after reaching which the utility will switch to a new one. The value is expected to be a string containing an integer followed by an optional suffix 'K' / 'M' / 'G' / 'T' / 'P', e.g. /\d+\[KMGTP\]?/. The minimal allowed value of this parameter is `1024` bytes.
+
+#### \<replication_source\> section
+This section configures the built-in MySQL-compatible listener the utility exposes in `pull` mode so that downstream replicas can dump binary log events from it (the utility acts as a replication source).
+- `<replication_source.port>` - the TCP port on which the utility listens for incoming replica connections.
+- `<replication_source.read_timeout>` - the number of seconds the utility will wait to read data from a connected replica before treating the connection as timed out.
+- `<replication_source.write_timeout>` - the number of seconds the utility will wait to write data to a connected replica before treating the connection as timed out.
 
 #### \<keyring\> section
 If this an optional section that specifies keyring configuration parameters. It must be present if the storage has at least one encrypted binlog file.

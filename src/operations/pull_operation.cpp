@@ -82,8 +82,6 @@ generic_operation<mode_type::pull>::generic_operation(
     : basic_operation{cmd_args, expected_number_of_arguments} {}
 
 [[nodiscard]] bool generic_operation<mode_type::pull>::execute() const {
-  static constexpr std::uint16_t listening_port{3307};
-
   static constexpr std::string_view default_username{"rpl"};
   static constexpr std::string_view default_password{"password"};
 
@@ -119,9 +117,13 @@ generic_operation<mode_type::pull>::generic_operation(
         easymysql::connection_replication_mode_type::blocking, config, logger,
         storage};
 
-    const minimysql::network_service service(logger, io_ctx, storage,
-                                             listening_port, default_username,
-                                             default_password);
+    const auto &replication_source_config{
+        config->root().get<"replication_source">()};
+    const minimysql::network_service service(
+        logger, io_ctx, storage, replication_source_config.get<"port">(),
+        std::chrono::seconds{replication_source_config.get<"read_timeout">()},
+        std::chrono::seconds{replication_source_config.get<"write_timeout">()},
+        default_username, default_password);
 
     const auto idle_time_seconds{
         config->root().get<"replication">().get<"idle_time">()};
