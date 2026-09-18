@@ -1,6 +1,11 @@
 #
 # Creates a JSON configuration file for the Binlog Server Utility
 #
+# Sets (as an output for the caller):
+#   $binsrv_replication_source_port - TCP port on which the utility
+#     listens for downstream replicas (@@global.port + 1000, unique per
+#     MTR worker).
+#
 # Usage:
 #   --let $binsrv_log_level = trace | debug | info | warning | error | fatal (optional, default: trace)
 #   --let $binsrv_connection_user = repl_user (optional)
@@ -88,6 +93,20 @@ if ($binsrv_connection_host == "")
   }
 }
 
+# The Binlog Server exposes its own MySQL-compatible listener in 'pull'
+# mode. To let multiple MTR workers run pull-mode tests in parallel, each
+# worker gets its own listening port derived from the worker's MySQL port
+# (worker port + 1000). The +1000 offset intentionally jumps well beyond
+# MTR's per-worker port allocation (empirically MTR reserves ports within
+# ~200 of each worker's @@port on GitHub Actions runners), so the derived
+# listener port never collides with a neighbour worker's mysqld/mysqlx or
+# other MTR-reserved ports. An earlier +100 offset produced bind failures
+# ("Address already in use") on CI when the derived port fell inside a
+# sibling worker's range. We expose the computed value via
+# $binsrv_replication_source_port so the test can reuse it (e.g. when
+# connecting a probe client to the listener).
+--let $binsrv_replication_source_port = `SELECT @@global.port + 1000`
+
 eval SET @binsrv_config_json = JSON_OBJECT(
   'logger', JSON_OBJECT(
     'level', '$binsrv_log_level',
@@ -107,6 +126,11 @@ eval SET @binsrv_config_json = JSON_OBJECT(
      'idle_time', $binsrv_idle_time,
      'verify_checksum', $binsrv_verify_checksum,
      'mode', '$binsrv_replication_mode'
+  ),
+  'replication_source', JSON_OBJECT(
+     'port', $binsrv_replication_source_port,
+     'read_timeout', 60,
+     'write_timeout', 60
   ),
   'storage', JSON_OBJECT(
      'backend', '$storage_backend',

@@ -1,7 +1,3 @@
-# The Binlog Server listens on a hard-coded TCP port, so this test can not
-# run in parallel with other tests using the same port.
---source include/not_parallel.inc
-
 --source ../include/have_binsrv.inc
 
 --source ../include/v80_v84_compatibility_defines.inc
@@ -61,11 +57,11 @@ EOF
 
 --echo
 --echo *** Waiting for the Binlog Server listener to come up on
---echo *** 127.0.0.1:3307. We probe with bash's /dev/tcp instead of the
---echo *** mysql client because bash is not ASAN-instrumented and
---echo *** /dev/tcp uses a plain connect(2), so each attempt is cheap and
---echo *** measures exactly the "listening on the port" state we care
---echo *** about.
+--echo *** 127.0.0.1:<BINSRV_LISTENER_PORT>. We probe with bash's /dev/tcp
+--echo *** instead of the mysql client because bash is not
+--echo *** ASAN-instrumented and /dev/tcp uses a plain connect(2), so each
+--echo *** attempt is cheap and measures exactly the "listening on the
+--echo *** port" state we care about.
 --let $max_wait = 300
 --let $iteration = 0
 --let $port_open = 0
@@ -74,7 +70,7 @@ while ($iteration < $max_wait)
   if (!$port_open)
   {
     --error 0, 1
-    --exec bash -c "echo > /dev/tcp/127.0.0.1/3307" 2>/dev/null
+    --exec bash -c "echo > /dev/tcp/127.0.0.1/$binsrv_replication_source_port" 2>/dev/null
     --let $port_status = $__error
     if ($port_status == 0)
     {
@@ -90,7 +86,7 @@ while ($iteration < $max_wait)
 }
 if (!$port_open)
 {
-  --die The Binlog Server listener did not become reachable on 3307 within 300 seconds
+  --die The Binlog Server listener did not become reachable on its port within 300 seconds
 }
 
 --echo
@@ -98,7 +94,7 @@ if (!$port_open)
 --echo *** (caching_sha2_password). No AuthMethodSwitch is expected on the
 --echo *** wire; a zero exit code from mysql confirms the session got as
 --echo *** far as running the probe query.
---exec $MYSQL --protocol=TCP --host=127.0.0.1 --port=3307 --user=rpl --password=password --default-auth=caching_sha2_password --skip-column-names -e "$probe_query" >/dev/null 2>&1
+--exec $MYSQL --protocol=TCP --host=127.0.0.1 --port=$binsrv_replication_source_port --user=rpl --password=password --default-auth=caching_sha2_password --skip-column-names -e "$probe_query" >/dev/null 2>&1
 
 --echo
 --echo *** Trigger: client forces mysql_native_password in its handshake so
@@ -109,7 +105,7 @@ if (!$port_open)
 --echo *** MTR fails the --exec. The log grep that follows the shutdown
 --echo *** is what actually proves the switch happened - this line only
 --echo *** proves the session survived it.
---exec $MYSQL --protocol=TCP --host=127.0.0.1 --port=3307 --user=rpl --password=password --default-auth=mysql_native_password --skip-column-names -e "$probe_query" >/dev/null 2>&1
+--exec $MYSQL --protocol=TCP --host=127.0.0.1 --port=$binsrv_replication_source_port --user=rpl --password=password --default-auth=mysql_native_password --skip-column-names -e "$probe_query" >/dev/null 2>&1
 
 --echo
 --echo *** Sending SIGTERM to the Binlog Server Utility and waiting for the

@@ -17,11 +17,11 @@
 include/read_file_to_var.inc
 
 *** Waiting for the Binlog Server listener to come up on
-*** 127.0.0.1:3307. We probe with bash's /dev/tcp instead of the
-*** mysql client because bash is not ASAN-instrumented and
-*** /dev/tcp uses a plain connect(2), so each attempt is cheap and
-*** measures exactly the "listening on the port" state we care
-*** about.
+*** 127.0.0.1:<BINSRV_LISTENER_PORT>. We probe with bash's /dev/tcp
+*** instead of the mysql client because bash is not
+*** ASAN-instrumented and /dev/tcp uses a plain connect(2), so each
+*** attempt is cheap and measures exactly the "listening on the
+*** port" state we care about.
 
 *** Control: client picks the same plugin the server advertises
 *** (caching_sha2_password). No AuthMethodSwitch is expected on the
