@@ -27,6 +27,8 @@
 
 #include "minimysql/network_io_operations_fwd.hpp"
 
+#include "util/byte_span_fwd.hpp"
+
 namespace minimysql {
 
 class connection_context {
@@ -145,7 +147,7 @@ public:
   [[nodiscard]] network_buffer_type generate_encoded_syntax_error();
 
   [[nodiscard]] network_buffer_type
-  generate_encoded_binlog_event(std::string_view event_data);
+  generate_encoded_binlog_event(util::const_byte_span event_data);
 
   void enter_command_loop_iteration() noexcept {
     sequence_number_ = 0U;

@@ -36,6 +36,7 @@
 #include "binsrv/exception_handling_helpers.hpp"
 #include "binsrv/log_severity.hpp"
 #include "binsrv/main_config.hpp"
+#include "binsrv/storage.hpp"
 
 #include "easymysql/connection_fwd.hpp"
 
@@ -43,6 +44,7 @@
 
 #include "operations/basic_operation.hpp"
 #include "operations/collector_context.hpp"
+#include "operations/logger_helpers.hpp"
 #include "operations/mode_type.hpp"
 
 #include "util/command_line_helpers_fwd.hpp"
@@ -108,11 +110,18 @@ generic_operation<mode_type::pull>::generic_operation(
     logger->log(binsrv::log_severity::info,
                 "set custom handlers for SIGINT and SIGTERM signals");
 
-    operations::collector_context collector_ctx{
-        easymysql::connection_replication_mode_type::blocking, config, logger};
+    operations::log_config_info(*logger, *config);
+    auto storage{std::make_shared<binsrv::storage>(
+        logger, *config, binsrv::storage_construction_mode_type::streaming)};
+    log_storage_info(*logger, *storage);
 
-    const minimysql::network_service service(
-        logger, io_ctx, listening_port, default_username, default_password);
+    operations::collector_context collector_ctx{
+        easymysql::connection_replication_mode_type::blocking, config, logger,
+        storage};
+
+    const minimysql::network_service service(logger, io_ctx, storage,
+                                             listening_port, default_username,
+                                             default_password);
 
     const auto idle_time_seconds{
         config->root().get<"replication">().get<"idle_time">()};

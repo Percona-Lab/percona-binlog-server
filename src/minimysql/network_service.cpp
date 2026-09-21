@@ -62,10 +62,13 @@
 
 #include "binsrv/basic_logger.hpp"
 #include "binsrv/log_severity.hpp"
+#include "binsrv/storage.hpp"
 
 #include "minimysql/connection_context.hpp"
 #include "minimysql/network_io_operations.hpp"
 #include "minimysql/sample_event_collection.hpp"
+
+#include "util/byte_span.hpp"
 
 namespace minimysql {
 
@@ -275,7 +278,9 @@ void handle_exception(binsrv::basic_logger &logger, std::string_view context) {
 // parses client greeting
 [[nodiscard]] boost::asio::awaitable<void> session(
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
-    binsrv::basic_logger &logger, boost::asio::ip::tcp::socket socket,
+    binsrv::basic_logger &logger,
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
+    binsrv::storage &storage, boost::asio::ip::tcp::socket socket,
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
     const std::string &username,
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
@@ -514,8 +519,11 @@ void handle_exception(binsrv::basic_logger &logger, std::string_view context) {
       } break;
       case minimysql::client_command_type::binlog_dump: {
         const minimysql::sample_event_collection sample_events;
+        // TODO: rework with reading real data from storage;
+        (void)storage;
         for (const auto &event_data : sample_events.get_events()) {
-          const auto event{context.generate_encoded_binlog_event(event_data)};
+          const auto event{context.generate_encoded_binlog_event(
+              util::as_const_byte_span(event_data))};
           print_generic(logger, remote_endpoint, context, "binlog event");
           co_await minimysql::async_write_mysql_frame(
               socket, event, network_service::session_command_timeout);
@@ -564,6 +572,8 @@ void handle_exception(binsrv::basic_logger &logger, std::string_view context) {
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
     binsrv::basic_logger &logger,
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
+    binsrv::storage &storage,
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
     boost::asio::ip::tcp::acceptor &acceptor,
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
     const std::string &username,
@@ -594,7 +604,8 @@ void handle_exception(binsrv::basic_logger &logger, std::string_view context) {
 
       // NOLINTNEXTLINE(misc-include-cleaner)
       boost::asio::co_spawn(
-          executor, session(logger, std::move(socket), username, password),
+          executor,
+          session(logger, storage, std::move(socket), username, password),
           boost::asio::detached);
     }
   } catch (...) {
@@ -606,19 +617,20 @@ void handle_exception(binsrv::basic_logger &logger, std::string_view context) {
 
 network_service::network_service(
     binsrv::basic_logger_ptr logger, boost::asio::io_context &context,
-    std::uint16_t listening_port,
+    binsrv::storage_ptr storage, std::uint16_t listening_port,
     // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
     std::string_view username, std::string_view password)
-    : logger_{std::move(logger)}, username_(username), password_(password),
-      context_{&context},
+    : logger_{std::move(logger)}, storage_{std::move(storage)},
+      username_(username), password_(password), context_{&context},
       acceptor_{std::make_unique<acceptor_type>(
           context, boost::asio::ip::tcp::endpoint{boost::asio::ip::tcp::v4(),
                                                   listening_port})} {
   assert(logger_);
   // NOLINTNEXTLINE(misc-include-cleaner)
-  boost::asio::co_spawn(*context_,
-                        listener(*logger_, *acceptor_, username_, password_),
-                        boost::asio::detached);
+  boost::asio::co_spawn(
+      *context_,
+      listener(*logger_, *storage_, *acceptor_, username_, password_),
+      boost::asio::detached);
 }
 
 network_service::~network_service() = default;

@@ -20,6 +20,7 @@
 #include <exception>
 #include <memory>
 #include <thread>
+#include <utility>
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wnull-dereference"
@@ -33,11 +34,13 @@
 #include "binsrv/exception_handling_helpers.hpp"
 #include "binsrv/log_severity.hpp"
 #include "binsrv/main_config.hpp"
+#include "binsrv/storage.hpp"
 
 #include "easymysql/connection_fwd.hpp"
 
 #include "operations/basic_operation.hpp"
 #include "operations/collector_context.hpp"
+#include "operations/logger_helpers.hpp"
 #include "operations/mode_type.hpp"
 
 #include "util/command_line_helpers_fwd.hpp"
@@ -72,9 +75,14 @@ generic_operation<mode_type::fetch>::generic_operation(
     logger->log(binsrv::log_severity::info,
                 "set custom handlers for SIGINT and SIGTERM signals");
 
+    operations::log_config_info(*logger, *config);
+    auto storage{std::make_shared<binsrv::storage>(
+        logger, *config, binsrv::storage_construction_mode_type::streaming)};
+    log_storage_info(*logger, *storage);
+
     operations::collector_context collector_ctx{
         easymysql::connection_replication_mode_type::non_blocking, config,
-        logger};
+        logger, std::move(storage)};
 
     std::exception_ptr operation_exception{};
     bool operation_result{};

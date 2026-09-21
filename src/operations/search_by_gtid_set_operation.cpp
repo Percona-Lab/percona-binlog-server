@@ -50,15 +50,10 @@ generic_operation<mode_type::search_by_gtid_set>::execute() const {
     binsrv::gtids::gtid_set remaining_gtids{get_gtid_set()};
 
     const binsrv::main_config config{get_config_file_path()};
-    const auto &keyring_config = config.root().get<"keyring">();
-    const auto &storage_config = config.root().get<"storage">();
-    const auto &replication_config = config.root().get<"replication">();
-    const auto replication_mode{replication_config.get<"mode">()};
 
     const binsrv::storage storage{
-        std::make_shared<binsrv::null_logger>(), keyring_config, storage_config,
-        binsrv::storage_construction_mode_type::querying_only,
-        replication_mode};
+        std::make_shared<binsrv::null_logger>(), config,
+        binsrv::storage_construction_mode_type::querying_only};
 
     const auto &binlog_records{storage.get_binlog_records()};
     if (binlog_records.empty()) {

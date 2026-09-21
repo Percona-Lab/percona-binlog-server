@@ -36,10 +36,11 @@
 #include "binsrv/basic_storage_backend.hpp"
 #include "binsrv/binlog_file_metadata.hpp"
 #include "binsrv/encryption_format_type.hpp"
-#include "binsrv/keyring_config.hpp"
 #include "binsrv/keyring_factory.hpp"
 #include "binsrv/keyring_record.hpp"
 #include "binsrv/log_severity.hpp"
+#include "binsrv/main_config.hpp"
+#include "binsrv/replication_config.hpp"
 #include "binsrv/replication_mode_type.hpp"
 #include "binsrv/storage_backend_factory.hpp"
 #include "binsrv/storage_config.hpp"
@@ -122,32 +123,40 @@ storage::binlog_encryption_record::from_model(
   return record;
 }
 
-storage::storage(basic_logger_ptr logger,
-                 const optional_keyring_config &keyring_config,
-                 const storage_config &config,
-                 storage_construction_mode_type construction_mode,
-                 replication_mode_type replication_mode)
+storage::storage(basic_logger_ptr logger, const main_config &config,
+                 storage_construction_mode_type construction_mode)
     : logger_{std::move(logger)}, construction_mode_{construction_mode},
-      backend_{}, replication_mode_{replication_mode} {
+      backend_{} {
   assert(logger_);
-  const auto &checkpoint_size_opt{config.get<"checkpoint_size">()};
+
+  const auto &replication_config{config.root().get<"replication">()};
+  // we need a copy of replication mode as replication_mode_ will be
+  // overwritten by load_metadata() later
+  const auto replication_mode{replication_config.get<"mode">()};
+  replication_mode_ = replication_mode;
+
+  const auto &storage_config{config.root().get<"storage">()};
+
+  const auto &checkpoint_size_opt{storage_config.get<"checkpoint_size">()};
   if (checkpoint_size_opt.has_value()) {
     checkpoint_size_bytes_ = checkpoint_size_opt->get_value();
   }
 
-  const auto &checkpoint_interval_opt{config.get<"checkpoint_interval">()};
+  const auto &checkpoint_interval_opt{
+      storage_config.get<"checkpoint_interval">()};
   if (checkpoint_interval_opt.has_value()) {
     checkpoint_interval_seconds_ =
         std::chrono::seconds{checkpoint_interval_opt->get_value()};
   }
 
+  const auto &keyring_config{config.root().get<"keyring">()};
   if (keyring_config.has_value()) {
     keyring_ = keyring_factory::create(keyring_config->get<"uri">());
   }
-  const auto &encryption_config{config.get<"encryption">()};
+  const auto &encryption_config{storage_config.get<"encryption">()};
   initialize_storage_encryption(encryption_config);
 
-  backend_ = storage_backend_factory::create(config);
+  backend_ = storage_backend_factory::create(storage_config);
 
   auto storage_objects{backend_->list_objects()};
   remove_temporary_objects(storage_objects);
