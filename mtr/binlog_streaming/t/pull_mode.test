@@ -97,7 +97,15 @@ FLUSH BINARY LOGS;
 --echo *** binary log.
 # We grep the Binlog Server Utility log file in a loop until we encounter the
 # fourth binary log file name.
---let $max_number_of_attempts = 60
+# The wait budget has to cover several reconnect cycles: the outbound
+# read_timeout is 3s and the idle wait between reconnects is 1s (see the
+# $binsrv_read_timeout / $binsrv_idle_time above), so binsrv needs
+# multiple ~5s round trips to walk through the three preceding binlog
+# files. Under sanitized (ASAN) builds and parallel MTR execution those
+# round trips slow down further, so 60 iterations is not enough - 300
+# gives it several minutes and still bails out well before the outer
+# testcase timeout kicks in.
+--let $max_number_of_attempts = 300
 --let $iteration = 0
 while($iteration < $max_number_of_attempts)
 {
