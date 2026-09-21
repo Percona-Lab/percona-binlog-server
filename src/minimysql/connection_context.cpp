@@ -57,6 +57,8 @@
 
 #include "opensslpp/crypto_rng.hpp"
 
+#include "util/byte_span.hpp"
+
 namespace minimysql {
 
 namespace {
@@ -332,7 +334,8 @@ connection_context::generate_encoded_syntax_error() {
 }
 
 [[nodiscard]] network_buffer_type
-connection_context::generate_encoded_binlog_event(std::string_view event_data) {
+connection_context::generate_encoded_binlog_event(
+    util::const_byte_span event_data) {
   std::string result_buffer{};
   result_buffer.reserve(get_frame_header_length() + std::size(event_data) + 1U);
 
@@ -345,7 +348,7 @@ connection_context::generate_encoded_binlog_event(std::string_view event_data) {
   }
   result_buffer +=
       '\0'; // the first byte in the payload must be '\0' to indicate OK
-  result_buffer += event_data;
+  result_buffer += util::as_string_view(event_data);
   return result_buffer;
 }
 

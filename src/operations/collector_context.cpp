@@ -63,35 +63,12 @@ namespace operations {
 
 collector_context::collector_context(
     easymysql::connection_replication_mode_type connection_replication_mode,
-    binsrv::main_config_ptr config, binsrv::basic_logger_ptr logger)
+    binsrv::main_config_ptr config, binsrv::basic_logger_ptr logger,
+    binsrv::storage_ptr storage)
     : connection_replication_mode_{connection_replication_mode},
-      config_{std::move(config)}, logger_{std::move(logger)} {
-  const auto &keyring_config{config_->root().get<"keyring">()};
-  if (keyring_config.has_value()) {
-    log_keyring_config_info(*logger_, *keyring_config);
-  } else {
-    logger_->log(binsrv::log_severity::info,
-                 "keyring configuration options are not specified");
-  }
-
-  const auto &storage_config{config_->root().get<"storage">()};
-  log_storage_config_info(*logger_, storage_config);
-
-  const auto &connection_config{config_->root().get<"connection">()};
-  log_connection_config_info(*logger_, connection_config);
-
-  const auto &replication_config{config_->root().get<"replication">()};
-  log_replication_config_info(*logger_, replication_config);
-
-  const auto replication_mode{replication_config.get<"mode">()};
-
-  storage_ = std::make_unique<binsrv::storage>(
-      logger_, keyring_config, storage_config,
-      binsrv::storage_construction_mode_type::streaming, replication_mode);
-  log_storage_info(*logger_, *storage_);
-
+      config_{std::move(config)}, logger_{std::move(logger)},
+      storage_{std::move(storage)} {
   mysql_lib_ = std::make_unique<easymysql::library>();
-  logger_->log(binsrv::log_severity::info, "initialized mysql client library");
 
   log_library_info(*logger_, *mysql_lib_);
 }

@@ -42,7 +42,8 @@ public:
   // deliberately passing by value as we will be moving from these objects
   collector_context(
       easymysql::connection_replication_mode_type connection_replication_mode,
-      binsrv::main_config_ptr config, binsrv::basic_logger_ptr logger);
+      binsrv::main_config_ptr config, binsrv::basic_logger_ptr logger,
+      binsrv::storage_ptr storage);
 
   collector_context(const collector_context &) = delete;
   collector_context &operator=(const collector_context &) = delete;

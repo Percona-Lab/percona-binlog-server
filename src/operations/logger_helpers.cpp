@@ -32,6 +32,7 @@
 #include "binsrv/encryption_format_type.hpp" // IWYU pragma: keep
 #include "binsrv/keyring_config.hpp"
 #include "binsrv/log_severity.hpp"
+#include "binsrv/main_config.hpp"
 #include "binsrv/replication_config.hpp"
 #include "binsrv/replication_mode_type.hpp"
 #include "binsrv/rewrite_config.hpp"
@@ -196,6 +197,26 @@ void log_storage_config_info(binsrv::basic_logger &logger,
   }
 }
 
+void log_config_info(binsrv::basic_logger &logger,
+                     const binsrv::main_config &config) {
+  const auto &keyring_config{config.root().get<"keyring">()};
+  if (keyring_config.has_value()) {
+    log_keyring_config_info(logger, *keyring_config);
+  } else {
+    logger.log(binsrv::log_severity::info,
+               "keyring configuration options are not specified");
+  }
+
+  const auto &storage_config{config.root().get<"storage">()};
+  log_storage_config_info(logger, storage_config);
+
+  const auto &connection_config{config.root().get<"connection">()};
+  log_connection_config_info(logger, connection_config);
+
+  const auto &replication_config{config.root().get<"replication">()};
+  log_replication_config_info(logger, replication_config);
+}
+
 void log_storage_info(binsrv::basic_logger &logger,
                       const binsrv::storage &storage) {
   logger.log_format(binsrv::log_severity::info,
@@ -224,6 +245,7 @@ void log_storage_info(binsrv::basic_logger &logger,
 
 void log_library_info(binsrv::basic_logger &logger,
                       const easymysql::library &mysql_lib) {
+  logger.log(binsrv::log_severity::info, "initialized mysql client library");
   logger.log_format(binsrv::log_severity::info, "mysql client version: {}",
                     mysql_lib.get_readable_client_version());
 }

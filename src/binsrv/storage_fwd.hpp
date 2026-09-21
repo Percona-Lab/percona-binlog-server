@@ -35,7 +35,7 @@ enum class open_binlog_status : std::uint8_t {
 };
 
 class storage;
-using storage_ptr = std::unique_ptr<storage>;
+using storage_ptr = std::shared_ptr<storage>;
 
 } // namespace binsrv
 

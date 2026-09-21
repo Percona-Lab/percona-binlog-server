@@ -21,6 +21,7 @@
 #include "binsrv/basic_logger_fwd.hpp"
 #include "binsrv/encryption_config_fwd.hpp"
 #include "binsrv/keyring_config_fwd.hpp"
+#include "binsrv/main_config_fwd.hpp"
 #include "binsrv/replication_config_fwd.hpp"
 #include "binsrv/rewrite_config_fwd.hpp"
 #include "binsrv/storage_config_fwd.hpp"
@@ -59,6 +60,9 @@ void log_encryption_config_info(
 
 void log_storage_config_info(binsrv::basic_logger &logger,
                              const binsrv::storage_config &storage_config);
+
+void log_config_info(binsrv::basic_logger &logger,
+                     const binsrv::main_config &config);
 
 void log_storage_info(binsrv::basic_logger &logger,
                       const binsrv::storage &storage);

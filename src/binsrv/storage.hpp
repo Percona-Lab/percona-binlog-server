@@ -29,9 +29,8 @@
 #include "binsrv/basic_storage_backend_fwd.hpp"
 #include "binsrv/encryption_config_fwd.hpp"
 #include "binsrv/encryption_format_type_fwd.hpp"
-#include "binsrv/keyring_config_fwd.hpp"
+#include "binsrv/main_config_fwd.hpp"
 #include "binsrv/replication_mode_type_fwd.hpp"
-#include "binsrv/storage_config_fwd.hpp"
 
 #include "binsrv/events/composite_binlog_name.hpp"
 
@@ -93,11 +92,8 @@ public:
 
   static constexpr std::size_t default_event_buffer_size_in_bytes{16384U};
 
-  storage(basic_logger_ptr logger,
-          const optional_keyring_config &keyring_config,
-          const storage_config &config,
-          storage_construction_mode_type construction_mode,
-          replication_mode_type replication_mode);
+  storage(basic_logger_ptr logger, const main_config &config,
+          storage_construction_mode_type construction_mode);
 
   storage(const storage &) = delete;
   storage &operator=(const storage &) = delete;
