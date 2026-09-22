@@ -13,31 +13,13 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef BINSRV_REPLICATION_SOURCE_CONFIG_HPP
-#define BINSRV_REPLICATION_SOURCE_CONFIG_HPP
-
-#include "binsrv/replication_source_config_fwd.hpp" // IWYU pragma: export
-
-#include <cstdint>
-
-#include "binsrv/authentication_config.hpp" // IWYU pragma: export
-
-#include "util/nv_tuple.hpp"
+#ifndef BINSRV_AUTHENTICATION_CONFIG_FWD_HPP
+#define BINSRV_AUTHENTICATION_CONFIG_FWD_HPP
 
 namespace binsrv {
 
-struct [[nodiscard]] replication_source_config
-    : util::nv_tuple<
-          // clang-format off
-          util::nv<"port"          , std::uint16_t>,
-          util::nv<"read_timeout"  , std::uint32_t>,
-          util::nv<"write_timeout" , std::uint32_t>,
-          util::nv<"authentication", authentication_config>
-          // clang-format on
-          > {
-  void validate() const;
-};
+struct authentication_config;
 
 } // namespace binsrv
 
-#endif // BINSRV_REPLICATION_SOURCE_CONFIG_HPP
+#endif // BINSRV_AUTHENTICATION_CONFIG_FWD_HPP

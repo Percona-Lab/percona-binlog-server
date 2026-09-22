@@ -530,6 +530,10 @@ set(binsrv_source_files
   src/binsrv/basic_logger.hpp
   src/binsrv/basic_logger.cpp
 
+  src/binsrv/authentication_config_fwd.hpp
+  src/binsrv/authentication_config.hpp
+  src/binsrv/authentication_config.cpp
+
   src/binsrv/basic_keyring_fwd.hpp
   src/binsrv/basic_keyring.hpp
   src/binsrv/basic_keyring.cpp

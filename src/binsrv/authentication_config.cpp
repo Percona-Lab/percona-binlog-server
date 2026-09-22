@@ -13,31 +13,36 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#include "binsrv/replication_source_config.hpp"
+#include "binsrv/authentication_config.hpp"
 
 #include <stdexcept>
+#include <string_view>
 
 #include "util/exception_location_helpers.hpp"
 
 namespace binsrv {
 
-void replication_source_config::validate() const {
-  if (get<"port">() == 0U) {
+void authentication_config::validate() const {
+  // The only client authentication plugin the PBS listener supports
+  // today. Anything else is rejected up front so that a misconfigured
+  // JSON cannot silently downgrade a session's auth negotiation.
+  static constexpr std::string_view supported_plugin{"caching_sha2_password"};
+
+  if (get<"user">().empty()) {
     util::exception_location().raise<std::invalid_argument>(
-        "error validating replication source config: "
-        "port must be greater than 0");
+        "error validating replication source authentication config: "
+        "user must not be empty");
   }
-  if (get<"read_timeout">() == 0U) {
+  if (get<"password">().empty()) {
     util::exception_location().raise<std::invalid_argument>(
-        "error validating replication source config: "
-        "read_timeout must be greater than 0");
+        "error validating replication source authentication config: "
+        "password must not be empty");
   }
-  if (get<"write_timeout">() == 0U) {
+  if (get<"plugin">() != supported_plugin) {
     util::exception_location().raise<std::invalid_argument>(
-        "error validating replication source config: "
-        "write_timeout must be greater than 0");
+        "error validating replication source authentication config: "
+        "plugin must be \"caching_sha2_password\"");
   }
-  get<"authentication">().validate();
 }
 
 } // namespace binsrv

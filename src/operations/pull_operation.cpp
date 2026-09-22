@@ -21,7 +21,6 @@
 #include <cstdint>
 #include <exception>
 #include <memory>
-#include <string_view>
 #include <thread>
 
 #pragma GCC diagnostic push
@@ -82,9 +81,6 @@ generic_operation<mode_type::pull>::generic_operation(
     : basic_operation{cmd_args, expected_number_of_arguments} {}
 
 [[nodiscard]] bool generic_operation<mode_type::pull>::execute() const {
-  static constexpr std::string_view default_username{"rpl"};
-  static constexpr std::string_view default_password{"password"};
-
   bool result{false};
 
   binsrv::basic_logger_ptr logger;
@@ -117,13 +113,8 @@ generic_operation<mode_type::pull>::generic_operation(
         easymysql::connection_replication_mode_type::blocking, config, logger,
         storage};
 
-    const auto &replication_source_config{
-        config->root().get<"replication_source">()};
     const minimysql::network_service service(
-        logger, io_ctx, storage, replication_source_config.get<"port">(),
-        std::chrono::seconds{replication_source_config.get<"read_timeout">()},
-        std::chrono::seconds{replication_source_config.get<"write_timeout">()},
-        default_username, default_password);
+        logger, io_ctx, storage, config->root().get<"replication_source">());
 
     const auto idle_time_seconds{
         config->root().get<"replication">().get<"idle_time">()};
