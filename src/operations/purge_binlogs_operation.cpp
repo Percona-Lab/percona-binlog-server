@@ -22,6 +22,7 @@
 #include "binsrv/main_config.hpp"
 #include "binsrv/null_logger.hpp"
 #include "binsrv/storage.hpp"
+#include "binsrv/storage_core.hpp"
 
 #include "binsrv/events/composite_binlog_name.hpp"
 

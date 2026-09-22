@@ -37,6 +37,7 @@
 #include "binsrv/main_config.hpp"
 #include "binsrv/replication_mode_type.hpp"
 #include "binsrv/storage.hpp"
+#include "binsrv/storage_core_fwd.hpp"
 
 #include "binsrv/events/code_type.hpp"
 #include "binsrv/events/common_header_flag_type.hpp"

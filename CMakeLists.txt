@@ -620,6 +620,10 @@ set(binsrv_source_files
   src/binsrv/storage.hpp
   src/binsrv/storage.cpp
 
+  src/binsrv/storage_core_fwd.hpp
+  src/binsrv/storage_core.hpp
+  src/binsrv/storage_core.cpp
+
   src/binsrv/storage_backend_factory.hpp
   src/binsrv/storage_backend_factory.cpp
 
