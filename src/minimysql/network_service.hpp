@@ -16,14 +16,10 @@
 #ifndef MINIMYSQL_NETWORK_SERVICE_HPP
 #define MINIMYSQL_NETWORK_SERVICE_HPP
 
-#include <chrono>
-#include <cstdint>
-#include <string>
-#include <string_view>
-
 #include <boost/asio/ts/netfwd.hpp>
 
 #include "binsrv/basic_logger_fwd.hpp"
+#include "binsrv/replication_source_config_fwd.hpp"
 #include "binsrv/storage_fwd.hpp"
 
 namespace minimysql {
@@ -34,10 +30,7 @@ public:
 
   network_service(binsrv::basic_logger_ptr logger,
                   boost::asio::io_context &context, binsrv::storage_ptr storage,
-                  std::uint16_t listening_port,
-                  std::chrono::seconds read_timeout,
-                  std::chrono::seconds write_timeout, std::string_view username,
-                  std::string_view password);
+                  const binsrv::replication_source_config &cfg);
 
   network_service(const network_service &) = delete;
   network_service &operator=(const network_service &) = delete;
@@ -49,8 +42,6 @@ public:
 private:
   binsrv::basic_logger_ptr logger_;
   binsrv::storage_ptr storage_;
-  std::string username_;
-  std::string password_;
 
   boost::asio::io_context *context_;
   using acceptor_type =

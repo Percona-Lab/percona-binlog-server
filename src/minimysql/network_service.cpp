@@ -60,8 +60,10 @@
 
 #include <boost/system/system_error.hpp>
 
+#include "binsrv/authentication_config.hpp"
 #include "binsrv/basic_logger.hpp"
 #include "binsrv/log_severity.hpp"
+#include "binsrv/replication_source_config.hpp"
 #include "binsrv/storage.hpp"
 
 #include "minimysql/connection_context.hpp"
@@ -281,12 +283,8 @@ void handle_exception(binsrv::basic_logger &logger, std::string_view context) {
     binsrv::basic_logger &logger,
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
     binsrv::storage &storage, boost::asio::ip::tcp::socket socket,
-    // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
-    std::chrono::seconds read_timeout, std::chrono::seconds write_timeout,
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
-    const std::string &username,
-    // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
-    const std::string &password) {
+    const binsrv::replication_source_config &cfg) {
   boost::system::error_code session_ec;
   const auto remote_endpoint{socket.remote_endpoint(session_ec)};
   const auto remote_endpoint_str{
@@ -294,11 +292,16 @@ void handle_exception(binsrv::basic_logger &logger, std::string_view context) {
 
   const scope_tracer tracer(logger, "session " + remote_endpoint_str);
 
+  const std::chrono::seconds read_timeout{cfg.get<"read_timeout">()};
+  const std::chrono::seconds write_timeout{cfg.get<"write_timeout">()};
+
   try {
     minimysql::network_buffer_type data;
     data.reserve(network_service::expected_packet_size);
 
-    minimysql::connection_context context{username, password};
+    minimysql::connection_context context{
+        cfg.get<"authentication">().get<"user">(),
+        cfg.get<"authentication">().get<"password">()};
 
     // creating and sending server greeting packet:
     //   protocol_version: 10
@@ -566,12 +569,8 @@ void handle_exception(binsrv::basic_logger &logger, std::string_view context) {
     binsrv::storage &storage,
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
     boost::asio::ip::tcp::acceptor &acceptor,
-    // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
-    std::chrono::seconds read_timeout, std::chrono::seconds write_timeout,
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
-    const std::string &username,
-    // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
-    const std::string &password) {
+    const binsrv::replication_source_config &cfg) {
   const scope_tracer tracer(logger, "listener");
 
   auto executor = acceptor.get_executor();
@@ -597,9 +596,7 @@ void handle_exception(binsrv::basic_logger &logger, std::string_view context) {
 
       // NOLINTNEXTLINE(misc-include-cleaner)
       boost::asio::co_spawn(executor,
-                            session(logger, storage, std::move(socket),
-                                    read_timeout, write_timeout, username,
-                                    password),
+                            session(logger, storage, std::move(socket), cfg),
                             boost::asio::detached);
     }
   } catch (...) {
@@ -609,23 +606,19 @@ void handle_exception(binsrv::basic_logger &logger, std::string_view context) {
 
 } // anonymous namespace
 
-network_service::network_service(
-    binsrv::basic_logger_ptr logger, boost::asio::io_context &context,
-    binsrv::storage_ptr storage, std::uint16_t listening_port,
-    // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
-    std::chrono::seconds read_timeout, std::chrono::seconds write_timeout,
-    // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
-    std::string_view username, std::string_view password)
+network_service::network_service(binsrv::basic_logger_ptr logger,
+                                 boost::asio::io_context &context,
+                                 binsrv::storage_ptr storage,
+                                 const binsrv::replication_source_config &cfg)
     : logger_{std::move(logger)}, storage_{std::move(storage)},
-      username_(username), password_(password), context_{&context},
+      context_{&context},
       acceptor_{std::make_unique<acceptor_type>(
           context, boost::asio::ip::tcp::endpoint{boost::asio::ip::tcp::v4(),
-                                                  listening_port})} {
+                                                  cfg.get<"port">()})} {
   assert(logger_);
   // NOLINTNEXTLINE(misc-include-cleaner)
   boost::asio::co_spawn(*context_,
-                        listener(*logger_, *storage_, *acceptor_, read_timeout,
-                                 write_timeout, username_, password_),
+                        listener(*logger_, *storage_, *acceptor_, cfg),
                         boost::asio::detached);
 }
 

@@ -39,7 +39,12 @@
   "replication_source": {
     "port": 3307,
     "read_timeout": 60,
-    "write_timeout": 60
+    "write_timeout": 60,
+    "authentication": {
+      "user": "rpl_user",
+      "password": "rpl_password",
+      "plugin": "caching_sha2_password"
+    }
   },
   "keyring": {
     "uri": "file:///home/user/keyring/keyring/keyring_data.json"

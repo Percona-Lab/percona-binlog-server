@@ -517,7 +517,12 @@ The Percona Binary Log Server configuration file has the following format.
   "replication_source": {
     "port": 3307,
     "read_timeout": 60,
-    "write_timeout": 60
+    "write_timeout": 60,
+    "authentication": {
+      "user": "rpl_user",
+      "password": "rpl_password",
+      "plugin": "caching_sha2_password"
+    }
   },
   "keyring": {
     "uri": "file:///var/lib/pbs/keyring/keyring_data.json"
@@ -594,6 +599,12 @@ This section configures the built-in MySQL-compatible listener the utility expos
 - `<replication_source.port>` - the TCP port on which the utility listens for incoming replica connections.
 - `<replication_source.read_timeout>` - the number of seconds the utility will wait to read data from a connected replica before treating the connection as timed out.
 - `<replication_source.write_timeout>` - the number of seconds the utility will wait to write data to a connected replica before treating the connection as timed out.
+
+#### \<replication_source.authentication\> section
+Credentials the built-in listener accepts from downstream replicas.
+- `<replication_source.authentication.user>` - the MySQL account name a downstream replica must present to log in to the listener (must not be empty).
+- `<replication_source.authentication.password>` - the password associated with that account (must not be empty).
+- `<replication_source.authentication.plugin>` - the client authentication plugin the listener advertises. Only `caching_sha2_password` is supported today; other values are rejected at configuration load time.
 
 #### \<keyring\> section
 If this an optional section that specifies keyring configuration parameters. It must be present if the storage has at least one encrypted binlog file.
