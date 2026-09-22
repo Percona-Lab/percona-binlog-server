@@ -18,15 +18,16 @@
 #include <utility>
 
 #include "binsrv/storage.hpp"
+#include "binsrv/storage_core.hpp"
 
 #include "binsrv/models/binlog_file_record.hpp"
 #include "binsrv/models/search_response.hpp"
 
 namespace operations {
 
-void append_record_to_search_response(
-    binsrv::models::search_response &response, const binsrv::storage &storage,
-    const binsrv::storage::binlog_record &record) {
+void append_record_to_search_response(binsrv::models::search_response &response,
+                                      const binsrv::storage &storage,
+                                      const binsrv::binlog_record &record) {
   binsrv::models::binlog_file_record record_model{
       {{record.name.str()},
        {record.size},
@@ -36,8 +37,7 @@ void append_record_to_search_response(
        {record.timestamps.get_min_timestamp()},
        {record.timestamps.get_max_timestamp()},
        {record.encryption.has_value()
-            ? binsrv::storage::binlog_encryption_record::to_model(
-                  *record.encryption)
+            ? binsrv::binlog_encryption_record::to_model(*record.encryption)
             : binsrv::models::optional_binlog_file_encryption_record{}}}};
   response.add_record(std::move(record_model));
 }

@@ -31,6 +31,7 @@
 #include "binsrv/encryption_format_type_fwd.hpp"
 #include "binsrv/main_config_fwd.hpp"
 #include "binsrv/replication_mode_type_fwd.hpp"
+#include "binsrv/storage_core_fwd.hpp"
 
 #include "binsrv/events/composite_binlog_name.hpp"
 
@@ -50,46 +51,6 @@ namespace binsrv {
 
 class [[nodiscard]] storage {
 public:
-  struct binlog_encryption_record {
-    std::string kek_id;
-    util::hex_value_storage file_key_encrypted_with_kek;
-    util::optional_hex_value_storage iv_for_file_key_encryption;
-    util::optional_hex_value_storage tag_of_file_key_encryption;
-    std::string data_cipher;
-    util::hex_value_storage iv_for_data_encryption;
-    util::optional_hex_value_storage tag_of_data_encryption;
-
-    [[nodiscard]] static models::binlog_file_encryption_record
-    to_model(const binlog_encryption_record &record);
-    [[nodiscard]] static binlog_encryption_record
-    from_model(const models::binlog_file_encryption_record &model);
-  };
-  using optional_binlog_encryption_record =
-      std::optional<binlog_encryption_record>;
-  struct binlog_record {
-    // binlog file name
-    events::composite_binlog_name name;
-    // binlog file size in bytes
-    std::uint64_t size{0ULL};
-    // accumulated GTIDs present in the binlog files before this one
-    gtids::optional_gtid_set previous_gtids{};
-    // GTIDs present in this binlog file
-    gtids::optional_gtid_set added_gtids{};
-    // minimum and maximum event timestamps observed in this binlog file
-    util::ctime_timestamp_range timestamps{};
-    // sequence_number of the last transaction seen in this file -
-    // used for GTID rewrite-mode resume state persistence
-    events::seq_no_t last_sequence_number{0ULL};
-    // optional encryption parameters
-    optional_binlog_encryption_record encryption{};
-  };
-  using binlog_record_container = std::vector<binlog_record>;
-
-  static constexpr std::string_view default_binlog_index_name{"binlog.index"};
-  static constexpr std::string_view default_binlog_index_entry_path{"."};
-  static constexpr std::string_view metadata_name{"metadata.json"};
-  static constexpr std::string_view binlog_metadata_extension{".json"};
-
   static constexpr std::size_t default_event_buffer_size_in_bytes{16384U};
 
   storage(basic_logger_ptr logger, const main_config &config,
@@ -100,58 +61,26 @@ public:
   storage(storage &&) = delete;
   storage &operator=(storage &&) = delete;
 
-  // destructor is explicitly declared here and defined as default in .cpp
-  // file to complete the rule of 5
   ~storage();
 
-  [[nodiscard]] const gtids::gtid_set &get_purged_gtids() const noexcept {
-    return purged_gtids_;
-  }
+  [[nodiscard]] const gtids::gtid_set &get_purged_gtids() const noexcept;
   void set_purged_gtids(const gtids::gtid_set &purged_gtids);
 
   [[nodiscard]] std::string get_backend_description() const;
 
-  [[nodiscard]] replication_mode_type get_replication_mode() const noexcept {
-    return replication_mode_;
-  }
+  [[nodiscard]] replication_mode_type get_replication_mode() const noexcept;
   [[nodiscard]] bool is_in_gtid_replication_mode() const noexcept;
 
   [[nodiscard]] const binlog_record_container &
-  get_binlog_records() const noexcept {
-    return binlog_records_;
-  }
-  [[nodiscard]] bool is_empty() const noexcept {
-    return binlog_records_.empty();
-  }
-  [[nodiscard]] const events::composite_binlog_name &
-  get_current_binlog_name() const noexcept {
-    return is_empty() ? binlog_name_sentinel_
-                      : get_current_binlog_record().name;
-  }
+  get_binlog_records() const noexcept;
+  [[nodiscard]] bool is_empty() const noexcept;
+  [[nodiscard]] events::composite_binlog_name get_current_binlog_name() const;
+
   [[nodiscard]] std::uint64_t get_current_position() const noexcept {
     return get_flushed_position() + std::size(event_buffer_);
   }
 
-  [[nodiscard]] gtids::gtid_set get_gtids() const {
-    if (!is_in_gtid_replication_mode()) {
-      return {};
-    }
-
-    if (is_empty()) {
-      return get_purged_gtids();
-    }
-    gtids::gtid_set result{};
-    const auto &optional_previous_gtids{
-        get_current_binlog_record().previous_gtids};
-    if (optional_previous_gtids.has_value()) {
-      result = *optional_previous_gtids;
-    }
-    const auto &optional_added_gtids{get_current_binlog_record().added_gtids};
-    if (optional_added_gtids.has_value()) {
-      result.add(*optional_added_gtids);
-    }
-    return result;
-  }
+  [[nodiscard]] gtids::gtid_set get_gtids() const;
 
   [[nodiscard]] events::seq_no_t
   get_last_transaction_sequence_number() const noexcept {
@@ -192,30 +121,15 @@ public:
   [[nodiscard]] std::string
   get_binlog_uri(const events::composite_binlog_name &binlog_name) const;
 
-  [[nodiscard]] bool is_keyring_initialized() const noexcept {
-    return static_cast<bool>(keyring_);
-  }
+  [[nodiscard]] bool is_keyring_initialized() const noexcept;
   [[nodiscard]] std::string get_keyring_description() const;
   [[nodiscard]] std::string get_active_kek_description() const;
   [[nodiscard]] std::string get_encryption_format_description() const;
 
-  [[nodiscard]] bool has_active_kek() const noexcept {
-    return !active_kek_id_.empty();
-  }
+  [[nodiscard]] bool has_active_kek() const noexcept;
 
 private:
-  basic_logger_ptr logger_;
-  storage_construction_mode_type construction_mode_;
-  basic_keyring_ptr keyring_;
-  optional_encryption_format_type encryption_format_;
-  std::string active_kek_id_;
-  std::string active_data_cipher_{};
-  basic_storage_backend_ptr backend_;
-
-  replication_mode_type replication_mode_;
-  events::composite_binlog_name binlog_name_sentinel_{};
-  gtids::gtid_set purged_gtids_{};
-  binlog_record_container binlog_records_{};
+  storage_core_ptr core_;
 
   std::uint64_t checkpoint_size_bytes_{0ULL};
   std::uint64_t last_checkpoint_position_{0ULL};
@@ -232,22 +146,6 @@ private:
   events::seq_no_t ready_to_flush_last_sequence_number_{0ULL};
   events::seq_no_t incomplete_transaction_last_sequence_number_{0ULL};
 
-  void remove_temporary_objects(storage_object_name_container &object_names);
-
-  void initialize_storage_encryption(
-      const optional_encryption_config &encryption_config);
-
-  void ensure_streaming_mode() const;
-  void ensure_purging_mode() const;
-
-  [[nodiscard]] const binlog_record &
-  get_current_binlog_record() const noexcept {
-    return binlog_records_.back();
-  }
-  [[nodiscard]] binlog_record &get_current_binlog_record() noexcept {
-    return binlog_records_.back();
-  }
-
   [[nodiscard]] bool size_checkpointing_enabled() const noexcept {
     return checkpoint_size_bytes_ != 0ULL;
   }
@@ -261,9 +159,7 @@ private:
   [[nodiscard]] bool has_event_data_to_flush() const noexcept {
     return last_transaction_boundary_position_in_event_buffer_ != 0ULL;
   }
-  [[nodiscard]] std::uint64_t get_flushed_position() const noexcept {
-    return is_empty() ? 0ULL : get_current_binlog_record().size;
-  }
+  [[nodiscard]] std::uint64_t get_flushed_position() const noexcept;
   [[nodiscard]] std::uint64_t get_ready_to_flush_position() const noexcept {
     return get_flushed_position() +
            last_transaction_boundary_position_in_event_buffer_;
@@ -275,35 +171,7 @@ private:
 
   void flush_event_buffer_internal();
 
-  void load_binlog_index();
-  void validate_binlog_index(
-      const storage_object_name_container &object_names) const;
-  void save_binlog_index() const;
-
-  void load_metadata();
-  void validate_metadata(
-      replication_mode_type replication_mode,
-      const optional_encryption_format_type &encryption_format) const;
-  void save_metadata() const;
-
-  [[nodiscard]] static std::string generate_binlog_metadata_name(
-      const events::composite_binlog_name &binlog_name);
-  [[nodiscard]] binlog_record
-  load_binlog_metadata(const events::composite_binlog_name &binlog_name) const;
-  void validate_binlog_metadata(const binlog_record &record) const;
-  void save_binlog_metadata(const binlog_record &record) const;
-
-  void load_and_validate_binlog_metadata_set(
-      const storage_object_name_container &object_names,
-      const storage_object_name_container &object_metadata_names);
-
-  [[nodiscard]] optional_binlog_encryption_record
-  generate_binlog_encryption_record() const;
-
-  void write_data_to_stream(
-      util::const_byte_span data,
-      const optional_binlog_encryption_record &encryption_record,
-      std::uint64_t offset);
+  void ensure_streaming_mode() const;
 };
 
 } // namespace binsrv

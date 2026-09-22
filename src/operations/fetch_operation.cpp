@@ -35,6 +35,7 @@
 #include "binsrv/log_severity.hpp"
 #include "binsrv/main_config.hpp"
 #include "binsrv/storage.hpp"
+#include "binsrv/storage_core_fwd.hpp"
 
 #include "easymysql/connection_fwd.hpp"
 

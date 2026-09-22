@@ -22,9 +22,9 @@
 
 namespace operations {
 
-void append_record_to_search_response(
-    binsrv::models::search_response &response, const binsrv::storage &storage,
-    const binsrv::storage::binlog_record &record);
+void append_record_to_search_response(binsrv::models::search_response &response,
+                                      const binsrv::storage &storage,
+                                      const binsrv::binlog_record &record);
 
 } // namespace operations
 
