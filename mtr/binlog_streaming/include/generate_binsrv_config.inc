@@ -27,6 +27,8 @@
 #   --let $binsrv_encryption_cipher = AES-256-CTR (optional)
 #   --let $binsrv_encryption_kek_id = alpha (optional)
 #   --let $binsrv_keyring_data_file_path = $MYSQL_TMP_DIR/keyring_data.json (optional)
+#   --let $binsrv_auth_user = rpl (optional, default: rpl)
+#   --let $binsrv_auth_password = password (optional, default: password)
 #   --source set_up_binsrv_environment.inc
 
 --echo
@@ -107,6 +109,15 @@ if ($binsrv_connection_host == "")
 # connecting a probe client to the listener).
 --let $binsrv_replication_source_port = `SELECT @@global.port + 1000`
 
+if ($binsrv_auth_user == "")
+{
+  --let $binsrv_auth_user = rpl
+}
+if ($binsrv_auth_password == "")
+{
+  --let $binsrv_auth_password = password
+}
+
 eval SET @binsrv_config_json = JSON_OBJECT(
   'logger', JSON_OBJECT(
     'level', '$binsrv_log_level',
@@ -130,7 +141,12 @@ eval SET @binsrv_config_json = JSON_OBJECT(
   'replication_source', JSON_OBJECT(
      'port', $binsrv_replication_source_port,
      'read_timeout', 60,
-     'write_timeout', 60
+     'write_timeout', 60,
+     'authentication', JSON_OBJECT(
+        'user', '$binsrv_auth_user',
+        'password', '$binsrv_auth_password',
+        'plugin', 'caching_sha2_password'
+     )
   ),
   'storage', JSON_OBJECT(
      'backend', '$storage_backend',
