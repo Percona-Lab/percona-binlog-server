@@ -179,6 +179,10 @@ set(opensslpp_source_files
   src/opensslpp/crypto_rng.hpp
   src/opensslpp/crypto_rng.cpp
 
+  src/opensslpp/digest_context_fwd.hpp
+  src/opensslpp/digest_context.hpp
+  src/opensslpp/digest_context.cpp
+
   src/opensslpp/core_error_fwd.hpp
   src/opensslpp/core_error.hpp
   src/opensslpp/core_error.cpp

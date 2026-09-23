@@ -17,108 +17,13 @@
 
 #include <algorithm>
 #include <cassert>
-#include <cstddef>
 #include <cstdint>
 #include <functional>
-#include <memory>
-#include <stdexcept>
+#include <iterator>
 #include <string>
 #include <string_view>
 
-#include <openssl/evp.h>
-#include <openssl/types.h>
-
-namespace {
-
-enum class digest_code_type : std::uint8_t {
-  sha256,
-};
-
-class digest_context {
-public:
-  // no std::string_view for 'type' as we need it to be nul-terminated
-  explicit digest_context(digest_code_type digest_code)
-      : impl_{EVP_MD_CTX_new(), digest_context_deleter{}} {
-    if (!impl_) {
-      throw std::runtime_error{"failed to create digest context"};
-    }
-    if (EVP_DigestInit_ex(impl_.get(), get_md_by_digest_code(digest_code),
-                          nullptr) == 0) {
-      throw std::runtime_error{"failed to initialize digest context"};
-    }
-  }
-
-  ~digest_context() noexcept = default;
-
-  digest_context(const digest_context &obj) = delete;
-  digest_context(digest_context &&obj) noexcept = delete;
-
-  digest_context &operator=(const digest_context &obj) = delete;
-  digest_context &operator=(digest_context &&obj) noexcept = delete;
-
-  [[nodiscard]] std::size_t get_size_in_bytes() const noexcept {
-    assert(impl_);
-    auto native_result{EVP_MD_CTX_size(impl_.get())};
-    assert(native_result != -1);
-    return static_cast<std::size_t>(native_result);
-  }
-
-  void update(std::string_view data) {
-    assert(impl_);
-    if (EVP_DigestUpdate(impl_.get(), std::data(data), std::size(data)) == 0) {
-      throw std::runtime_error{"failed to update digest context"};
-    }
-  }
-  std::string finalize() {
-    assert(impl_);
-    std::string result(get_size_in_bytes(), '\0');
-
-    unsigned int result_size = 0;
-    if (EVP_DigestFinal_ex(
-            impl_.get(),
-            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-            reinterpret_cast<unsigned char *>(std::data(result)),
-            &result_size) == 0) {
-      throw std::runtime_error{"cannot finalize digest context"};
-    }
-    assert(result_size == std::size(result));
-
-    impl_.reset();
-    return result;
-  }
-
-private:
-  struct digest_context_deleter {
-    void operator()(EVP_MD_CTX *digest_context) const noexcept {
-      // null-ness is handled by EVP_MD_CTX_free
-      EVP_MD_CTX_free(digest_context);
-    }
-  };
-
-  using impl_ptr = std::unique_ptr<EVP_MD_CTX, digest_context_deleter>;
-  impl_ptr impl_;
-
-  [[nodiscard]] static const EVP_MD *
-  get_md_by_digest_code(digest_code_type digest_code) noexcept {
-    switch (digest_code) {
-    case digest_code_type::sha256:
-      return EVP_sha256();
-    default:
-      // should never happen as we only construct digest_context with supported
-      // digest_code_type
-      return nullptr;
-    }
-  }
-};
-
-std::string calculate_digest(digest_code_type digest_code,
-                             std::string_view data) {
-  digest_context ctx(digest_code);
-  ctx.update(data);
-  return ctx.finalize();
-}
-
-} // anonymous namespace
+#include "opensslpp/digest_context.hpp"
 
 namespace minimysql {
 
@@ -132,16 +37,17 @@ std::string caching_sha2_password_authenticator::scramble(
   // server, provided that it knows original password and server_auth_data
   // (salt), can verify client_auth_data by calculating the same way and
   // comparing the result with client_auth_data
-  const auto digest_code{digest_code_type::sha256};
+  const std::string digest_name{"SHA256"};
 
   // calculating hashed password
-  auto result{calculate_digest(digest_code, password)};
+  auto result{opensslpp::digest_context::calculate(digest_name, password)};
 
   // calculating double-hashed password
-  const auto double_hashed_password{calculate_digest(digest_code, result)};
+  const auto double_hashed_password{
+      opensslpp::digest_context::calculate(digest_name, result)};
 
   // calculating salted triple-hashed password
-  digest_context ctx(digest_code);
+  opensslpp::digest_context ctx{digest_name};
   ctx.update(double_hashed_password);
   ctx.update(salt);
   const auto salted_triple_hashed_password{ctx.finalize()};
