@@ -19,6 +19,8 @@
 #include "binsrv/storage_core_fwd.hpp" // IWYU pragma: export
 
 #include <chrono>
+#include <mutex>
+#include <shared_mutex>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -100,10 +102,14 @@ public:
 
   [[nodiscard]] storage_construction_mode_type
   get_construction_mode() const noexcept {
+    // no mutex protection needed as this this method reads data
+    // set only once during construction
     return construction_mode_;
   }
 
-  [[nodiscard]] const gtids::gtid_set &get_purged_gtids() const noexcept {
+  // returning by value for thread-safety
+  [[nodiscard]] gtids::gtid_set get_purged_gtids() const {
+    const std::shared_lock lock{mutex_};
     return purged_gtids_;
   }
   void set_purged_gtids(const gtids::gtid_set &purged_gtids);
@@ -117,46 +123,36 @@ public:
   }
   [[nodiscard]] bool is_in_gtid_replication_mode() const noexcept;
 
-  [[nodiscard]] const binlog_record_container &
-  get_binlog_records() const noexcept {
+  // returning by value for thread-safety
+  [[nodiscard]] binlog_record_container get_binlog_records() const {
+    const std::shared_lock lock{mutex_};
     return binlog_records_;
   }
-  [[nodiscard]] bool is_empty() const noexcept {
-    return binlog_records_.empty();
+  [[nodiscard]] bool is_empty() const {
+    const std::shared_lock lock{mutex_};
+    return is_empty_unsafe();
   }
   [[nodiscard]] events::composite_binlog_name get_current_binlog_name() const {
-    return is_empty() ? events::composite_binlog_name{}
-                      : get_current_binlog_record().name;
+    const std::shared_lock lock{mutex_};
+    return get_current_binlog_name_unsafe();
   }
   [[nodiscard]] gtids::gtid_set get_gtids() const {
-    if (!is_in_gtid_replication_mode()) {
-      return {};
-    }
-
-    if (is_empty()) {
-      return get_purged_gtids();
-    }
-    gtids::gtid_set result{};
-    const auto &optional_previous_gtids{
-        get_current_binlog_record().previous_gtids};
-    if (optional_previous_gtids.has_value()) {
-      result = *optional_previous_gtids;
-    }
-    const auto &optional_added_gtids{get_current_binlog_record().added_gtids};
-    if (optional_added_gtids.has_value()) {
-      result.add(*optional_added_gtids);
-    }
-    return result;
+    const std::shared_lock lock{mutex_};
+    return get_gtids_unsafe();
   }
-  [[nodiscard]] events::seq_no_t last_sequence_number() const noexcept {
-    return is_empty() ? 0ULL : get_current_binlog_record().last_sequence_number;
+  [[nodiscard]] events::seq_no_t get_last_sequence_number() const {
+    const std::shared_lock lock{mutex_};
+    return is_empty_unsafe()
+               ? 0ULL
+               : get_current_binlog_record_unsafe().last_sequence_number;
   }
 
-  [[nodiscard]] std::uint64_t get_flushed_position() const noexcept {
-    return is_empty() ? 0ULL : get_current_binlog_record().size;
+  [[nodiscard]] std::uint64_t get_flushed_position() const {
+    const std::shared_lock lock{mutex_};
+    return get_flushed_position_unsafe();
   }
 
-  [[nodiscard]] bool is_binlog_open() const noexcept;
+  [[nodiscard]] bool is_binlog_open() const;
 
   [[nodiscard]] open_binlog_status
   open_binlog(const events::composite_binlog_name &binlog_name);
@@ -187,6 +183,8 @@ public:
   get_binlog_uri(const events::composite_binlog_name &binlog_name) const;
 
   [[nodiscard]] bool is_keyring_initialized() const noexcept {
+    // no mutex protection needed as this this method reads data
+    // set only once during construction
     return static_cast<bool>(keyring_);
   }
   [[nodiscard]] std::string get_keyring_description() const;
@@ -194,10 +192,14 @@ public:
   [[nodiscard]] std::string get_encryption_format_description() const;
 
   [[nodiscard]] bool has_active_kek() const noexcept {
+    // no mutex protection needed as this this method reads data
+    // set only once during construction
     return !active_kek_id_.empty();
   }
 
 private:
+  mutable std::shared_mutex mutex_;
+
   basic_logger_ptr logger_;
   storage_construction_mode_type construction_mode_;
   basic_keyring_ptr keyring_;
@@ -210,6 +212,10 @@ private:
   gtids::gtid_set purged_gtids_{};
   binlog_record_container binlog_records_{};
 
+  [[nodiscard]] bool is_empty_unsafe() const noexcept {
+    return binlog_records_.empty();
+  }
+
   void remove_temporary_objects(storage_object_name_container &object_names);
 
   void initialize_storage_encryption(
@@ -219,11 +225,41 @@ private:
   void ensure_purging_mode() const;
 
   [[nodiscard]] const binlog_record &
-  get_current_binlog_record() const noexcept {
+  get_current_binlog_record_unsafe() const noexcept {
     return binlog_records_.back();
   }
-  [[nodiscard]] binlog_record &get_current_binlog_record() noexcept {
+  [[nodiscard]] binlog_record &get_current_binlog_record_unsafe() noexcept {
     return binlog_records_.back();
+  }
+  [[nodiscard]] events::composite_binlog_name
+  get_current_binlog_name_unsafe() const {
+    return is_empty_unsafe() ? events::composite_binlog_name{}
+                             : get_current_binlog_record_unsafe().name;
+  }
+  [[nodiscard]] gtids::gtid_set get_gtids_unsafe() const {
+    if (!is_in_gtid_replication_mode()) {
+      return {};
+    }
+
+    if (is_empty_unsafe()) {
+      return purged_gtids_;
+    }
+    gtids::gtid_set result{};
+    const auto &optional_previous_gtids{
+        get_current_binlog_record_unsafe().previous_gtids};
+    if (optional_previous_gtids.has_value()) {
+      result = *optional_previous_gtids;
+    }
+    const auto &optional_added_gtids{
+        get_current_binlog_record_unsafe().added_gtids};
+    if (optional_added_gtids.has_value()) {
+      result.add(*optional_added_gtids);
+    }
+    return result;
+  }
+
+  [[nodiscard]] std::uint64_t get_flushed_position_unsafe() const noexcept {
+    return is_empty_unsafe() ? 0ULL : get_current_binlog_record_unsafe().size;
   }
 
   [[nodiscard]] open_binlog_status open_new_binlog_file_internal(

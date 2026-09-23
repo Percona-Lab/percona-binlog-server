@@ -60,8 +60,7 @@ storage::~storage() {
   }
 }
 
-[[nodiscard]] const gtids::gtid_set &
-storage::get_purged_gtids() const noexcept {
+[[nodiscard]] gtids::gtid_set storage::get_purged_gtids() const {
   return core_->get_purged_gtids();
 }
 
@@ -82,14 +81,11 @@ storage::get_replication_mode() const noexcept {
   return core_->is_in_gtid_replication_mode();
 }
 
-[[nodiscard]] const binlog_record_container &
-storage::get_binlog_records() const noexcept {
+[[nodiscard]] binlog_record_container storage::get_binlog_records() const {
   return core_->get_binlog_records();
 }
 
-[[nodiscard]] bool storage::is_empty() const noexcept {
-  return core_->is_empty();
-}
+[[nodiscard]] bool storage::is_empty() const { return core_->is_empty(); }
 
 [[nodiscard]] gtids::gtid_set storage::get_gtids() const {
   return core_->get_gtids();
@@ -100,7 +96,7 @@ storage::get_current_binlog_name() const {
   return core_->get_current_binlog_name();
 }
 
-[[nodiscard]] bool storage::is_binlog_open() const noexcept {
+[[nodiscard]] bool storage::is_binlog_open() const {
   return core_->is_binlog_open();
 }
 
@@ -109,7 +105,7 @@ storage::open_binlog(const events::composite_binlog_name &binlog_name) {
   auto result{core_->open_binlog(binlog_name)};
 
   if (result != open_binlog_status::created) {
-    ready_to_flush_last_sequence_number_ = core_->last_sequence_number();
+    ready_to_flush_last_sequence_number_ = core_->get_last_sequence_number();
     incomplete_transaction_last_sequence_number_ =
         ready_to_flush_last_sequence_number_;
   } else {
@@ -250,7 +246,7 @@ void storage::update_last_checkpoint_info() {
   }
 }
 
-[[nodiscard]] std::uint64_t storage::get_flushed_position() const noexcept {
+[[nodiscard]] std::uint64_t storage::get_flushed_position() const {
   return core_->get_flushed_position();
 }
 
