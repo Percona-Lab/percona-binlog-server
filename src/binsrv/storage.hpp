@@ -63,7 +63,7 @@ public:
 
   ~storage();
 
-  [[nodiscard]] const gtids::gtid_set &get_purged_gtids() const noexcept;
+  [[nodiscard]] gtids::gtid_set get_purged_gtids() const;
   void set_purged_gtids(const gtids::gtid_set &purged_gtids);
 
   [[nodiscard]] std::string get_backend_description() const;
@@ -71,12 +71,11 @@ public:
   [[nodiscard]] replication_mode_type get_replication_mode() const noexcept;
   [[nodiscard]] bool is_in_gtid_replication_mode() const noexcept;
 
-  [[nodiscard]] const binlog_record_container &
-  get_binlog_records() const noexcept;
-  [[nodiscard]] bool is_empty() const noexcept;
+  [[nodiscard]] binlog_record_container get_binlog_records() const;
+  [[nodiscard]] bool is_empty() const;
   [[nodiscard]] events::composite_binlog_name get_current_binlog_name() const;
 
-  [[nodiscard]] std::uint64_t get_current_position() const noexcept {
+  [[nodiscard]] std::uint64_t get_current_position() const {
     return get_flushed_position() + std::size(event_buffer_);
   }
 
@@ -87,7 +86,7 @@ public:
     return incomplete_transaction_last_sequence_number_;
   }
 
-  [[nodiscard]] bool is_binlog_open() const noexcept;
+  [[nodiscard]] bool is_binlog_open() const;
 
   [[nodiscard]] open_binlog_status
   open_binlog(const events::composite_binlog_name &binlog_name);
@@ -159,8 +158,8 @@ private:
   [[nodiscard]] bool has_event_data_to_flush() const noexcept {
     return last_transaction_boundary_position_in_event_buffer_ != 0ULL;
   }
-  [[nodiscard]] std::uint64_t get_flushed_position() const noexcept;
-  [[nodiscard]] std::uint64_t get_ready_to_flush_position() const noexcept {
+  [[nodiscard]] std::uint64_t get_flushed_position() const;
+  [[nodiscard]] std::uint64_t get_ready_to_flush_position() const {
     return get_flushed_position() +
            last_transaction_boundary_position_in_event_buffer_;
   }

@@ -22,7 +22,9 @@
 #include <exception>
 #include <filesystem>
 #include <iterator>
+#include <mutex>
 #include <optional>
+#include <shared_mutex>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -223,7 +225,9 @@ void storage_core::set_purged_gtids(const gtids::gtid_set &purged_gtids) {
     util::exception_location().raise<std::logic_error>(
         "cannot set purged GTIDs in position-based replication mode");
   }
-  if (!is_empty()) {
+
+  const std::unique_lock lock{mutex_};
+  if (!is_empty_unsafe()) {
     util::exception_location().raise<std::logic_error>(
         "cannot set purged GTIDs in a non-empty storage");
   }
@@ -231,20 +235,28 @@ void storage_core::set_purged_gtids(const gtids::gtid_set &purged_gtids) {
 }
 
 [[nodiscard]] std::string storage_core::get_backend_description() const {
+  // no mutex protection needed as this this method calls a const
+  // method on an instance of basic_storage_backend that reads only data
+  // that was set only once during construction
   return backend_->get_description();
 }
 
 [[nodiscard]] bool storage_core::is_in_gtid_replication_mode() const noexcept {
+  // no need to acquire the mutex as replication_mode_ is immutable after
+  // construction
   return replication_mode_ == replication_mode_type::gtid;
 }
 
-[[nodiscard]] bool storage_core::is_binlog_open() const noexcept {
+[[nodiscard]] bool storage_core::is_binlog_open() const {
+  const std::shared_lock lock{mutex_};
   return backend_->is_stream_open();
 }
 
 [[nodiscard]] open_binlog_status
 storage_core::open_binlog(const events::composite_binlog_name &binlog_name) {
   ensure_streaming_mode();
+
+  const std::unique_lock lock{mutex_};
 
   auto result{open_binlog_status::opened_with_data_present};
 
@@ -258,12 +270,12 @@ storage_core::open_binlog(const events::composite_binlog_name &binlog_name) {
   // in the case when binlog exists, the name must be equal to the last item in
   // "binlog_records_" list and "position_" must be set to a non-zero value
   if (binlog_exists) {
-    if (binlog_name != get_current_binlog_name()) {
+    if (binlog_name != get_current_binlog_name_unsafe()) {
       util::exception_location().raise<std::logic_error>(
           "cannot open an existing binlog that is not the latest one for "
           "append");
     }
-    if (get_flushed_position() == 0ULL) {
+    if (get_flushed_position_unsafe() == 0ULL) {
       util::exception_location().raise<std::logic_error>(
           "invalid position set when opening an existing binlog");
     }
@@ -288,23 +300,29 @@ void storage_core::write_event_block(
     events::seq_no_t block_max_sequence_number) {
   ensure_streaming_mode();
 
-  write_data_to_stream(event_block_data, get_current_binlog_record().encryption,
-                       get_current_binlog_record().size);
-  get_current_binlog_record().size += std::size(event_block_data);
+  const std::unique_lock lock{mutex_};
+
+  write_data_to_stream(event_block_data,
+                       get_current_binlog_record_unsafe().encryption,
+                       get_current_binlog_record_unsafe().size);
+  get_current_binlog_record_unsafe().size += std::size(event_block_data);
   if (is_in_gtid_replication_mode()) {
-    auto &optional_added_gtids{get_current_binlog_record().added_gtids};
+    auto &optional_added_gtids{get_current_binlog_record_unsafe().added_gtids};
     if (optional_added_gtids.has_value()) {
       *optional_added_gtids += block_gtids;
     }
   }
-  get_current_binlog_record().timestamps.add_range(block_timestamps);
-  get_current_binlog_record().last_sequence_number = block_max_sequence_number;
+  get_current_binlog_record_unsafe().timestamps.add_range(block_timestamps);
+  get_current_binlog_record_unsafe().last_sequence_number =
+      block_max_sequence_number;
 
-  save_binlog_metadata(get_current_binlog_record());
+  save_binlog_metadata(get_current_binlog_record_unsafe());
 }
 
 void storage_core::close_binlog() {
   ensure_streaming_mode();
+
+  const std::unique_lock lock{mutex_};
 
   backend_->close_stream();
 }
@@ -313,7 +331,8 @@ void storage_core::close_binlog() {
 storage_core::purge_binlogs(const events::composite_binlog_name &target) {
   ensure_purging_mode();
 
-  if (is_empty()) {
+  const std::unique_lock lock{mutex_};
+  if (is_empty_unsafe()) {
     util::exception_location().raise<std::runtime_error>(
         "cannot purge: binlog storage is empty");
   }
@@ -406,21 +425,30 @@ storage_core::purge_binlogs(const events::composite_binlog_name &target) {
 
 [[nodiscard]] std::string storage_core::get_binlog_uri(
     const events::composite_binlog_name &binlog_name) const {
+  // no mutex protection needed as this this method calls a const
+  // method on an instance of basic_storage_backend that reads only data
+  // that was set only once during construction
   return backend_->get_object_uri(binlog_name.str());
 }
 
 [[nodiscard]] std::string storage_core::get_keyring_description() const {
+  // no mutex protection needed as this this method calls a const
+  // method on an immutable keyring instance
   return is_keyring_initialized() ? keyring_->get_description()
                                   : "keyring is not initialized";
 }
 
 [[nodiscard]] std::string storage_core::get_active_kek_description() const {
+  // no mutex protection needed as this this method calls a chain of const
+  // methods on an immutable keyring instance
   return has_active_kek() ? keyring_->get_key(active_kek_id_).get_description()
                           : "active KEK is not set";
 }
 
 [[nodiscard]] std::string
 storage_core::get_encryption_format_description() const {
+  // no mutex protection needed as this this method reads data
+  // set only once during construction
   return encryption_format_.has_value()
              ? std::string{to_string_view(*encryption_format_)}
              : std::string{"encryption format is not set"};
@@ -520,7 +548,7 @@ void storage_core::ensure_purging_mode() const {
   gtids::optional_gtid_set previous_binlog_gtids{};
   gtids::optional_gtid_set added_binlog_gtids{};
   if (is_in_gtid_replication_mode()) {
-    previous_binlog_gtids = get_gtids();
+    previous_binlog_gtids = get_gtids_unsafe();
     added_binlog_gtids = gtids::gtid_set{};
   }
 
@@ -529,14 +557,14 @@ void storage_core::ensure_purging_mode() const {
       std::move(previous_binlog_gtids), std::move(added_binlog_gtids),
       util::ctime_timestamp_range{}, events::seq_no_t{},
       std::move(encryption_record));
-  save_binlog_metadata(get_current_binlog_record());
+  save_binlog_metadata(get_current_binlog_record_unsafe());
   save_binlog_index();
   return open_binlog_status::created;
 }
 [[nodiscard]] open_binlog_status
 storage_core::open_existing_binlog_file_internal(
     std::uint64_t open_stream_offset) {
-  assert(get_flushed_position() == open_stream_offset);
+  assert(get_flushed_position_unsafe() == open_stream_offset);
   if (open_stream_offset >= events::magic_binlog_offset) {
     return open_stream_offset == events::magic_binlog_offset
                ? open_binlog_status::opened_at_magic_payload_offset
@@ -545,8 +573,8 @@ storage_core::open_existing_binlog_file_internal(
   assert(open_stream_offset == 0ULL);
 
   write_data_to_stream(events::magic_binlog_payload,
-                       get_current_binlog_record().encryption, 0ULL);
-  get_current_binlog_record().size = events::magic_binlog_offset;
+                       get_current_binlog_record_unsafe().encryption, 0ULL);
+  get_current_binlog_record_unsafe().size = events::magic_binlog_offset;
   return open_binlog_status::opened_empty;
 }
 
