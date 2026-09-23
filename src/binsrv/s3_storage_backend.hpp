@@ -32,8 +32,6 @@ namespace binsrv {
 
 class [[nodiscard]] s3_storage_backend final : public basic_storage_backend {
 public:
-  static constexpr std::size_t max_memory_object_size{1048576U};
-
   static constexpr std::string_view original_uri_schema{"s3"};
 
   explicit s3_storage_backend(const storage_config &config);
@@ -70,7 +68,8 @@ private:
 
   [[nodiscard]] storage_object_name_container do_list_objects() override;
 
-  [[nodiscard]] std::string do_get_object(std::string_view name) override;
+  [[nodiscard]] std::string
+  do_get_object(std::string_view name, const util::byte_range &range) override;
   void do_put_object(std::string_view name,
                      util::const_byte_span content) override;
   void do_resize_object(std::string_view name, std::uint64_t new_size) override;

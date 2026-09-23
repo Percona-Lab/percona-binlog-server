@@ -38,7 +38,7 @@
 
 namespace stdx::ranges {
 
-// TODO: change the content of this this file to "using
+// TODO: change the content of this file to "using
 //       std::ranges::views::enumerate" when switching to clang-23
 
 /**

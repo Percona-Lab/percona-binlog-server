@@ -44,7 +44,7 @@ main_config::main_config(std::string_view file_name) {
   static constexpr std::size_t max_file_size{1048576U};
 
   const auto file_content =
-      util::read_file_content(file_name, max_file_size, "configuration file");
+      util::read_file_content("configuration file", file_name, max_file_size);
   if (file_content.empty()) {
     util::exception_location().raise<std::out_of_range>(
         "configuration file is empty");
