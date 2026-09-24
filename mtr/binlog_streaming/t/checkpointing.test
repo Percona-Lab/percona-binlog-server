@@ -55,7 +55,7 @@ DROP TABLE t1;
 
 # creating data directory, configuration file, etc.
 
-# reducing log level as this this generates a big number of binlog events
+# reducing log level as this generates a big number of binlog events
 # that do not need to be logged in details
 --let $binsrv_log_level = info
 --let $binsrv_connect_timeout = 20

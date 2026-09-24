@@ -35,6 +35,7 @@
 
 #include "binsrv/storage_config.hpp"
 
+#include "util/byte_range_fwd.hpp"
 #include "util/byte_span.hpp"
 #include "util/exception_location_helpers.hpp"
 #include "util/file_operations_helpers.hpp"
@@ -115,10 +116,11 @@ filesystem_storage_backend::do_list_objects() {
 }
 
 [[nodiscard]] std::string
-filesystem_storage_backend::do_get_object(std::string_view name) {
+filesystem_storage_backend::do_get_object(std::string_view name,
+                                          const util::byte_range &range) {
   const auto object_path{get_object_path(name)};
-  return util::read_file_content(object_path, max_memory_object_size,
-                                 "underlying object file");
+  return util::read_file_content("underlying object file", object_path,
+                                 max_memory_object_size, range);
 }
 
 void filesystem_storage_backend::do_put_object(std::string_view name,
@@ -138,8 +140,8 @@ void filesystem_storage_backend::do_put_object(std::string_view name,
   auto tmp_object_path = object_path;
   tmp_object_path += tmp_storage_object_suffix;
 
-  util::write_file_content(tmp_object_path, util::as_string_view(content),
-                           "underlying tmp object file");
+  util::write_file_content("underlying tmp object file", tmp_object_path,
+                           util::as_string_view(content));
   // make the tmp file's content durable before the rename swaps it
   util::fsync(tmp_object_path);
 
