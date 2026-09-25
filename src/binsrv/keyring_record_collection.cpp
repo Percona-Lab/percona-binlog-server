@@ -26,6 +26,7 @@
 
 #include "binsrv/keyring_record.hpp"
 
+#include "util/byte_span.hpp"
 #include "util/exception_location_helpers.hpp"
 #include "util/file_operations_helpers.hpp"
 #include "util/nv_tuple_from_json.hpp"
@@ -37,7 +38,7 @@ keyring_record_collection::keyring_record_collection(std::string_view file_name)
   static constexpr std::size_t max_file_size{1048576U};
   const auto data = util::read_file_content("keyring record collection file",
                                             file_name, max_file_size);
-  auto json_value = boost::json::parse(data);
+  auto json_value = boost::json::parse(util::as_string_view(data));
   util::nv_tuple_from_json(json_value, impl_);
 
   validate();

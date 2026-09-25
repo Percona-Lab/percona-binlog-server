@@ -579,9 +579,12 @@ storage_core::open_existing_binlog_file_internal(
 }
 
 void storage_core::load_binlog_index() {
-  const auto index_content{backend_->get_object(default_binlog_index_name)};
+  const auto index_content_buffer{
+      backend_->get_object(default_binlog_index_name)};
+  std::string index_content{util::as_string_view(index_content_buffer)};
+  // TODO: switch to std::ispanstream when clang has it implemented
   // opening in text mode
-  std::istringstream index_iss{index_content};
+  std::istringstream index_iss{std::move(index_content)};
   std::string current_line;
   while (std::getline(index_iss, current_line)) {
     if (current_line.empty()) {
@@ -657,7 +660,7 @@ void storage_core::save_binlog_index() const {
 
 void storage_core::load_metadata() {
   const auto metadata_content{backend_->get_object(metadata_name)};
-  const storage_metadata metadata{metadata_content};
+  const storage_metadata metadata{util::as_string_view(metadata_content)};
   replication_mode_ = metadata.root().get<"mode">();
   encryption_format_ = metadata.root().get<"encryption">();
 }
@@ -701,7 +704,7 @@ void storage_core::save_metadata() const {
     const events::composite_binlog_name &binlog_name) const {
   const auto content{
       backend_->get_object(generate_binlog_metadata_name(binlog_name))};
-  binlog_file_metadata metadata{content};
+  binlog_file_metadata metadata{util::as_string_view(content)};
 
   const auto &optional_encryption_metadata{metadata.root().get<"encryption">()};
   return binlog_record{

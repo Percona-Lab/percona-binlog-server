@@ -24,6 +24,7 @@
 
 #include "util/byte_range_fwd.hpp"
 #include "util/byte_span_fwd.hpp"
+#include "util/dynamic_byte_buffer_fwd.hpp"
 #include "util/exception_location_helpers.hpp"
 
 namespace binsrv {
@@ -33,7 +34,7 @@ basic_storage_backend::list_objects() {
   return do_list_objects();
 }
 
-[[nodiscard]] std::string
+[[nodiscard]] util::dynamic_byte_buffer
 basic_storage_backend::get_object(std::string_view name,
                                   const util::byte_range &range) {
   return do_get_object(name, range);

@@ -17,7 +17,6 @@
 
 #include <cstddef>
 #include <stdexcept>
-#include <string>
 #include <string_view>
 
 #include <boost/json/parse.hpp>
@@ -34,6 +33,7 @@
 // Needed for ssl_mode_type's operator <<
 #include "easymysql/ssl_mode_type.hpp" // IWYU pragma: keep
 
+#include "util/byte_span.hpp"
 #include "util/exception_location_helpers.hpp"
 #include "util/file_operations_helpers.hpp"
 #include "util/nv_tuple_from_json.hpp"
@@ -50,7 +50,7 @@ main_config::main_config(std::string_view file_name) {
         "configuration file is empty");
   }
 
-  auto json_value = boost::json::parse(file_content);
+  auto json_value = boost::json::parse(util::as_string_view(file_content));
   util::nv_tuple_from_json(json_value, impl_);
 
   validate();

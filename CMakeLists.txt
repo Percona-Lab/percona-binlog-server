@@ -120,6 +120,8 @@ set(util_source_files
 
   src/util/ct_string.hpp
 
+  src/util/dynamic_byte_buffer_fwd.hpp
+
   src/util/exception_location_helpers.hpp
 
   src/util/file_operations_helpers.hpp

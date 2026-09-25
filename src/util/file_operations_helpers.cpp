@@ -26,11 +26,13 @@
 #include <string_view>
 
 #include "util/byte_range.hpp"
+#include "util/byte_span_fwd.hpp"
+#include "util/dynamic_byte_buffer_fwd.hpp"
 #include "util/exception_location_helpers.hpp"
 
 namespace util {
 
-[[nodiscard]] std::string
+[[nodiscard]] dynamic_byte_buffer
 read_file_content(std::string_view error_label,
                   const std::filesystem::path &path,
                   // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
@@ -83,8 +85,9 @@ read_file_content(std::string_view error_label,
         "cannot seek " + std::string{error_label} + " to the requested offset");
   }
 
-  std::string file_content(read_length, 'x');
-  if (!ifs.read(std::data(file_content),
+  dynamic_byte_buffer file_content(read_length);
+  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+  if (!ifs.read(reinterpret_cast<char *>(std::data(file_content)),
                 static_cast<std::streamoff>(read_length))) {
     exception_location().raise<std::runtime_error>(
         "cannot read " + std::string{error_label} + " content");
@@ -94,7 +97,7 @@ read_file_content(std::string_view error_label,
 
 void write_file_content(std::string_view error_label,
                         const std::filesystem::path &path,
-                        std::string_view content) {
+                        const_byte_span content) {
   // opening in binary mode with truncating
   std::ofstream ofs{};
   ofs.rdbuf()->pubsetbuf(nullptr, 0U);
@@ -105,7 +108,8 @@ void write_file_content(std::string_view error_label,
         "cannot open " + std::string{error_label} + " for writing");
   }
 
-  if (!ofs.write(std::data(content),
+  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+  if (!ofs.write(reinterpret_cast<const char *>(std::data(content)),
                  static_cast<std::streamoff>(std::size(content)))) {
     exception_location().raise<std::runtime_error>("cannot write data to " +
                                                    std::string{error_label});
