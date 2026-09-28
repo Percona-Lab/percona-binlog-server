@@ -38,8 +38,10 @@
 #include "binsrv/gtids/gtid.hpp"
 #include "binsrv/gtids/gtid_set.hpp"
 
+#include "util/byte_range_fwd.hpp"
 #include "util/byte_span.hpp"
 #include "util/ctime_timestamp.hpp"
+#include "util/dynamic_byte_buffer_fwd.hpp"
 #include "util/exception_location_helpers.hpp"
 
 namespace binsrv {
@@ -223,6 +225,13 @@ storage::purge_binlogs(const events::composite_binlog_name &target) {
 [[nodiscard]] std::string storage::get_binlog_uri(
     const events::composite_binlog_name &binlog_name) const {
   return core_->get_binlog_uri(binlog_name);
+}
+
+[[nodiscard]] bool
+storage::fetch_event_block(events::composite_binlog_name &binlog_name,
+                           util::byte_range &range,
+                           util::dynamic_byte_buffer &buffer) const {
+  return core_->fetch_event_block(binlog_name, range, buffer);
 }
 
 [[nodiscard]] std::string storage::get_keyring_description() const {

@@ -58,8 +58,10 @@
 #include "opensslpp/cipher_context.hpp"
 #include "opensslpp/crypto_rng.hpp"
 
+#include "util/byte_range.hpp"
 #include "util/byte_span.hpp"
 #include "util/ctime_timestamp_range.hpp"
+#include "util/dynamic_byte_buffer_fwd.hpp"
 #include "util/exception_location_helpers.hpp"
 
 namespace binsrv {
@@ -421,6 +423,119 @@ storage_core::purge_binlogs(const events::composite_binlog_name &target) {
   }
 
   return {std::move(removed_records), std::move(cleanup_warning_message)};
+}
+
+[[nodiscard]] bool
+storage_core::fetch_event_block(events::composite_binlog_name &binlog_name,
+                                util::byte_range &range,
+                                util::dynamic_byte_buffer &buffer) const {
+  static const util::byte_range magic_empty_range{events::magic_binlog_offset,
+                                                  0ULL};
+  // If the offset in the 'range' is less than
+  // 'binsrv::events::magic_binlog_offset' (4), the method will return false.
+  if (range.get_offset() < events::magic_binlog_offset) {
+    return false;
+  }
+
+  // If the specified 'range' is an open range (has no length set), this
+  // method will return false.
+  if (!range.has_length()) {
+    return false;
+  }
+
+  // If the specified 'binlog_name' is an empty object and offset of the
+  // 'range' is not equal to 'binsrv::events::magic_binlog_offset' (4),
+  // the method will return false.
+  if (binlog_name.is_empty() &&
+      range.get_offset() != events::magic_binlog_offset) {
+    return false;
+  }
+
+  const std::shared_lock lock{mutex_};
+
+  // If the specified 'binlog_name' is an empty object and offset of the
+  // 'range' is equal to 'binsrv::events::magic_binlog_offset' (4), and
+  // storage has no binlog records, the method will return true,
+  // will set binlog name to an empty object, range to "[4; 0]",
+  // and buffer to an empty buffer.
+  if (binlog_records_.empty()) {
+    // EOF is returned only when 'binlog_name' is an empty object
+    if (!binlog_name.is_empty()) {
+      return false;
+    }
+    range = magic_empty_range;
+    buffer.clear();
+    return true;
+  }
+
+  binlog_record_container::const_iterator record_it{};
+  // If the specified 'binlog_name' is an empty object and offset of the
+  // 'range' is equal to 'binsrv::events::magic_binlog_offset' (4), and
+  // there is at least one binlog record available, when checking other
+  // rules, we will assume that 'binlog_name' from now on will be equal to
+  // the first available binlog file name.
+  if (binlog_name.is_empty()) {
+    record_it = std::cbegin(binlog_records_);
+  } else {
+    // If the specified (or resolved) 'binlog_name' does not exist in storage,
+    // the method will return false.
+    record_it = std::ranges::find(std::as_const(binlog_records_), binlog_name,
+                                  &binlog_record::name);
+    if (record_it == std::cend(binlog_records_)) {
+      return false;
+    }
+  }
+  auto resolved_binlog_name{record_it->name};
+
+  // If 'range' is an empty range, the method will return true without
+  // attempting to read any data. The range will remain unchanged, the
+  // buffer will be set to an empty object, and 'binlog_name' will be changed
+  // only if it was originally empty and was resolved to the first available
+  // binlog file.
+  if (range.is_empty()) {
+    binlog_name = std::move(resolved_binlog_name);
+    buffer.clear();
+    return true;
+  }
+
+  // If the specified 'range' has an offset that is beyond the end of the
+  // specified binlog, the method will return false.
+  auto read_offset{range.get_offset()};
+  if (read_offset > record_it->size) {
+    return false;
+  }
+
+  // If the 'range.get_offset()' is equal to the length of the binlog file
+  // specified by the 'binlog_name', this method will return true and
+  // will try to read 'range.get_length()' bytes from the
+  // offset 'binsrv::events::magic_binlog_offset' (4) of the next binlog
+  // file, if available. 'range' and 'binlog_name' will be updated
+  // accordingly.
+  if (read_offset == record_it->size) {
+    ++record_it;
+    // If the next file is not available, the method will return true and will
+    // leave 'binlog_name' as is, change the 'length' component of the 'range'
+    // to 0, and set 'buffer' to an empty buffer, indicating EOF.
+    if (record_it == std::cend(binlog_records_)) {
+      range = util::byte_range{read_offset, 0ULL};
+      buffer.clear();
+      return true;
+    }
+    resolved_binlog_name = record_it->name;
+    read_offset = events::magic_binlog_offset;
+  }
+
+  const std::uint64_t read_length{
+      std::min(range.get_length(), record_it->size - read_offset)};
+  const util::byte_range resolved_range{read_offset, read_length};
+
+  auto result_buffer{
+      backend_->get_object(resolved_binlog_name.str(), resolved_range)};
+
+  binlog_name = std::move(resolved_binlog_name);
+  range = resolved_range;
+  buffer = std::move(result_buffer);
+  return true;
 }
 
 [[nodiscard]] std::string storage_core::get_binlog_uri(
