@@ -25,6 +25,7 @@
 #include "util/byte_range.hpp"
 #include "util/byte_span_fwd.hpp"
 #include "util/common_optional_types.hpp"
+#include "util/dynamic_byte_buffer_fwd.hpp"
 
 namespace binsrv {
 
@@ -42,7 +43,7 @@ public:
   virtual ~basic_storage_backend() = default;
 
   [[nodiscard]] storage_object_name_container list_objects();
-  [[nodiscard]] std::string
+  [[nodiscard]] util::dynamic_byte_buffer
   get_object(std::string_view name,
              const util::byte_range &range = util::byte_range{});
   // 'put_object' is an atomic overwrite: a concurrent / post-crash
@@ -78,7 +79,7 @@ private:
   bool stream_open_{false};
 
   [[nodiscard]] virtual storage_object_name_container do_list_objects() = 0;
-  [[nodiscard]] virtual std::string
+  [[nodiscard]] virtual util::dynamic_byte_buffer
   do_get_object(std::string_view name, const util::byte_range &range) = 0;
   virtual void do_put_object(std::string_view name,
                              util::const_byte_span content) = 0;

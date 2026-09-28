@@ -37,6 +37,7 @@
 
 #include "util/byte_range_fwd.hpp"
 #include "util/byte_span.hpp"
+#include "util/dynamic_byte_buffer_fwd.hpp"
 #include "util/exception_location_helpers.hpp"
 #include "util/file_operations_helpers.hpp"
 #include "util/native_file_operations_helpers.hpp"
@@ -115,7 +116,7 @@ filesystem_storage_backend::do_list_objects() {
   return result;
 }
 
-[[nodiscard]] std::string
+[[nodiscard]] util::dynamic_byte_buffer
 filesystem_storage_backend::do_get_object(std::string_view name,
                                           const util::byte_range &range) {
   const auto object_path{get_object_path(name)};
@@ -141,7 +142,7 @@ void filesystem_storage_backend::do_put_object(std::string_view name,
   tmp_object_path += tmp_storage_object_suffix;
 
   util::write_file_content("underlying tmp object file", tmp_object_path,
-                           util::as_string_view(content));
+                           content);
   // make the tmp file's content durable before the rename swaps it
   util::fsync(tmp_object_path);
 

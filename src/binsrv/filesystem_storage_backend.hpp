@@ -44,7 +44,7 @@ private:
 
   [[nodiscard]] storage_object_name_container do_list_objects() override;
 
-  [[nodiscard]] std::string
+  [[nodiscard]] util::dynamic_byte_buffer
   do_get_object(std::string_view name, const util::byte_range &range) override;
   void do_put_object(std::string_view name,
                      util::const_byte_span content) override;

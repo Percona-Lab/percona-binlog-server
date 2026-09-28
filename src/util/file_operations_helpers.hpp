@@ -19,11 +19,12 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
-#include <string>
 #include <string_view>
 
 #include "util/byte_range.hpp"
+#include "util/byte_span_fwd.hpp"
 #include "util/common_optional_types.hpp"
+#include "util/dynamic_byte_buffer_fwd.hpp"
 
 namespace util {
 
@@ -33,14 +34,14 @@ namespace util {
 // raises if actual length (either specified by the 'length' parameter
 // or determined by reading until the end of the file) is more than
 // 'max_length'
-[[nodiscard]] std::string
+[[nodiscard]] dynamic_byte_buffer
 read_file_content(std::string_view error_label,
                   const std::filesystem::path &path, std::size_t max_size,
                   const byte_range &range = byte_range{});
 
 void write_file_content(std::string_view error_label,
                         const std::filesystem::path &path,
-                        std::string_view content);
+                        const_byte_span content);
 
 } // namespace util
 

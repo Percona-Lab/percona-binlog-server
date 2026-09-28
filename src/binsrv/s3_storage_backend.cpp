@@ -68,6 +68,7 @@
 
 #include "util/byte_range.hpp"
 #include "util/byte_span.hpp"
+#include "util/dynamic_byte_buffer_fwd.hpp"
 #include "util/exception_location_helpers.hpp"
 
 namespace {
@@ -161,7 +162,7 @@ public:
 
   [[nodiscard]] std::string get_bucket_region(const std::string &bucket) const;
 
-  [[nodiscard]] std::string get_object_into_string(
+  [[nodiscard]] util::dynamic_byte_buffer get_object_into_byte_buffer(
       const qualified_object_path &source,
       const util::byte_range &range = util::byte_range{}) const;
 
@@ -270,8 +271,8 @@ s3_storage_backend::aws_context::aws_context(
       GetNameForBucketLocationConstraint(model_region);
 }
 
-[[nodiscard]] std::string
-s3_storage_backend::aws_context::get_object_into_string(
+[[nodiscard]] util::dynamic_byte_buffer
+s3_storage_backend::aws_context::get_object_into_byte_buffer(
     const qualified_object_path &source, const util::byte_range &range) const {
   if (range.is_empty()) {
     return {};
@@ -283,7 +284,7 @@ s3_storage_backend::aws_context::get_object_into_string(
           "The requested S3 object range is too large to be loaded in memory");
     }
   }
-  std::string content;
+  util::dynamic_byte_buffer content;
   auto stream_handler{[&content, &range](std::size_t content_length,
                                          std::iostream &content_stream) {
     // TODO: check object length in advance before calling GetObject
@@ -305,10 +306,11 @@ s3_storage_backend::aws_context::get_object_into_string(
     }
 
     content.resize(content_length);
-    if (!content_stream.read(std::data(content),
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    if (!content_stream.read(reinterpret_cast<char *>(std::data(content)),
                              static_cast<std::streamsize>(content_length))) {
       util::exception_location().raise<std::runtime_error>(
-          "cannot read S3 object content into a string");
+          "cannot read S3 object content into a byte buffer");
     }
     assert(content_stream.gcount() ==
            static_cast<std::streamsize>(content_length));
@@ -747,10 +749,10 @@ s3_storage_backend::do_list_objects() {
   return impl_->list_objects({.bucket = bucket_, .object_path = root_path_});
 }
 
-[[nodiscard]] std::string
+[[nodiscard]] util::dynamic_byte_buffer
 s3_storage_backend::do_get_object(std::string_view name,
                                   const util::byte_range &range) {
-  return impl_->get_object_into_string(
+  return impl_->get_object_into_byte_buffer(
       {.bucket = bucket_, .object_path = get_object_path(name)}, range);
 }
 
