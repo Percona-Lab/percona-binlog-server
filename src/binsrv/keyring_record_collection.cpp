@@ -35,8 +35,8 @@ namespace binsrv {
 keyring_record_collection::keyring_record_collection(std::string_view file_name)
     : impl_{} {
   static constexpr std::size_t max_file_size{1048576U};
-  const auto data = util::read_file_content(file_name, max_file_size,
-                                            "keyring record collection file");
+  const auto data = util::read_file_content("keyring record collection file",
+                                            file_name, max_file_size);
   auto json_value = boost::json::parse(data);
   util::nv_tuple_from_json(json_value, impl_);
 

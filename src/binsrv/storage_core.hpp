@@ -102,7 +102,7 @@ public:
 
   [[nodiscard]] storage_construction_mode_type
   get_construction_mode() const noexcept {
-    // no mutex protection needed as this this method reads data
+    // no mutex protection needed as this method reads data
     // set only once during construction
     return construction_mode_;
   }
@@ -183,7 +183,7 @@ public:
   get_binlog_uri(const events::composite_binlog_name &binlog_name) const;
 
   [[nodiscard]] bool is_keyring_initialized() const noexcept {
-    // no mutex protection needed as this this method reads data
+    // no mutex protection needed as this method reads data
     // set only once during construction
     return static_cast<bool>(keyring_);
   }
@@ -192,7 +192,7 @@ public:
   [[nodiscard]] std::string get_encryption_format_description() const;
 
   [[nodiscard]] bool has_active_kek() const noexcept {
-    // no mutex protection needed as this this method reads data
+    // no mutex protection needed as this method reads data
     // set only once during construction
     return !active_kek_id_.empty();
   }

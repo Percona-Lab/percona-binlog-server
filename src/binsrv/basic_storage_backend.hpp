@@ -22,12 +22,17 @@
 #include <string>
 #include <string_view>
 
+#include "util/byte_range.hpp"
 #include "util/byte_span_fwd.hpp"
+#include "util/common_optional_types.hpp"
 
 namespace binsrv {
 
 class basic_storage_backend {
 public:
+  // 256 MB
+  static constexpr std::size_t max_memory_object_size{256UZ << 20UZ};
+
   basic_storage_backend() = default;
   basic_storage_backend(const basic_storage_backend &) = delete;
   basic_storage_backend(basic_storage_backend &&) noexcept = delete;
@@ -37,7 +42,9 @@ public:
   virtual ~basic_storage_backend() = default;
 
   [[nodiscard]] storage_object_name_container list_objects();
-  [[nodiscard]] std::string get_object(std::string_view name);
+  [[nodiscard]] std::string
+  get_object(std::string_view name,
+             const util::byte_range &range = util::byte_range{});
   // 'put_object' is an atomic overwrite: a concurrent / post-crash
   // reader either sees the previous bytes in full or the new bytes in
   // full, never a partial mix.
@@ -71,7 +78,8 @@ private:
   bool stream_open_{false};
 
   [[nodiscard]] virtual storage_object_name_container do_list_objects() = 0;
-  [[nodiscard]] virtual std::string do_get_object(std::string_view name) = 0;
+  [[nodiscard]] virtual std::string
+  do_get_object(std::string_view name, const util::byte_range &range) = 0;
   virtual void do_put_object(std::string_view name,
                              util::const_byte_span content) = 0;
   virtual void do_resize_object(std::string_view name,

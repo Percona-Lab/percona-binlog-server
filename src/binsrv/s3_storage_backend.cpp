@@ -66,6 +66,7 @@
 #include "binsrv/s3_error_helpers_private.hpp"
 #include "binsrv/storage_config.hpp"
 
+#include "util/byte_range.hpp"
 #include "util/byte_span.hpp"
 #include "util/exception_location_helpers.hpp"
 
@@ -160,12 +161,14 @@ public:
 
   [[nodiscard]] std::string get_bucket_region(const std::string &bucket) const;
 
-  [[nodiscard]] std::string
-  get_object_into_string(const qualified_object_path &source) const;
+  [[nodiscard]] std::string get_object_into_string(
+      const qualified_object_path &source,
+      const util::byte_range &range = util::byte_range{}) const;
 
-  void
-  get_object_into_file(const qualified_object_path &source,
-                       const std::filesystem::path &content_file_path) const;
+  void get_object_into_file(
+      const qualified_object_path &source,
+      const std::filesystem::path &content_file_path,
+      const util::byte_range &range = util::byte_range{}) const;
 
   void put_object_from_stream(const qualified_object_path &dest,
                               std::iostream &content_stream) const;
@@ -193,7 +196,8 @@ private:
 
   void get_object_internal(const qualified_object_path &source,
                            const stream_factory_type &stream_factory,
-                           const stream_handler_type &stream_handler) const;
+                           const stream_handler_type &stream_handler,
+                           const util::byte_range &range) const;
 
   using list_object_container = Aws::Vector<Aws::S3Crt::Model::Object>;
   static void
@@ -268,15 +272,36 @@ s3_storage_backend::aws_context::aws_context(
 
 [[nodiscard]] std::string
 s3_storage_backend::aws_context::get_object_into_string(
-    const qualified_object_path &source) const {
+    const qualified_object_path &source, const util::byte_range &range) const {
+  if (range.is_empty()) {
+    return {};
+  }
+
+  if (range.has_length()) {
+    if (range.get_length() > max_memory_object_size) {
+      util::exception_location().raise<std::out_of_range>(
+          "The requested S3 object range is too large to be loaded in memory");
+    }
+  }
   std::string content;
-  auto stream_handler{[&content](std::size_t content_length,
-                                 std::iostream &content_stream) {
+  auto stream_handler{[&content, &range](std::size_t content_length,
+                                         std::iostream &content_stream) {
     // TODO: check object length in advance before calling GetObject
     //       (with HeadObject, for instance)
-    if (content_length > max_memory_object_size) {
-      util::exception_location().raise<std::out_of_range>(
-          "S3 object is too large to be loaded in memory");
+    //       alternatively, set `bytes=0-<max_memory_object_size - 1>` byte
+    //       range in the request and this operation will return up to
+    //       `max_memory_object_size` bytes.
+    if (range.has_length()) {
+      if (content_length != range.get_length()) {
+        util::exception_location().raise<std::out_of_range>(
+            "The requested S3 object range does not match the length of the "
+            "received memory content");
+      }
+    } else {
+      if (content_length > max_memory_object_size) {
+        util::exception_location().raise<std::out_of_range>(
+            "S3 object is too large to be loaded in memory");
+      }
     }
 
     content.resize(content_length);
@@ -288,14 +313,24 @@ s3_storage_backend::aws_context::get_object_into_string(
     assert(content_stream.gcount() ==
            static_cast<std::streamsize>(content_length));
   }};
-  get_object_internal(source, {}, stream_handler);
+  get_object_internal(source, {}, stream_handler, range);
 
   return content;
 }
 
 void s3_storage_backend::aws_context::get_object_into_file(
     const qualified_object_path &source,
-    const std::filesystem::path &content_file_path) const {
+    const std::filesystem::path &content_file_path,
+    const util::byte_range &range) const {
+
+  if (range.is_empty()) {
+    // we need to create an empty file in this case
+    const std::ofstream empty_file{content_file_path,
+                                   std::ios_base::out | std::ios_base::binary |
+                                       std::ios_base::trunc};
+    return;
+  }
+
   auto stream_factory{[&content_file_path]() -> std::iostream * {
     return Aws::New<std::fstream>(
         "GetObjectStreamFactoryAllocationTag", content_file_path,
@@ -304,8 +339,15 @@ void s3_storage_backend::aws_context::get_object_into_file(
   }};
   std::size_t response_content_length{};
   auto stream_handler{
-      [&response_content_length](std::size_t content_length,
-                                 std::iostream &content_stream) {
+      [&response_content_length, &range](std::size_t content_length,
+                                         std::iostream &content_stream) {
+        if (range.has_length()) {
+          if (content_length != range.get_length()) {
+            util::exception_location().raise<std::out_of_range>(
+                "The requested S3 object range does not match the length of "
+                "the received file content");
+          }
+        }
         content_stream.seekg(0, std::ios_base::end);
 
         const auto end_position{
@@ -317,7 +359,7 @@ void s3_storage_backend::aws_context::get_object_into_file(
         response_content_length = content_length;
       }};
 
-  get_object_internal(source, stream_factory, stream_handler);
+  get_object_internal(source, stream_factory, stream_handler, range);
   assert(std::filesystem::file_size(content_file_path) ==
          response_content_length);
 }
@@ -448,13 +490,19 @@ s3_storage_backend::aws_context::list_objects(
 void s3_storage_backend::aws_context::get_object_internal(
     const qualified_object_path &source,
     const stream_factory_type &stream_factory,
-    const stream_handler_type &stream_handler) const {
+    const stream_handler_type &stream_handler,
+    const util::byte_range &range) const {
+  assert(!range.is_empty());
   Aws::S3Crt::Model::GetObjectRequest get_object_request;
   if (stream_factory) {
     get_object_request.SetResponseStreamFactory(stream_factory);
   }
   get_object_request.SetBucket(source.bucket);
   get_object_request.SetKey(source.object_path.generic_string());
+
+  if (!range.is_full()) {
+    get_object_request.SetRange("bytes=" + range.to_string());
+  }
 
   const auto get_object_outcome{client_->GetObject(get_object_request)};
 
@@ -700,9 +748,10 @@ s3_storage_backend::do_list_objects() {
 }
 
 [[nodiscard]] std::string
-s3_storage_backend::do_get_object(std::string_view name) {
+s3_storage_backend::do_get_object(std::string_view name,
+                                  const util::byte_range &range) {
   return impl_->get_object_into_string(
-      {.bucket = bucket_, .object_path = get_object_path(name)});
+      {.bucket = bucket_, .object_path = get_object_path(name)}, range);
 }
 
 void s3_storage_backend::do_put_object(std::string_view name,

@@ -17,18 +17,30 @@
 #define UTIL_FILE_OPERATIONS_HELPERS_HPP
 
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <string>
 #include <string_view>
 
+#include "util/byte_range.hpp"
+#include "util/common_optional_types.hpp"
+
 namespace util {
 
-[[nodiscard]] std::string read_file_content(const std::filesystem::path &path,
-                                            std::size_t max_size,
-                                            std::string_view error_label);
+// reads exactly 'length' bytes starting at 'offset'
+// if length is not specified (nullopt), reads until the end of the file
+// raises if the file is shorter than 'offset + length'
+// raises if actual length (either specified by the 'length' parameter
+// or determined by reading until the end of the file) is more than
+// 'max_length'
+[[nodiscard]] std::string
+read_file_content(std::string_view error_label,
+                  const std::filesystem::path &path, std::size_t max_size,
+                  const byte_range &range = byte_range{});
 
-void write_file_content(const std::filesystem::path &path,
-                        std::string_view content, std::string_view error_label);
+void write_file_content(std::string_view error_label,
+                        const std::filesystem::path &path,
+                        std::string_view content);
 
 } // namespace util
 

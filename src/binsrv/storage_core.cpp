@@ -235,7 +235,7 @@ void storage_core::set_purged_gtids(const gtids::gtid_set &purged_gtids) {
 }
 
 [[nodiscard]] std::string storage_core::get_backend_description() const {
-  // no mutex protection needed as this this method calls a const
+  // no mutex protection needed as this method calls a const
   // method on an instance of basic_storage_backend that reads only data
   // that was set only once during construction
   return backend_->get_description();
@@ -425,21 +425,21 @@ storage_core::purge_binlogs(const events::composite_binlog_name &target) {
 
 [[nodiscard]] std::string storage_core::get_binlog_uri(
     const events::composite_binlog_name &binlog_name) const {
-  // no mutex protection needed as this this method calls a const
+  // no mutex protection needed as this method calls a const
   // method on an instance of basic_storage_backend that reads only data
   // that was set only once during construction
   return backend_->get_object_uri(binlog_name.str());
 }
 
 [[nodiscard]] std::string storage_core::get_keyring_description() const {
-  // no mutex protection needed as this this method calls a const
+  // no mutex protection needed as this method calls a const
   // method on an immutable keyring instance
   return is_keyring_initialized() ? keyring_->get_description()
                                   : "keyring is not initialized";
 }
 
 [[nodiscard]] std::string storage_core::get_active_kek_description() const {
-  // no mutex protection needed as this this method calls a chain of const
+  // no mutex protection needed as this method calls a chain of const
   // methods on an immutable keyring instance
   return has_active_kek() ? keyring_->get_key(active_kek_id_).get_description()
                           : "active KEK is not set";
@@ -447,7 +447,7 @@ storage_core::purge_binlogs(const events::composite_binlog_name &target) {
 
 [[nodiscard]] std::string
 storage_core::get_encryption_format_description() const {
-  // no mutex protection needed as this this method reads data
+  // no mutex protection needed as this method reads data
   // set only once during construction
   return encryption_format_.has_value()
              ? std::string{to_string_view(*encryption_format_)}

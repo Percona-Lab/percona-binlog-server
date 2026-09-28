@@ -92,6 +92,10 @@ set(util_source_files
   src/util/byte_span_inserters.hpp
   src/util/byte_span_packed_int_constants.hpp
 
+  src/util/byte_range_fwd.hpp
+  src/util/byte_range.hpp
+  src/util/byte_range.cpp
+
   src/util/command_line_helpers_fwd.hpp
   src/util/command_line_helpers.hpp
   src/util/command_line_helpers.cpp
