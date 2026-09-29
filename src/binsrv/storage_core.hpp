@@ -31,6 +31,7 @@
 #include "binsrv/basic_storage_backend_fwd.hpp"
 #include "binsrv/encryption_config_fwd.hpp"
 #include "binsrv/encryption_format_type_fwd.hpp"
+#include "binsrv/indexed_event_block_fwd.hpp"
 #include "binsrv/main_config_fwd.hpp"
 #include "binsrv/replication_mode_type_fwd.hpp"
 
@@ -43,9 +44,11 @@
 
 #include "binsrv/events/common_types.hpp"
 
+#include "util/byte_range_fwd.hpp"
 #include "util/byte_span_fwd.hpp"
 #include "util/ctime_timestamp_fwd.hpp"
 #include "util/ctime_timestamp_range.hpp"
+#include "util/dynamic_byte_buffer_fwd.hpp"
 #include "util/hex_value.hpp"
 
 namespace binsrv {
@@ -178,6 +181,59 @@ public:
   //             error message so the caller.
   [[nodiscard]] std::pair<binlog_record_container, std::string>
   purge_binlogs(const events::composite_binlog_name &target);
+
+  // This method will try to read a block of events of length
+  // 'range.get_length()' from the specified binlog file 'binlog_name',
+  // starting from 'range.get_offset()'.
+  // Returns true if the operation was successful, false otherwise.
+  // Both 'binlog_name' and 'range' are inout parameters and they will
+  // be updated to reflect the actual portion of the binlog that was read
+  // if the operation was successful.
+  // All parameters will remain untouched if the operation fails.
+  // Special cases:
+  // - If the offset in the 'range' is less than
+  //   'binsrv::events::magic_binlog_offset' (4), the method will return false.
+  // - If the specified 'range' is an open range (has no length set), this
+  //   method will return false.
+  // - If the specified 'binlog_name' is an empty object and offset of the
+  //   'range' is not equal to 'binsrv::events::magic_binlog_offset' (4),
+  //   the method will return false.
+  // - If the specified 'binlog_name' is an empty object and offset of the
+  //   'range' is equal to 'binsrv::events::magic_binlog_offset' (4), and
+  //   storage has no binlog records, the method will return true,
+  //   will set binlog name to an empty object, range to "[4; 0]",
+  //   and buffer to an empty buffer.
+  // - If the specified 'binlog_name' is an empty object and offset of the
+  //   'range' is equal to 'binsrv::events::magic_binlog_offset' (4), and
+  //   there is at least one binlog record available, when checking other
+  //   rules, we will assume that 'binlog_name' from now on will be equal to
+  //   the first available binlog file name.
+  // - If the specified (or resolved) 'binlog_name' does not exist in storage,
+  //   the method will return false.
+  // - If 'range' is an empty range, the method will return true without
+  //   attempting to read any data. The range will remain unchanged, the
+  //   buffer will be set to an empty object, and 'binlog_name' will be changed
+  //   only if it was originally empty and was resolved to the first available
+  //   binlog file.
+  // - If the specified 'range' has an offset that is beyond the end of the
+  //   specified binlog, the method will return false.
+  // - If the specified 'range' has valid offset for the given 'binlog_name',
+  //   but the length extends beyond the end of the binlog, the method will
+  //   return true and will read only the available portion and update
+  //   'range' to reflect the actual portion read.
+  // - If the 'range.get_offset()' is equal to the length of the binlog file
+  //   specified by the 'binlog_name', this method will return true and
+  //   will try to read 'range.get_length()' bytes from the
+  //   offset 'binsrv::events::magic_binlog_offset' (4) of the next binlog
+  //   file, if available. 'range' and 'binlog_name' will be updated
+  //   accordingly.
+  //   If the next file is not available, the method will return true and will
+  //   leave 'binlog_name' as is, change the 'length' component of the 'range'
+  //   to 0, and set 'buffer' to an empty buffer, indicating EOF.
+  [[nodiscard]] bool
+  fetch_event_block(events::composite_binlog_name &binlog_name,
+                    util::byte_range &range,
+                    util::dynamic_byte_buffer &buffer) const;
 
   [[nodiscard]] std::string
   get_binlog_uri(const events::composite_binlog_name &binlog_name) const;

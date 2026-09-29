@@ -525,6 +525,10 @@ set(operations_source_files
   src/operations/search_by_timestamp_operation.hpp
   src/operations/search_by_timestamp_operation.cpp
 
+  src/operations/sender_context_fwd.hpp
+  src/operations/sender_context.hpp
+  src/operations/sender_context.cpp
+
   src/operations/version_operation.hpp
   src/operations/version_operation.cpp
 )
@@ -634,6 +638,10 @@ set(binsrv_source_files
   src/binsrv/s3_storage_backend.hpp
   src/binsrv/s3_storage_backend.cpp
 
+  src/binsrv/indexed_event_block_fwd.hpp
+  src/binsrv/indexed_event_block.hpp
+  src/binsrv/indexed_event_block.cpp
+
   src/binsrv/storage_fwd.hpp
   src/binsrv/storage.hpp
   src/binsrv/storage.cpp
@@ -702,8 +710,6 @@ set(minimysql_source_files
   src/minimysql/network_io_operations.cpp
   src/minimysql/network_service.hpp
   src/minimysql/network_service.cpp
-  src/minimysql/sample_event_collection.hpp
-  src/minimysql/sample_event_collection.cpp
 )
 
 add_executable(binlog_server
