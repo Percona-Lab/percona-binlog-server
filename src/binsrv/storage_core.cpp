@@ -21,6 +21,7 @@
 #include <cstdint>
 #include <exception>
 #include <filesystem>
+#include <functional>
 #include <iterator>
 #include <mutex>
 #include <optional>
@@ -65,6 +66,25 @@
 #include "util/exception_location_helpers.hpp"
 
 namespace binsrv {
+
+namespace {
+
+// returns the parsed binlog name if 'object_name' is a well-formed binlog
+// file name (<base_name>.<6-digit sequence number>) in its canonical form
+[[nodiscard]] std::optional<events::composite_binlog_name>
+try_parse_binlog_name(std::string_view object_name) {
+  try {
+    auto binlog_name{events::composite_binlog_name::parse(object_name)};
+    if (binlog_name.str() != object_name) {
+      return std::nullopt;
+    }
+    return binlog_name;
+  } catch (const std::invalid_argument &) {
+    return std::nullopt;
+  }
+}
+
+} // anonymous namespace
 
 [[nodiscard]] models::binlog_file_encryption_record
 binlog_encryption_record::to_model(const binlog_encryption_record &record) {
@@ -184,40 +204,27 @@ storage_core::storage_core(basic_logger_ptr logger, const main_config &config,
     return;
   }
 
+  // binlog index is a derived object - its content is never read back as
+  // binlog metadata objects are the source of truth
+  bool binlog_index_present{false};
   const auto binlog_index_it{storage_objects.find(default_binlog_index_name)};
-  if (binlog_index_it == std::cend(storage_objects)) {
-    // as binlog index file is created after the very first binlog data file
-    // and its metadata file are created, the concurrent query-only operation
-    // may intrude exactly between these two steps, so for query-only operations
-    // we should not consider the absence of binlog index file as an error
-    if (construction_mode == storage_construction_mode_type::querying_only) {
-      return;
-    }
-    util::exception_location().raise<std::logic_error>(
-        "storage is not empty but does not contain binlog index");
+  if (binlog_index_it != std::cend(storage_objects)) {
+    storage_objects.erase(binlog_index_it);
+    binlog_index_present = true;
   }
-  storage_objects.erase(binlog_index_it);
 
-  // extracting all binlog file metadata files into a separate container
-  storage_object_name_container storage_metadata_objects;
-  for (auto storage_object_it{std::cbegin(storage_objects)};
-       storage_object_it != std::cend(storage_objects);) {
-    const std::filesystem::path object_name{storage_object_it->first};
-    if (object_name.has_extension() &&
-        object_name.extension() == binlog_metadata_extension) {
-      auto object_node = storage_objects.extract(storage_object_it++);
-      storage_metadata_objects.insert(std::move(object_node));
-    } else {
-      ++storage_object_it;
-    }
-  }
-  load_binlog_index();
-  validate_binlog_index(storage_objects);
-
-  load_and_validate_binlog_metadata_set(storage_objects,
-                                        storage_metadata_objects);
-  assert(!binlog_records_.front().added_gtids.has_value() ||
+  load_and_reconcile_binlog_set(storage_objects);
+  assert(binlog_records_.empty() ||
+         !binlog_records_.front().added_gtids.has_value() ||
          purged_gtids_ == binlog_records_.front().added_gtids);
+
+  // in streaming mode we bring the derived binlog index in line with the
+  // reconciled set of binlog files (it may be stale or missing after an
+  // improper shutdown)
+  if (construction_mode_ == storage_construction_mode_type::streaming &&
+      (!binlog_records_.empty() || binlog_index_present)) {
+    save_binlog_index();
+  }
 }
 
 storage_core::~storage_core() = default;
@@ -378,49 +385,56 @@ storage_core::purge_binlogs(const events::composite_binlog_name &target) {
                         std::begin(binlog_records_) +
                             static_cast<std::ptrdiff_t>(victim_count));
 
-  // step 2: rewrite the binlog index from the surviving records left
-  // in 'binlog_records_' after step 1 (always non-empty thanks to the
-  // tail-refusal guard above). 'save_binlog_index' goes through the
-  // backend's atomic-overwrite 'put_object', so from this point on
-  // the purge is considered committed - any subsequent failure
-  // leaves the storage in an inconsistent state (leftover payload /
-  // metadata files no longer referenced by the index) that the
-  // constructor's existing validators will refuse to open on next
-  // startup.
-  save_binlog_index();
+  // step 2: commit the purge by moving the purge horizon past the
+  // target binlog file. 'save_metadata' goes through the backend's
+  // atomic-overwrite 'put_object', so from this point on the purge is
+  // considered committed - the victim objects are no longer a part of
+  // the storage even if the process is killed before they are removed
+  // (in which case they are removed during the next startup).
+  purge_horizon_ = removed_records.back().ordinal + 1ULL;
+  save_metadata();
 
-  // step 3: best-effort removal of the victim payload + metadata
-  // objects; any failure here is intentionally swallowed - the index
-  // has already been committed and reporting a "file could not be
-  // removed" error to the caller would falsely suggest that the
-  // purge itself failed; the resulting leftovers will trip the
-  // constructor's validators on next startup.
-  // We materialise the (metadata + payload) names for every victim
-  // into a single batch and hand it to 'basic_storage_backend::
-  // remove_objects', which runs the backend's durability barrier
-  // exactly once at the end of the batch - so the whole batch
-  // amortises to a single fsync(2) on the local filesystem backend
-  // (and a no-op on S3) instead of O(N) syncs.
-  std::vector<std::string> victim_object_names;
-  victim_object_names.reserve(std::size(removed_records) * 2U);
+  // step 3: best-effort removal of the victim data objects and then of
+  // their metadata objects; any failure here is intentionally
+  // swallowed - the purge has already been committed and reporting a
+  // "file could not be removed" error to the caller would falsely
+  // suggest that the purge itself failed.
+  // Data objects are removed first so that a leftover data object can
+  // never outlive its metadata object - the startup reconciliation
+  // treats a non-empty data object without metadata as corruption.
+  // Each batch is handed to 'basic_storage_backend::remove_objects',
+  // which runs the backend's durability barrier exactly once at the
+  // end of the batch - so the whole purge amortises to two fsync(2)
+  // calls on the local filesystem backend (and no-ops on S3) instead
+  // of O(N) syncs.
+  std::vector<std::string> victim_data_object_names;
+  std::vector<std::string> victim_metadata_object_names;
+  victim_data_object_names.reserve(std::size(removed_records));
+  victim_metadata_object_names.reserve(std::size(removed_records));
   for (const auto &victim : removed_records) {
-    victim_object_names.emplace_back(
+    victim_data_object_names.emplace_back(victim.name.str());
+    victim_metadata_object_names.emplace_back(
         generate_binlog_metadata_name(victim.name));
-    victim_object_names.emplace_back(victim.name.str());
   }
   std::string cleanup_warning_message;
   try {
-    backend_->remove_objects(victim_object_names);
+    backend_->remove_objects(victim_data_object_names);
+    // this line is not reached if at least one data object could not be
+    // removed, so that its metadata object stays in place
+    backend_->remove_objects(victim_metadata_object_names);
   } catch (const std::exception &e) {
     // 'remove_objects' re-raises the first per-name failure (if any)
     // after running the durability barrier; we do not propagate it
-    // to the caller because the index has already been committed
-    // and any leftover payload/metadata files will be picked up by
-    // the constructor's validators on the next startup. We just
-    // capture the underlying message so the caller can surface it
-    // under a 'warning' status in the JSON response.
+    // to the caller because the purge has already been committed
+    // and any leftover objects will be removed during the next
+    // startup. We just capture the underlying message so the caller
+    // can surface it under a 'warning' status in the JSON response.
     cleanup_warning_message = e.what();
   }
+
+  // step 4: bring the derived binlog index in line with the surviving
+  // binlog records
+  try_save_binlog_index();
 
   return {std::move(removed_records), std::move(cleanup_warning_message)};
 }
@@ -657,7 +671,8 @@ void storage_core::ensure_purging_mode() const {
 
   auto encryption_record{generate_binlog_encryption_record()};
   // writing the magic binlog footprint only if this is a newly
-  // created file
+  // created file; the backend makes it durable before returning, so that
+  // the binlog metadata object written below never describes missing data
   write_data_to_stream(events::magic_binlog_payload, encryption_record, 0ULL);
 
   gtids::optional_gtid_set previous_binlog_gtids{};
@@ -667,13 +682,20 @@ void storage_core::ensure_purging_mode() const {
     added_binlog_gtids = gtids::gtid_set{};
   }
 
+  const auto ordinal{is_empty_unsafe()
+                         ? purge_horizon_
+                         : get_current_binlog_record_unsafe().ordinal + 1ULL};
   binlog_records_.emplace_back(
-      binlog_name, events::magic_binlog_offset,
+      binlog_name, ordinal, events::magic_binlog_offset,
       std::move(previous_binlog_gtids), std::move(added_binlog_gtids),
       util::ctime_timestamp_range{}, events::seq_no_t{},
       std::move(encryption_record));
+  // saving the binlog metadata object is the commit point of creating a new
+  // binlog file: if the process is killed before this call completes, the
+  // binlog data file created above contains no events and will be removed
+  // during the next startup
   save_binlog_metadata(get_current_binlog_record_unsafe());
-  save_binlog_index();
+  try_save_binlog_index();
   return open_binlog_status::created;
 }
 [[nodiscard]] open_binlog_status
@@ -693,74 +715,6 @@ storage_core::open_existing_binlog_file_internal(
   return open_binlog_status::opened_empty;
 }
 
-void storage_core::load_binlog_index() {
-  const auto index_content_buffer{
-      backend_->get_object(default_binlog_index_name)};
-  std::string index_content{util::as_string_view(index_content_buffer)};
-  // TODO: switch to std::ispanstream when clang has it implemented
-  // opening in text mode
-  std::istringstream index_iss{std::move(index_content)};
-  std::string current_line;
-  while (std::getline(index_iss, current_line)) {
-    if (current_line.empty()) {
-      continue;
-    }
-    const std::filesystem::path current_binlog_path{current_line};
-    if (current_binlog_path.parent_path() != default_binlog_index_entry_path) {
-      util::exception_location().raise<std::logic_error>(
-          "binlog index contains an entry that has an invalid path");
-    }
-    auto current_binlog_name{current_binlog_path.filename().string()};
-
-    if (current_binlog_name == default_binlog_index_name) {
-      util::exception_location().raise<std::logic_error>(
-          "binlog index contains a reference to the binlog index name");
-    }
-    const auto current_binlog_name_parsed{
-        events::composite_binlog_name::parse(current_binlog_name)};
-    if (std::ranges::find(std::as_const(binlog_records_),
-                          current_binlog_name_parsed,
-                          &binlog_record::name) != std::cend(binlog_records_)) {
-      util::exception_location().raise<std::logic_error>(
-          "binlog index contains a duplicate entry");
-    }
-    gtids::optional_gtid_set previous_binlog_gtids{};
-    gtids::optional_gtid_set added_binlog_gtids{};
-    if (is_in_gtid_replication_mode()) {
-      previous_binlog_gtids = gtids::gtid_set{};
-      added_binlog_gtids = gtids::gtid_set{};
-    }
-    binlog_records_.emplace_back(
-        current_binlog_name_parsed, 0ULL, std::move(previous_binlog_gtids),
-        std::move(added_binlog_gtids), util::ctime_timestamp_range{});
-  }
-}
-
-void storage_core::validate_binlog_index(
-    const storage_object_name_container &object_names) const {
-  // in the querying_only mode we allow discrepancies between the binlog index
-  // and the actual objects in the storage
-  if (construction_mode_ == storage_construction_mode_type::querying_only) {
-    return;
-  }
-
-  for (auto const &record : binlog_records_) {
-    if (!object_names.contains(record.name.str())) {
-      util::exception_location().raise<std::logic_error>(
-          "binlog index contains a reference to a non-existing object");
-    }
-  }
-
-  if (std::size(object_names) != std::size(binlog_records_)) {
-    util::exception_location().raise<std::logic_error>(
-        "storage contains an object that is not "
-        "referenced in the binlog index");
-  }
-
-  // TODO: add integrity checks (parsing + checksumming) for the binlog
-  //       files in the index
-}
-
 void storage_core::save_binlog_index() const {
   std::ostringstream oss;
   for (const auto &record : binlog_records_) {
@@ -773,11 +727,28 @@ void storage_core::save_binlog_index() const {
                        util::as_const_byte_span(content));
 }
 
+void storage_core::try_save_binlog_index() const {
+  // binlog index is a derived object, so failing to update it must not fail
+  // the operation that has already been committed via binlog metadata
+  // objects - the index will be regenerated during the next startup
+  try {
+    save_binlog_index();
+  } catch (const std::exception &e) {
+    logger_->log_format(log_severity::warning, "cannot update binlog index: {}",
+                        e.what());
+  }
+}
+
 void storage_core::load_metadata() {
   const auto metadata_content{backend_->get_object(metadata_name)};
   const storage_metadata metadata{util::as_string_view(metadata_content)};
   replication_mode_ = metadata.root().get<"mode">();
   encryption_format_ = metadata.root().get<"encryption">();
+  purge_horizon_ = metadata.root().get<"purge_horizon">();
+  if (purge_horizon_ == 0ULL) {
+    util::exception_location().raise<std::logic_error>(
+        "storage metadata contains an invalid purge horizon");
+  }
 }
 
 void storage_core::validate_metadata(
@@ -804,6 +775,7 @@ void storage_core::save_metadata() const {
   storage_metadata metadata{};
   metadata.root().get<"mode">() = replication_mode_;
   metadata.root().get<"encryption">() = encryption_format_;
+  metadata.root().get<"purge_horizon">() = purge_horizon_;
   const auto content{metadata.str()};
   backend_->put_object(metadata_name, util::as_const_byte_span(content));
 }
@@ -824,6 +796,7 @@ void storage_core::save_metadata() const {
   const auto &optional_encryption_metadata{metadata.root().get<"encryption">()};
   return binlog_record{
       .name = binlog_name,
+      .ordinal = metadata.root().get<"ordinal">(),
       .size = metadata.root().get<"size">(),
       .previous_gtids = metadata.root().get<"previous_gtids">(),
       .added_gtids = metadata.root().get<"added_gtids">(),
@@ -837,6 +810,10 @@ void storage_core::save_metadata() const {
 }
 
 void storage_core::validate_binlog_metadata(const binlog_record &record) const {
+  if (record.ordinal == 0ULL) {
+    util::exception_location().raise<std::logic_error>(
+        "invalid ordinal in the binlog metadata");
+  }
   if (is_in_gtid_replication_mode()) {
     if (!record.previous_gtids.has_value()) {
       util::exception_location().raise<std::logic_error>(
@@ -881,6 +858,7 @@ void storage_core::validate_binlog_metadata(const binlog_record &record) const {
 
 void storage_core::save_binlog_metadata(const binlog_record &record) const {
   binlog_file_metadata metadata{};
+  metadata.root().get<"ordinal">() = record.ordinal;
   metadata.root().get<"size">() = record.size;
   metadata.root().get<"previous_gtids">() = record.previous_gtids;
   metadata.root().get<"added_gtids">() = record.added_gtids;
@@ -899,84 +877,248 @@ void storage_core::save_binlog_metadata(const binlog_record &record) const {
                        util::as_const_byte_span(content));
 }
 
-void storage_core::load_and_validate_binlog_metadata_set(
-    // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
-    const storage_object_name_container &object_names,
-    const storage_object_name_container &object_metadata_names) {
-  auto record_it{std::begin(binlog_records_)};
-  while (record_it != std::end(binlog_records_)) {
+void storage_core::load_and_reconcile_binlog_set(
+    storage_object_name_container &object_names) {
+  // binlog metadata objects are the source of truth: a binlog file is
+  // considered a part of the storage if and only if its metadata object
+  // exists and its ordinal is not below the purge horizon
+  auto records{load_binlog_metadata_set(object_names)};
+  remove_purged_binlogs(records, object_names);
+  std::ranges::sort(records, std::less{}, &binlog_record::ordinal);
+  validate_binlog_ordinals(records);
+  binlog_records_ = std::move(records);
+
+  // binlog data objects are the secondary source of truth - they are
+  // validated against (and, where it is safe, reconciled with) the binlog
+  // metadata objects loaded above
+  validate_binlog_data_objects(object_names);
+  remove_uncommitted_binlog_data_objects(object_names);
+
+  // if we are in GTID replication mode, then we can consider GTIDs from the
+  // first binlog metadata as purged GTIDs for the whole storage
+  if (!binlog_records_.empty()) {
+    const auto &optional_added_gtids{binlog_records_.front().added_gtids};
+    if (optional_added_gtids.has_value()) {
+      purged_gtids_ = *optional_added_gtids;
+    }
+  }
+}
+
+[[nodiscard]] binlog_record_container storage_core::load_binlog_metadata_set(
+    storage_object_name_container &object_names) const {
+  binlog_record_container records;
+  for (auto object_it{std::begin(object_names)};
+       object_it != std::end(object_names);) {
+    const std::filesystem::path object_name{object_it->first};
+    if (!object_name.has_extension() ||
+        object_name.extension() != binlog_metadata_extension) {
+      ++object_it;
+      continue;
+    }
+    const auto binlog_name{try_parse_binlog_name(object_name.stem().string())};
+    if (!binlog_name.has_value()) {
+      // objects with unexpected names are left in 'object_names' and
+      // reported by 'remove_uncommitted_binlog_data_objects()'
+      ++object_it;
+      continue;
+    }
+    object_it = object_names.erase(object_it);
+
     binlog_record loaded_binlog_metadata{};
     try {
-      const auto binlog_metadata_name{
-          generate_binlog_metadata_name(record_it->name)};
-      if (!object_metadata_names.contains(binlog_metadata_name)) {
-        util::exception_location().raise<std::logic_error>(
-            "missing metadata for a binlog listed in the binlog index");
-      }
-      loaded_binlog_metadata = load_binlog_metadata(record_it->name);
+      loaded_binlog_metadata = load_binlog_metadata(*binlog_name);
     } catch (const std::exception &) {
       if (construction_mode_ == storage_construction_mode_type::querying_only) {
         // in the querying_only mode we just skip invalid metadata and the
         // corresponding binlog file - this allows to query an otherwise
         // unusable storage and retrieve information about valid binlog files
         // from it, which can be useful for debugging / forensics purposes
-        record_it = binlog_records_.erase(record_it);
         continue;
       }
       throw;
     }
     validate_binlog_metadata(loaded_binlog_metadata);
+    records.push_back(std::move(loaded_binlog_metadata));
+  }
+  return records;
+}
+
+void storage_core::remove_purged_binlogs(
+    binlog_record_container &records,
+    storage_object_name_container &object_names) {
+  // binlog files with ordinals below the purge horizon are left after a
+  // purge operation that was committed but did not finish removing its
+  // victims (the process was killed or object removal failed)
+  const auto purged_records{
+      std::ranges::partition(records, [this](const binlog_record &record) {
+        return record.ordinal >= purge_horizon_;
+      })};
+  if (purged_records.empty()) {
+    return;
+  }
+
+  std::vector<std::string> data_object_names;
+  std::vector<std::string> metadata_object_names;
+  for (const auto &record : purged_records) {
+    auto binlog_file_name{record.name.str()};
+    logger_->log_format(log_severity::warning,
+                        "found binlog file '{}' below the purge horizon left "
+                        "after an interrupted purge",
+                        binlog_file_name);
+    // the data object may have already been removed by the interrupted
+    // purge operation
+    const auto data_object_it{object_names.find(binlog_file_name)};
+    if (data_object_it != std::end(object_names)) {
+      object_names.erase(data_object_it);
+      data_object_names.emplace_back(std::move(binlog_file_name));
+    }
+    metadata_object_names.emplace_back(
+        generate_binlog_metadata_name(record.name));
+  }
+  const auto number_of_purged_binlogs{std::size(purged_records)};
+  records.erase(std::begin(purged_records), std::end(purged_records));
+
+  // for querying-only mode we do not perform any modifying operations
+  if (construction_mode_ == storage_construction_mode_type::querying_only) {
+    return;
+  }
+
+  // the same order as in 'purge_binlogs()': data objects go first so that a
+  // leftover data object can never outlive its metadata object
+  if (!data_object_names.empty()) {
+    backend_->remove_objects(data_object_names);
+  }
+  backend_->remove_objects(metadata_object_names);
+  logger_->log_format(log_severity::warning,
+                      "removed {} binlog file(s) below the purge horizon left "
+                      "after an interrupted purge",
+                      number_of_purged_binlogs);
+}
+
+void storage_core::validate_binlog_ordinals(
+    const binlog_record_container &records) const {
+  // in the querying_only mode we allow gaps in the sequence of binlog files
+  if (construction_mode_ == storage_construction_mode_type::querying_only) {
+    return;
+  }
+
+  // 'records' is expected to be sorted by ordinal here, so any pair of
+  // adjacent records with non-consecutive ordinals indicates either a
+  // duplicate or a missing binlog metadata object
+  const auto gap_it{std::ranges::adjacent_find(
+      records, [](const binlog_record &previous, const binlog_record &next) {
+        return next.ordinal != previous.ordinal + 1ULL;
+      })};
+  if (gap_it == std::cend(records)) {
+    return;
+  }
+  if (std::next(gap_it)->ordinal == gap_it->ordinal) {
+    util::exception_location().raise<std::logic_error>(
+        "storage contains binlog metadata with duplicate ordinals");
+  }
+  util::exception_location().raise<std::logic_error>(
+      "storage contains binlog metadata with non-contiguous ordinals");
+}
+
+void storage_core::validate_binlog_data_objects(
+    storage_object_name_container &object_names) {
+  auto record_it{std::begin(binlog_records_)};
+  while (record_it != std::end(binlog_records_)) {
+    const auto binlog_file_name{record_it->name.str()};
+    const auto data_object_it{object_names.find(binlog_file_name)};
+    if (data_object_it == std::end(object_names)) {
+      if (construction_mode_ == storage_construction_mode_type::querying_only) {
+        // in the querying_only mode we just skip binlog files without data
+        record_it = binlog_records_.erase(record_it);
+        continue;
+      }
+      util::exception_location().raise<std::logic_error>(
+          "storage contains binlog metadata for a non-existing binlog");
+    }
+    const auto actual_binlog_file_size{data_object_it->second};
+    object_names.erase(data_object_it);
+
     // validating binlog size from the metadata only makes sense if we are not
     // in the querying_only mode
-    if (construction_mode_ != storage_construction_mode_type::querying_only) {
-      const auto binlog_file_name{record_it->name.str()};
-      const auto actual_binlog_file_size{object_names.at(binlog_file_name)};
-      // validating that the size stored in the metadata matches the actual size
-      if (loaded_binlog_metadata.size != actual_binlog_file_size) {
-        // in case when Binlog Server process was not properly shut down
-        // there is a chance that there will be mismatch between the actual
-        // binlog data file size and the 'size' field in the binlog metadata
+    if (construction_mode_ != storage_construction_mode_type::querying_only &&
+        record_it->size != actual_binlog_file_size) {
+      // in case when Binlog Server process was not properly shut down
+      // there is a chance that there will be mismatch between the actual
+      // binlog data file size and the 'size' field in the binlog metadata
 
-        // if this mismatch was found in the most recent binlog file, we can
-        // perform automatic recovery (truncating binlog data file content to
-        // the size from the metadata)
-        if (std::next(record_it) != std::end(binlog_records_)) {
-          util::exception_location().raise<std::logic_error>(
-              "size from the binlog metadata does not match the actual binlog "
-              "size");
-        }
-        // performing recovery
-        if (loaded_binlog_metadata.size > actual_binlog_file_size) {
-          util::exception_location().raise<std::logic_error>(
-              "cannot perform recovery - size from the binlog metadata is "
-              "bigger than the actual binlog file size");
-        }
-        backend_->resize_object(binlog_file_name, loaded_binlog_metadata.size);
+      // if this mismatch was found in the most recent binlog file, we can
+      // perform automatic recovery (truncating binlog data file content to
+      // the size from the metadata)
+      if (std::next(record_it) != std::end(binlog_records_)) {
+        util::exception_location().raise<std::logic_error>(
+            "size from the binlog metadata does not match the actual binlog "
+            "size");
+      }
+      if (record_it->size > actual_binlog_file_size) {
+        util::exception_location().raise<std::logic_error>(
+            "cannot perform recovery - size from the binlog metadata is "
+            "bigger than the actual binlog file size");
+      }
+      // only the streaming process owns the most recent binlog file - in
+      // the purging mode the extra data may belong to a checkpoint that is
+      // being committed by a concurrent streaming process right now
+      if (construction_mode_ == storage_construction_mode_type::streaming) {
+        backend_->resize_object(binlog_file_name, record_it->size);
         logger_->log_format(log_severity::warning,
                             "recovered binlog file '{}' by truncating it to "
                             "the size from the metadata",
                             binlog_file_name);
       }
     }
-    *record_it = std::move(loaded_binlog_metadata);
     ++record_it;
   }
-  // after this loop position_ and gtids_ should store the values from the last
-  // binlog file metadata
+}
 
-  if (construction_mode_ != storage_construction_mode_type::querying_only) {
-    if (std::size(object_metadata_names) != std::size(binlog_records_)) {
+void storage_core::remove_uncommitted_binlog_data_objects(
+    const storage_object_name_container &object_names) {
+  // in the querying_only mode we allow any extra objects in the storage
+  if (object_names.empty() ||
+      construction_mode_ == storage_construction_mode_type::querying_only) {
+    return;
+  }
+
+  // at this point 'object_names' contains only objects not referenced by
+  // any binlog metadata object - the only legitimate case is a binlog data
+  // file whose creation was interrupted before its metadata object (the
+  // commit point) was saved, in which case it contains no events
+  std::vector<std::string> uncommitted_object_names;
+  uncommitted_object_names.reserve(std::size(object_names));
+  for (const auto &[object_name, object_size] : object_names) {
+    if (!try_parse_binlog_name(object_name).has_value()) {
       util::exception_location().raise<std::logic_error>(
-          "found metadata for a non-existing binlog");
+          "storage contains an object with an unexpected name");
     }
+    if (object_size > events::magic_binlog_offset) {
+      util::exception_location().raise<std::logic_error>(
+          "storage contains a binlog data file that has no metadata");
+    }
+    uncommitted_object_names.emplace_back(object_name);
   }
 
-  // if we are in GTID replication mode, then we can consider GTIDs from the
-  // first binlog metadata as purged GTIDs for the whole storage
-  const auto &optional_added_gtids{binlog_records_.front().added_gtids};
-  if (optional_added_gtids.has_value()) {
-    purged_gtids_ = *optional_added_gtids;
+  // only the streaming process creates binlog files - in the purging mode
+  // these objects may belong to a binlog file that is being created by a
+  // concurrent streaming process right now
+  if (construction_mode_ != storage_construction_mode_type::streaming) {
+    return;
   }
+
+  for (const auto &object_name : uncommitted_object_names) {
+    logger_->log_format(log_severity::warning,
+                        "found binlog data file '{}' left after an "
+                        "interrupted binlog file creation (it has no "
+                        "metadata and contains no events)",
+                        object_name);
+  }
+  backend_->remove_objects(uncommitted_object_names);
+  logger_->log_format(log_severity::warning,
+                      "removed {} binlog data file(s) left after an "
+                      "interrupted binlog file creation",
+                      std::size(uncommitted_object_names));
 }
 
 [[nodiscard]] optional_binlog_encryption_record

@@ -37,6 +37,7 @@ binlog_file_metadata::binlog_file_metadata()
             {},
             {},
             {},
+            {},
             {}} {}
 
 binlog_file_metadata::binlog_file_metadata(std::string_view data) : impl_{} {

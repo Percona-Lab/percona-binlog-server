@@ -71,6 +71,9 @@ struct binlog_encryption_record {
 struct binlog_record {
   // binlog file name
   events::composite_binlog_name name;
+  // storage-local sequence number of the binlog file (1, 2, 3, ...) that
+  // defines the order of binlog files in the storage
+  std::uint64_t ordinal{0ULL};
   // binlog file size in bytes
   std::uint64_t size{0ULL};
   // accumulated GTIDs present in the binlog files before this one
@@ -88,6 +91,9 @@ struct binlog_record {
 
 class [[nodiscard]] storage_core {
 public:
+  // binlog index is a derived object that is regenerated from binlog
+  // metadata objects (the source of truth) and is never read back - it is
+  // kept only for compatibility with external tools / scripts
   static constexpr std::string_view default_binlog_index_name{"binlog.index"};
   static constexpr std::string_view default_binlog_index_entry_path{"."};
   static constexpr std::string_view metadata_name{"metadata.json"};
@@ -171,14 +177,13 @@ public:
   //             first), suitable for direct iteration by the caller
   //             to build a response;
   //   .second - empty on full success; non-empty when the best-effort
-  //             step-3 cleanup (removal of victim payload + metadata
+  //             step-3 cleanup (removal of victim data + metadata
   //             objects) failed for at least one object after the
-  //             step-2 index rewrite had already committed. The purge
-  //             itself is considered successful in this case, but the
-  //             storage on disk now contains orphan files that the
-  //             constructor's validators will refuse to open on next
-  //             startup The string carries the underlying cleanup
-  //             error message so the caller.
+  //             step-2 purge horizon update had already committed. The
+  //             purge itself is considered successful in this case, and
+  //             the leftover objects (now below the purge horizon) are
+  //             removed during the next startup. The string carries the
+  //             underlying cleanup error message for the caller.
   [[nodiscard]] std::pair<binlog_record_container, std::string>
   purge_binlogs(const events::composite_binlog_name &target);
 
@@ -265,6 +270,8 @@ private:
   basic_storage_backend_ptr backend_;
 
   replication_mode_type replication_mode_;
+  // the lowest binlog file ordinal that is still a part of the storage
+  std::uint64_t purge_horizon_{1ULL};
   gtids::gtid_set purged_gtids_{};
   binlog_record_container binlog_records_{};
 
@@ -323,10 +330,8 @@ private:
   [[nodiscard]] open_binlog_status
   open_existing_binlog_file_internal(std::uint64_t open_stream_offset);
 
-  void load_binlog_index();
-  void validate_binlog_index(
-      const storage_object_name_container &object_names) const;
   void save_binlog_index() const;
+  void try_save_binlog_index() const;
 
   void load_metadata();
   void validate_metadata(
@@ -341,9 +346,20 @@ private:
   void validate_binlog_metadata(const binlog_record &record) const;
   void save_binlog_metadata(const binlog_record &record) const;
 
-  void load_and_validate_binlog_metadata_set(
-      const storage_object_name_container &object_names,
-      const storage_object_name_container &object_metadata_names);
+  // the following methods implement startup reconciliation of the storage
+  // objects against binlog metadata objects (the source of truth); each of
+  // them removes the objects it has processed from 'object_names'
+  void
+  load_and_reconcile_binlog_set(storage_object_name_container &object_names);
+  [[nodiscard]] binlog_record_container
+  load_binlog_metadata_set(storage_object_name_container &object_names) const;
+  void remove_purged_binlogs(binlog_record_container &records,
+                             storage_object_name_container &object_names);
+  void validate_binlog_ordinals(const binlog_record_container &records) const;
+  void
+  validate_binlog_data_objects(storage_object_name_container &object_names);
+  void remove_uncommitted_binlog_data_objects(
+      const storage_object_name_container &object_names);
 
   [[nodiscard]] optional_binlog_encryption_record
   generate_binlog_encryption_record() const;
