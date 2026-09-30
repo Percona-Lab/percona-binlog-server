@@ -15,6 +15,7 @@
 
 #include <cstddef>
 #include <initializer_list>
+#include <iterator>
 #include <limits>
 #include <string>
 #include <vector>
@@ -825,4 +826,97 @@ BOOST_DATA_TEST_CASE(CipherContextCTRResume,
   }
 
   BOOST_CHECK(encrypted_message_resume == encrypted_message_single_pass);
+}
+
+namespace {
+
+// Shared body of the two CTR decrypt-at-offset test cases.
+//
+// Encrypts a random message end-to-end, rebuilds a decryption context
+// via 'cipher_context::create_with_offset(mid, decryption, ...)', asks
+// it to decrypt the ciphertext tail slice, and asserts the resulting
+// bytes equal 'plaintext[mid..end]'. When 'inplace' is true, 'update'
+// receives one span over the ciphertext-tail storage as BOTH input
+// and output. When false, 'update' writes into a fresh output
+// buffer distinct from the ciphertext, which is the general
+// 'cipher_context::update' contract.
+void check_ctr_decrypt_tail_at_offset(
+    // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+    std::size_t bit_length, std::size_t message_size, bool inplace) {
+  const std::string cipher_name{"AES-" + std::to_string(bit_length) + "-CTR"};
+
+  const std::size_t valid_key_size{
+      opensslpp::cipher_context::get_key_size_in_bytes(cipher_name)};
+  const std::size_t valid_ivec_size{
+      opensslpp::cipher_context::get_iv_size_in_bytes(cipher_name)};
+
+  buffer_type key{valid_key_size};
+  buffer_type ivec{valid_ivec_size};
+  opensslpp::crypto_rng::generate(key);
+  opensslpp::crypto_rng::generate(ivec);
+
+  buffer_type message{message_size};
+  opensslpp::crypto_rng::generate(message);
+
+  // reference ciphertext produced by a normal (non-aliased) pass
+  buffer_type ciphertext{message_size};
+  {
+    opensslpp::cipher_context encryption_context(
+        opensslpp::cipher_context_operation_type::encryption, cipher_name, key,
+        ivec);
+    encryption_context.update(message, ciphertext);
+    encryption_context.finalize();
+  }
+
+  const std::size_t mid{message_size / 2U};
+
+  // 'output_buffer' holds the decrypted tail after 'update'. In the
+  // in-place case it starts as a mutable copy of the ciphertext tail
+  // and is passed to 'update' as both input and output; otherwise it
+  // is a fresh zeroed buffer and the input span points to the
+  // ciphertext tail directly.
+  const auto ciphertext_tail_it{std::next(
+      std::cbegin(ciphertext), static_cast<buffer_type::difference_type>(mid))};
+  buffer_type output_buffer;
+  if (inplace) {
+    output_buffer.assign(ciphertext_tail_it, std::cend(ciphertext));
+  } else {
+    output_buffer.resize(message_size - mid);
+  }
+
+  const util::const_byte_span input_tail_v{
+      inplace ? util::const_byte_span{output_buffer}
+              : util::const_byte_span{ciphertext}.last(message_size - mid)};
+
+  auto tail_decryption_context{opensslpp::cipher_context::create_with_offset(
+      mid, opensslpp::cipher_context_operation_type::decryption, cipher_name,
+      key, ivec)};
+  tail_decryption_context.update(input_tail_v, output_buffer);
+  tail_decryption_context.finalize();
+
+  const buffer_type expected_message_tail(
+      std::next(std::cbegin(message),
+                static_cast<buffer_type::difference_type>(mid)),
+      std::cend(message));
+  BOOST_CHECK(output_buffer == expected_message_tail);
+}
+
+} // namespace
+
+// Decrypts the ciphertext tail into a SEPARATE output buffer.
+BOOST_DATA_TEST_CASE(CipherContextCTRDecryptWithOffset,
+                     boost::unit_test::data::make(bit_lengths) *
+                         boost::unit_test::data::make(stream_message_sizes),
+                     bit_length, message_size) {
+  check_ctr_decrypt_tail_at_offset(bit_length, message_size, false);
+}
+
+// Decrypts the ciphertext tail IN PLACE. This is the aliased-buffer
+// pattern 'storage_core::fetch_event_block' relies on when serving an
+// encrypted binlog block fetched from the storage backend (PBS-54).
+BOOST_DATA_TEST_CASE(CipherContextCTRInPlaceDecryptWithOffset,
+                     boost::unit_test::data::make(bit_lengths) *
+                         boost::unit_test::data::make(stream_message_sizes),
+                     bit_length, message_size) {
+  check_ctr_decrypt_tail_at_offset(bit_length, message_size, true);
 }
