@@ -532,6 +532,22 @@ storage_core::fetch_event_block(events::composite_binlog_name &binlog_name,
   auto result_buffer{
       backend_->get_object(resolved_binlog_name.str(), resolved_range)};
 
+  // If the binlog file is encrypted, decrypt the fetched ciphertext block
+  // in place.
+  if (record_it->encryption.has_value()) {
+    const auto &encryption_record{*record_it->encryption};
+    const auto file_key_decrypted{decrypt_file_key(encryption_record)};
+
+    auto data_decryption_context{opensslpp::cipher_context::create_with_offset(
+        read_offset, opensslpp::cipher_context_operation_type::decryption,
+        encryption_record.data_cipher, file_key_decrypted,
+        encryption_record.iv_for_data_encryption)};
+
+    const util::byte_span result_buffer_v{result_buffer};
+    data_decryption_context.update(result_buffer_v, result_buffer_v);
+    data_decryption_context.finalize();
+  }
+
   binlog_name = std::move(resolved_binlog_name);
   range = resolved_range;
   buffer = std::move(result_buffer);
@@ -1063,6 +1079,40 @@ storage_core::generate_binlog_encryption_record() const {
   return encryption_record;
 }
 
+util::hex_value_storage storage_core::decrypt_file_key(
+    const binlog_encryption_record &encryption_record) const {
+  // as for security reasons our intent is to not store file keys in plaintext
+  // permanently, we need to decrypt the file key with the KEK before we can
+  // use it for data encryption / decryption.
+
+  const auto &keyring_record{keyring_->get_key(encryption_record.kek_id)};
+
+  const auto &kek_cipher{keyring_record.get<"cipher">()};
+  const auto &kek{keyring_record.get<"data_hex">().get_data()};
+
+  util::const_byte_span iv_for_file_key_encryption_v{};
+  if (encryption_record.iv_for_file_key_encryption.has_value()) {
+    iv_for_file_key_encryption_v =
+        *encryption_record.iv_for_file_key_encryption;
+  };
+  util::const_byte_span tag_of_file_key_encryption_v{};
+  if (encryption_record.tag_of_file_key_encryption.has_value()) {
+    tag_of_file_key_encryption_v =
+        *encryption_record.tag_of_file_key_encryption;
+  }
+
+  opensslpp::cipher_context file_key_decryption_context{
+      opensslpp::cipher_context_operation_type::decryption, kek_cipher, kek,
+      iv_for_file_key_encryption_v, tag_of_file_key_encryption_v};
+  util::hex_value_storage file_key_decrypted{
+      std::size(encryption_record.file_key_encrypted_with_kek)};
+  file_key_decryption_context.update(
+      encryption_record.file_key_encrypted_with_kek, file_key_decrypted);
+  file_key_decryption_context.finalize();
+
+  return file_key_decrypted;
+}
+
 void storage_core::write_data_to_stream(
     util::const_byte_span data,
     const optional_binlog_encryption_record &encryption_record,
@@ -1073,35 +1123,7 @@ void storage_core::write_data_to_stream(
     return;
   }
 
-  // as for security reasons our intent is to not store file keys in plaintext
-  // permanently, we need to decrypt the file key with the KEK before we can
-  // use it for data encryption.
-
-  const auto &keyring_record{keyring_->get_key(encryption_record->kek_id)};
-
-  const auto &kek_cipher{keyring_record.get<"cipher">()};
-  const auto &kek{keyring_record.get<"data_hex">().get_data()};
-
-  util::const_byte_span iv_for_file_key_encryption_v{};
-  if (encryption_record->iv_for_file_key_encryption.has_value()) {
-    iv_for_file_key_encryption_v =
-        *encryption_record->iv_for_file_key_encryption;
-  };
-  util::const_byte_span tag_of_file_key_encryption_v{};
-  if (encryption_record->tag_of_file_key_encryption.has_value()) {
-    tag_of_file_key_encryption_v =
-        *encryption_record->tag_of_file_key_encryption;
-  }
-
-  // creating a context for the file key decryption
-  opensslpp::cipher_context file_key_decryption_context{
-      opensslpp::cipher_context_operation_type::decryption, kek_cipher, kek,
-      iv_for_file_key_encryption_v, tag_of_file_key_encryption_v};
-  util::hex_value_storage file_key_decrypted{
-      std::size(encryption_record->file_key_encrypted_with_kek)};
-  file_key_decryption_context.update(
-      encryption_record->file_key_encrypted_with_kek, file_key_decrypted);
-  file_key_decryption_context.finalize();
+  const auto file_key_decrypted{decrypt_file_key(*encryption_record)};
 
   // creating an context for data encryption with the data cipher, the file
   // key (decrypted previously), and the IV for data encryption

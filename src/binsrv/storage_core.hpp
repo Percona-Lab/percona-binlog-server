@@ -348,6 +348,9 @@ private:
   [[nodiscard]] optional_binlog_encryption_record
   generate_binlog_encryption_record() const;
 
+  [[nodiscard]] util::hex_value_storage
+  decrypt_file_key(const binlog_encryption_record &encryption_record) const;
+
   void write_data_to_stream(
       util::const_byte_span data,
       const optional_binlog_encryption_record &encryption_record,

@@ -92,7 +92,6 @@ public:
   // accepts non-const EVP_CIPHER_CTX pointer
   void extract_updated_iv(util::byte_span ivec);
 
-  // TODO: implement void update_inplace(util::byte_span inoutput)
   void update(util::const_byte_span input, util::byte_span output);
   void finalize(util::byte_span output_tag = {});
 
