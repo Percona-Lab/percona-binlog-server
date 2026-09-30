@@ -60,4 +60,3 @@ FLUSH BINARY LOGS;
 *** Removing the Binlog Server utility log file.
 
 *** Removing the Binlog Server utility configuration file.
-KILL CONNECTION <CONNECTION_ID>;
