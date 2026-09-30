@@ -24,20 +24,8 @@ eval $stmt_reset_binary_logs_and_gtids;
 
 --echo
 --echo *** Starting Binlog Server Utility in background in pull mode
---let $binsrv_pid_file = $MYSQL_TMP_DIR/binsrv_utility.pid
---let $binsrv_spawn_cmd_line = $BINSRV pull $binsrv_config_file_path > /dev/null & echo \$! > $binsrv_pid_file
-
---let EXPORTED_BINSRV_SPAWN_CMD_LINE = $binsrv_spawn_cmd_line
---perl
-  use strict;
-  use warnings;
-  my $cmd = $ENV{'EXPORTED_BINSRV_SPAWN_CMD_LINE'};
-  system("$cmd");
-EOF
-
---let $read_from_file = $binsrv_pid_file
---source include/read_file_to_var.inc
---let $binsrv_pid = $result
+--let $proc_command_line = $BINSRV pull $binsrv_config_file_path > /dev/null
+--source ../include/start_proc_in_background.inc
 
 --echo
 --echo *** Determining the first fresh binary log name.
@@ -130,23 +118,7 @@ if ($grep_status != 0)
 --echo
 --echo *** Sending SIGTERM signal to the Binlog Server Utility and waiting for
 --echo *** the process to terminate
---replace_result $binsrv_pid <BINSRV_PID>
---exec kill -s TERM $binsrv_pid
---let EXPORTED_BINSRV_PID = $binsrv_pid
-
---perl
-  use strict;
-  use warnings;
-  use Errno;
-  my $pid = $ENV{'EXPORTED_BINSRV_PID'};
-  my $not_present = (!kill(0, $pid) && $! == Errno::ESRCH);
-  while (!$not_present) {
-    sleep(1);
-    $not_present = (!kill(0, $pid) && $! == Errno::ESRCH);
-  }
-EOF
-
---remove_file $binsrv_pid_file
+--source ../include/terminate_proc.inc
 
 --echo
 --echo *** Comparing server and downloaded versions of the first binlog file
@@ -172,9 +144,7 @@ EOF
 # As the Binlog Server Utility interrupts the connection upon timeout, here we
 # need to close it on the MySQL server side as well in order to make sure that
 # MTR 'check-test' before and after the test produces the same output.
---let $binlog_dump_connection_id = `SELECT ID FROM performance_schema.processlist WHERE COMMAND = 'Binlog Dump'`
---replace_result $binlog_dump_connection_id <CONNECTION_ID>
-eval KILL CONNECTION $binlog_dump_connection_id;
+--source ../include/kill_binlog_dump_connection.inc
 
 # Also, we use 'count_sessions' include files to make sure that 'Binlog Dump'
 # connection is indeed closed.

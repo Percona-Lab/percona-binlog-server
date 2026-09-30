@@ -29,24 +29,8 @@ eval $stmt_reset_binary_logs_and_gtids;
 --echo *** SIGTERM flushes std::cout unconditionally, so we do not need to
 --echo *** rely on any per-line buffering trick that could misbehave under
 --echo *** ASAN.
---let $binsrv_pid_file = $MYSQL_TMP_DIR/auth_switch_binsrv.pid
---let $binsrv_spawn_cmd_line = $BINSRV pull $binsrv_config_file_path > /dev/null 2>&1 & echo \$! > $binsrv_pid_file
-
-# We route the spawn through Perl's system() rather than --exec because
-# mysqltest strips the shell's `$!` before it can be expanded, leaving the
-# PID file empty. Passing the command as an env var and executing it from
-# Perl leaves the shell metacharacters intact.
---let EXPORTED_BINSRV_SPAWN_CMD_LINE = $binsrv_spawn_cmd_line
---perl
-  use strict;
-  use warnings;
-  my $cmd = $ENV{'EXPORTED_BINSRV_SPAWN_CMD_LINE'};
-  system("$cmd");
-EOF
-
---let $read_from_file = $binsrv_pid_file
---source include/read_file_to_var.inc
---let $binsrv_pid = $result
+--let $proc_command_line = $BINSRV pull $binsrv_config_file_path > /dev/null
+--source ../include/start_proc_in_background.inc
 
 # SELECT VERSION() is one of the queries the Binlog Server's command loop
 # recognises (see network_service.cpp). We do not care what row comes
@@ -56,38 +40,10 @@ EOF
 --let $probe_query = SELECT VERSION()
 
 --echo
---echo *** Waiting for the Binlog Server listener to come up on
---echo *** 127.0.0.1:<BINSRV_LISTENER_PORT>. We probe with bash's /dev/tcp
---echo *** instead of the mysql client because bash is not
---echo *** ASAN-instrumented and /dev/tcp uses a plain connect(2), so each
---echo *** attempt is cheap and measures exactly the "listening on the
---echo *** port" state we care about.
---let $max_wait = 300
---let $iteration = 0
---let $port_open = 0
-while ($iteration < $max_wait)
-{
-  if (!$port_open)
-  {
-    --error 0, 1
-    --exec bash -c "echo > /dev/tcp/127.0.0.1/$binsrv_replication_source_port" 2>/dev/null
-    --let $port_status = $__error
-    if ($port_status == 0)
-    {
-      --let $port_open = 1
-      --let $iteration = $max_wait
-    }
-    if ($port_status != 0)
-    {
-      --sleep 1
-      --inc $iteration
-    }
-  }
-}
-if (!$port_open)
-{
-  --die The Binlog Server listener did not become reachable on its port within 300 seconds
-}
+--echo *** Waiting for the replication source listener port ready to accept
+--echo *** connections.
+--let $listening_port = $binsrv_replication_source_port
+--source ../include/wait_for_listening_port.inc
 
 --echo
 --echo *** Control: client picks the same plugin the server advertises
@@ -108,39 +64,9 @@ if (!$port_open)
 --exec $MYSQL --protocol=TCP --host=127.0.0.1 --port=$binsrv_replication_source_port --user=rpl --password=password --default-auth=mysql_native_password --skip-column-names -e "$probe_query" >/dev/null 2>&1
 
 --echo
---echo *** Sending SIGTERM to the Binlog Server Utility and waiting for the
---echo *** process to terminate (poll kill -0 until the pid is gone).
---echo *** Graceful exit flushes std::cout, so any log line binsrv wrote
---echo *** during its lifetime is now safely on disk.
---replace_result $binsrv_pid <BINSRV_PID>
---exec kill -s TERM $binsrv_pid
-
---let $max_exit_wait = 30
---let $iteration = 0
---let $binsrv_running = 1
-while ($iteration < $max_exit_wait)
-{
-  if ($binsrv_running)
-  {
-    --error 0, 1
-    --exec kill -0 $binsrv_pid 2>/dev/null
-    --let $kill_status = $__error
-    if ($kill_status != 0)
-    {
-      --let $binsrv_running = 0
-      --let $iteration = $max_exit_wait
-    }
-    if ($kill_status == 0)
-    {
-      --sleep 1
-      --inc $iteration
-    }
-  }
-}
-if ($binsrv_running)
-{
-  --die Binlog Server Utility did not terminate within 30 seconds
-}
+--echo *** Sending SIGTERM signal to the Binlog Server Utility and waiting for
+--echo *** the process to terminate
+--source ../include/terminate_proc.inc
 
 --echo
 --echo *** Confirming the switch actually happened by grepping the Binlog
@@ -152,17 +78,13 @@ if ($binsrv_running)
 --let $wait_timeout = 60
 --source include/wait_for_pattern_in_file.inc
 
---remove_file $binsrv_pid_file
-
 # cleaning up
 --source ../include/tear_down_binsrv_environment.inc
 
 # As the Binlog Server Utility interrupts the connection upon timeout, here we
 # need to close it on the MySQL server side as well in order to make sure that
 # MTR 'check-test' before and after the test produces the same output.
---let $binlog_dump_connection_id = `SELECT ID FROM performance_schema.processlist WHERE COMMAND = 'Binlog Dump'`
---replace_result $binlog_dump_connection_id <CONNECTION_ID>
-eval KILL CONNECTION $binlog_dump_connection_id;
+--source ../include/kill_binlog_dump_connection.inc
 
 # Also, we use 'count_sessions' include files to make sure that 'Binlog Dump'
 # connection is indeed closed.
