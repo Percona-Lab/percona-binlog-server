@@ -1,0 +1,63 @@
+*** Resetting replication at the very beginning of the test.
+
+*** Generating keyring data file in JSON format.
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+
+*** Determining the first binary log name.
+
+*** Creating source_db.tbl and inserting the first batch of rows.
+CREATE DATABASE source_db;
+CREATE TABLE source_db.tbl(
+id INT UNSIGNED NOT NULL,
+value VARCHAR(32) NOT NULL,
+PRIMARY KEY(id)
+) ENGINE=InnoDB;
+INSERT INTO source_db.tbl VALUES (1, 'one'), (2, 'two'), (3, 'three');
+
+*** Flushing the source binary log.
+FLUSH BINARY LOGS;
+
+*** Inserting the second batch of rows.
+INSERT INTO source_db.tbl VALUES (4, 'four'), (5, 'five'), (6, 'six');
+
+*** Fetching the source binary logs in position mode.
+
+*** Starting Binlog Server Utility in background in pull mode.
+include/read_file_to_var.inc
+
+*** Waiting for the replication source listener port ready to accept
+*** connections.
+
+*** Dumping the binary logs from the Binlog Server replication source.
+
+*** Sending SIGTERM signal to the Binlog Server Utility and waiting for
+*** the process to terminate
+
+*** Moving source_db.tbl to backup_db.tbl.
+CREATE DATABASE backup_db;
+RENAME TABLE source_db.tbl TO backup_db.tbl;
+DROP DATABASE source_db;
+
+*** Restoring source_db from the replication source dump.
+
+*** Comparing the restored and backup tables.
+include/diff_tables.inc [source_db.tbl, backup_db.tbl]
+
+*** Dropping the round-trip databases.
+DROP DATABASE source_db;
+DROP DATABASE backup_db;
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.
+
+*** Deleting keyring data file in JSON format.
