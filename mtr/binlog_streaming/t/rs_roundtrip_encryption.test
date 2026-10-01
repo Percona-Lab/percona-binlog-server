@@ -11,16 +11,23 @@ eval $stmt_reset_binary_logs_and_gtids;
 
 --source ../include/identify_storage_backend.inc
 
+# generating keyring data file with the predefined key set
+--let $binsrv_keyring_data_file_path = $MYSQL_TMP_DIR/keyring_data.json
+--source ../include/generate_keyring_data_file.inc
+
 --let $binsrv_connect_timeout = 3
 --let $binsrv_read_timeout = 3
 --let $binsrv_idle_time = 1
 --let $binsrv_verify_checksum = TRUE
 --let $binsrv_replication_mode = position
+--let $binsrv_encryption_cipher = AES-256-CTR
+--let $binsrv_encryption_kek_id = gamma32
 --source ../include/set_up_binsrv_environment.inc
 
 --source ../include/rs_roundtrip_body.inc
 
 --source ../include/tear_down_binsrv_environment.inc
+--source ../include/delete_keyring_data_file.inc
 
 # As the Binlog Server Utility interrupts the connection upon timeout, here we
 # need to close it on the MySQL server side as well in order to make sure that
