@@ -1,0 +1,309 @@
+#
+# Checks how the storage reconciles its objects against binlog metadata
+# objects (the source of truth) during startup:
+# - the derived binlog index is regenerated and never read back;
+# - binlog data files left after an interrupted binlog file creation
+#   (no metadata, no events) are removed;
+# - binlog files left below the purge horizon after an interrupted purge are
+#   removed;
+# - every other inconsistency is reported as an error.
+#
+--source ../include/have_binsrv.inc
+
+--source ../include/v80_v84_compatibility_defines.inc
+
+# in case of --repeat=N, we need to start from a fresh binary log to make
+# this test deterministic
+--echo *** Resetting replication at the very beginning of the test.
+--disable_query_log
+eval $stmt_reset_binary_logs_and_gtids;
+--enable_query_log
+
+--echo
+--echo *** Generating three binary logs with some data in each of them.
+--let $first_binlog = query_get_value($stmt_show_binary_log_status, File, 1)
+CREATE TABLE t1(id INT UNSIGNED NOT NULL AUTO_INCREMENT, PRIMARY KEY(id)) ENGINE=InnoDB;
+INSERT INTO t1 VALUES(DEFAULT);
+FLUSH BINARY LOGS;
+--let $second_binlog = query_get_value($stmt_show_binary_log_status, File, 1)
+INSERT INTO t1 VALUES(DEFAULT);
+FLUSH BINARY LOGS;
+--let $third_binlog = query_get_value($stmt_show_binary_log_status, File, 1)
+INSERT INTO t1 VALUES(DEFAULT);
+
+--disable_query_log
+--let $fourth_binlog = `SELECT CONCAT(SUBSTRING('$third_binlog', 1, LENGTH('$third_binlog') - 6), LPAD(CAST(RIGHT('$third_binlog', 6) AS UNSIGNED) + 1, 6, '0'))`
+--let $fifth_binlog = `SELECT CONCAT(SUBSTRING('$third_binlog', 1, LENGTH('$third_binlog') - 6), LPAD(CAST(RIGHT('$third_binlog', 6) AS UNSIGNED) + 2, 6, '0'))`
+--enable_query_log
+
+# identifying backend storage type ('file' or 's3')
+--source ../include/identify_storage_backend.inc
+
+# creating data directory, configuration file, etc.
+--let $binsrv_connect_timeout = 20
+--let $binsrv_read_timeout = 60
+--let $binsrv_idle_time = 10
+--let $binsrv_verify_checksum = TRUE
+--let $binsrv_replication_mode = position
+--let $binsrv_checkpoint_size = 1
+--source ../include/set_up_binsrv_environment.inc
+
+--let $local_file = $MYSQL_TMP_DIR/storage_reconciliation.local
+--let $binlog_index_file = $MYSQL_TMP_DIR/storage_reconciliation.index
+--let $saved_object_file = $MYSQL_TMP_DIR/storage_reconciliation.saved
+
+--echo
+--echo *** Executing the Binlog Server utility to download all binlog data
+--echo *** from the server.
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+
+--echo
+--echo *** 1. Binlog index is a derived object that is never read back.
+--echo
+--echo *** 1a. Replacing binlog index content with garbage.
+--let RECONCILIATION_LOCAL_FILE = $local_file
+--perl
+use strict;
+use warnings;
+open(my $fh, '>', $ENV{'RECONCILIATION_LOCAL_FILE'}) or die "Failed to open file: $!";
+print $fh "garbage\n";
+close($fh);
+EOF
+--let $storage_object = $binsrv_storage_path/binlog.index
+--source ../include/upload_storage_object.inc
+--remove_file $local_file
+
+--echo
+--echo *** Executing the Binlog Server utility and expecting it to regenerate
+--echo *** binlog index.
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+--source ../include/download_storage_object.inc
+--let $assert_file = $local_file
+--let $assert_text = Binlog index does not contain garbage
+--let $assert_count = 0
+--let $assert_select = garbage
+--source include/assert_grep.inc
+--let $assert_text = Binlog index lists all three binlog files
+--let $assert_count = 3
+--let $assert_select = ^\./.+\.[0-9]{6}\s*\z
+--source include/assert_grep.inc
+--let $assert_text = Binlog index lists the third binlog file
+--let $assert_count = 1
+--let $assert_select = ^\./$third_binlog\s*\z
+--source include/assert_grep.inc
+--remove_file $local_file
+
+--echo
+--echo *** 1b. Removing binlog index.
+--source ../include/remove_storage_object.inc
+
+--echo
+--echo *** Executing the Binlog Server utility and expecting it to recreate
+--echo *** binlog index.
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+--source ../include/download_storage_object.inc
+--let $assert_text = Recreated binlog index lists all three binlog files
+--let $assert_count = 3
+--let $assert_select = ^\./.+\.[0-9]{6}\s*\z
+--source include/assert_grep.inc
+--remove_file $local_file
+
+
+--echo
+--echo *** 2. Binlog data files left after an interrupted binlog file creation
+--echo ***    are removed.
+--echo
+--echo *** Simulating two interrupted binlog file creations: one killed after
+--echo *** writing the magic payload and one killed right after creating an
+--echo *** empty file.
+--perl
+use strict;
+use warnings;
+open(my $fh, '>:raw', $ENV{'RECONCILIATION_LOCAL_FILE'}) or die "Failed to open file: $!";
+print $fh "\xfe\x62\x69\x6e";
+close($fh);
+EOF
+--let $storage_object = $binsrv_storage_path/$fourth_binlog
+--source ../include/upload_storage_object.inc
+--perl
+use strict;
+use warnings;
+open(my $fh, '>:raw', $ENV{'RECONCILIATION_LOCAL_FILE'}) or die "Failed to open file: $!";
+close($fh);
+EOF
+--let $storage_object = $binsrv_storage_path/$fifth_binlog
+--source ../include/upload_storage_object.inc
+--remove_file $local_file
+
+--echo
+--echo *** Executing the Binlog Server utility and expecting it to remove both
+--echo *** binlog data files.
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+--let $assert_file = $binsrv_log_path
+--let $assert_text = Binlog storage initialization found the first uncommitted binlog data file
+--let $assert_count = 1
+--let $assert_select = found binlog data file '$fourth_binlog' left after an interrupted binlog file creation
+--source include/assert_grep.inc
+--let $assert_text = Binlog storage initialization found the second uncommitted binlog data file
+--let $assert_select = found binlog data file '$fifth_binlog' left after an interrupted binlog file creation
+--source include/assert_grep.inc
+--let $assert_text = Binlog storage initialization removed uncommitted binlog data files
+--let $assert_select = removed 2 binlog data file\(s\) left after an interrupted binlog file creation
+--source include/assert_grep.inc
+--let $storage_object = $binsrv_storage_path/$fourth_binlog
+--source ../include/assert_storage_object_absent.inc
+--let $storage_object = $binsrv_storage_path/$fifth_binlog
+--source ../include/assert_storage_object_absent.inc
+
+
+--echo
+--echo *** 3. A binlog data file with events but without metadata is an error.
+--let $storage_object = $binsrv_storage_path/$first_binlog
+--let $local_file = $saved_object_file
+--source ../include/download_storage_object.inc
+--let $storage_object = $binsrv_storage_path/$fourth_binlog
+--source ../include/upload_storage_object.inc
+
+--echo
+--echo *** Executing the Binlog Server utility and expecting it to fail.
+--error 1
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+--let $assert_text = Binlog storage initialization detected a binlog data file without metadata
+--let $assert_count = 1
+--let $assert_select = storage contains a binlog data file that has no metadata
+--source include/assert_grep.inc
+--source ../include/remove_storage_object.inc
+--remove_file $saved_object_file
+
+
+--echo
+--echo *** 4. An object with an unexpected name is an error.
+--let $local_file = $saved_object_file
+--let RECONCILIATION_SAVED_OBJECT_FILE = $saved_object_file
+--perl
+use strict;
+use warnings;
+open(my $fh, '>', $ENV{'RECONCILIATION_SAVED_OBJECT_FILE'}) or die "Failed to open file: $!";
+print $fh "unexpected\n";
+close($fh);
+EOF
+--let $storage_object = $binsrv_storage_path/unexpected_object
+--source ../include/upload_storage_object.inc
+--remove_file $saved_object_file
+
+--echo
+--echo *** Executing the Binlog Server utility and expecting it to fail.
+--error 1
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+--let $assert_text = Binlog storage initialization detected an object with an unexpected name
+--let $assert_count = 1
+--let $assert_select = storage contains an object with an unexpected name
+--source include/assert_grep.inc
+--source ../include/remove_storage_object.inc
+
+
+--echo
+--echo *** 5. Binlog metadata without its binlog data file is an error.
+--let $storage_object = $binsrv_storage_path/$second_binlog
+--source ../include/download_storage_object.inc
+--source ../include/remove_storage_object.inc
+
+--echo
+--echo *** Executing the Binlog Server utility and expecting it to fail.
+--error 1
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+--let $assert_text = Binlog storage initialization detected binlog metadata without binlog data file
+--let $assert_count = 1
+--let $assert_select = storage contains binlog metadata for a non-existing binlog
+--source include/assert_grep.inc
+--source ../include/upload_storage_object.inc
+--remove_file $saved_object_file
+
+
+--echo
+--echo *** 6. A missing binlog metadata in the middle of the sequence is an
+--echo ***    error.
+--let $storage_object = $binsrv_storage_path/$second_binlog.json
+--source ../include/download_storage_object.inc
+--source ../include/remove_storage_object.inc
+
+--echo
+--echo *** Executing the Binlog Server utility and expecting it to fail.
+--error 1
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+--let $assert_text = Binlog storage initialization detected a gap in binlog metadata ordinals
+--let $assert_count = 1
+--let $assert_select = storage contains binlog metadata with non-contiguous ordinals
+--source include/assert_grep.inc
+--source ../include/upload_storage_object.inc
+--remove_file $saved_object_file
+
+
+--echo
+--echo *** 7. Binlog files left below the purge horizon after an interrupted
+--echo ***    purge are removed.
+--echo
+--echo *** Simulating a purge of the first binlog file that was committed (the
+--echo *** purge horizon was moved) but was killed before removing any objects.
+--let $storage_object = $binsrv_storage_path/metadata.json
+--source ../include/download_storage_object.inc
+--perl
+use strict;
+use warnings;
+my $file_name = $ENV{'RECONCILIATION_SAVED_OBJECT_FILE'};
+open(my $in_fh, '<', $file_name) or die "Failed to open file: $!";
+my $content = do { local $/; <$in_fh> };
+close($in_fh);
+$content =~ s/"purge_horizon":1\b/"purge_horizon":2/ or die "Purge horizon not found";
+open(my $out_fh, '>', $file_name) or die "Failed to open file: $!";
+print $out_fh $content;
+close($out_fh);
+EOF
+--source ../include/upload_storage_object.inc
+--remove_file $saved_object_file
+
+--echo
+--echo *** Executing the Binlog Server utility and expecting it to finish the
+--echo *** purge.
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+--let $assert_file = $binsrv_log_path
+--let $assert_text = Binlog storage initialization found the binlog file below the purge horizon
+--let $assert_count = 1
+--let $assert_select = found binlog file '$first_binlog' below the purge horizon left after an interrupted purge
+--source include/assert_grep.inc
+--let $assert_text = Binlog storage initialization removed the binlog file below the purge horizon
+--let $assert_select = removed 1 binlog file\(s\) below the purge horizon left after an interrupted purge
+--source include/assert_grep.inc
+--let $storage_object = $binsrv_storage_path/$first_binlog
+--source ../include/assert_storage_object_absent.inc
+--let $storage_object = $binsrv_storage_path/$first_binlog.json
+--source ../include/assert_storage_object_absent.inc
+
+--echo
+--echo *** Checking that binlog index no longer lists the first binlog file.
+--let $storage_object = $binsrv_storage_path/binlog.index
+--let $local_file = $binlog_index_file
+--source ../include/download_storage_object.inc
+--let $assert_file = $local_file
+--let $assert_text = Binlog index lists the two remaining binlog files
+--let $assert_count = 2
+--let $assert_select = ^\./.+\.[0-9]{6}\s*\z
+--source include/assert_grep.inc
+--let $assert_text = Binlog index does not list the first binlog file
+--let $assert_count = 0
+--let $assert_select = ^\./$first_binlog\s*\z
+--source include/assert_grep.inc
+--remove_file $local_file
+
+
+--echo
+--echo *** Comparing server and downloaded versions of the second binlog file
+--echo *** to make sure that the reconciliation did not damage binlog data.
+--let $local_file = $binlog_base_dir/$second_binlog
+--let $storage_object = $binsrv_storage_path/$second_binlog
+--source ../include/diff_with_storage_object.inc
+
+# cleaning up
+DROP TABLE t1;
+--source ../include/tear_down_binsrv_environment.inc

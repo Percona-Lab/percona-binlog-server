@@ -34,7 +34,7 @@
 namespace binsrv {
 
 storage_metadata::storage_metadata()
-    : impl_{{expected_storage_metadata_version}, {}, {}} {}
+    : impl_{{expected_storage_metadata_version}, {}, {}, {}} {}
 
 storage_metadata::storage_metadata(std::string_view data) : impl_{} {
   auto json_value = boost::json::parse(data);

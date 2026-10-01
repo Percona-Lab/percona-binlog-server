@@ -41,9 +41,15 @@ private:
   // every other piece of resume state already lives in this metadata
   // record - this addition simply makes recovery a single
   // read-and-load step.
+  // The 'ordinal' field is a storage-local sequence number (1, 2, 3, ...)
+  // assigned when the binlog file is created. It defines the order of
+  // binlog files in the storage and, together with the purge horizon
+  // from the storage metadata, makes this record the single source of
+  // truth for whether the binlog file belongs to the storage.
   using impl_type = util::nv_tuple<
       // clang-format off
       util::nv<"version", std::uint32_t>,
+      util::nv<"ordinal", std::uint64_t>,
       util::nv<"size", std::uint64_t>,
       util::nv<"previous_gtids", gtids::optional_gtid_set>,
       util::nv<"added_gtids", gtids::optional_gtid_set>,

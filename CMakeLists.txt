@@ -72,11 +72,31 @@ if(WITH_ASAN)
   target_link_options(binlog_server_compiler_flags INTERFACE "-fsanitize=address")
 endif()
 
-find_package(Boost 1.90.0 EXACT REQUIRED COMPONENTS url json asio)
+# use BoostConfig.cmake shipped with Boost instead of the deprecated FindBoost module
+if(POLICY CMP0167)
+  cmake_policy(SET CMP0167 NEW)
+endif()
+find_package(Boost 1.90.0 EXACT REQUIRED COMPONENTS url json OPTIONAL_COMPONENTS asio)
+if(NOT TARGET Boost::asio)
+  # distro-packaged Boost (e.g. Debian / Ubuntu) does not provide a separate
+  # CMake package for the header-only Boost.Asio library
+  find_package(Threads REQUIRED)
+  add_library(Boost::asio INTERFACE IMPORTED)
+  target_link_libraries(Boost::asio INTERFACE Boost::headers Threads::Threads)
+endif()
 
 find_package(MySQL REQUIRED)
 
 find_package(ZLIB REQUIRED)
+# besides the standard locations (CMAKE_PREFIX_PATH, AWSSDK_ROOT, system
+# prefixes), also look for AWS SDK CPP installed next to the source tree
+# as described in README.md (../aws-sdk-cpp-install-<preset>)
+# (appended to CMAKE_PREFIX_PATH rather than passed via PATHS, as
+# AWSSDKConfig.cmake looks up its own dependencies via CMAKE_PREFIX_PATH)
+file(GLOB aws_sdk_sibling_install_dirs LIST_DIRECTORIES true
+  "${PROJECT_SOURCE_DIR}/../aws-sdk-cpp-install*"
+)
+list(APPEND CMAKE_PREFIX_PATH ${aws_sdk_sibling_install_dirs})
 find_package(AWSSDK 1.11.774 EXACT REQUIRED COMPONENTS s3-crt)
 
 # various utility files

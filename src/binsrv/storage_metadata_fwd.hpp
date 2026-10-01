@@ -22,7 +22,7 @@ namespace binsrv {
 
 class storage_metadata;
 
-inline constexpr std::uint32_t expected_storage_metadata_version{1U};
+inline constexpr std::uint32_t expected_storage_metadata_version{2U};
 
 } // namespace binsrv
 

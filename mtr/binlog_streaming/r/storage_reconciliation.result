@@ -1,0 +1,95 @@
+*** Resetting replication at the very beginning of the test.
+
+*** Generating three binary logs with some data in each of them.
+CREATE TABLE t1(id INT UNSIGNED NOT NULL AUTO_INCREMENT, PRIMARY KEY(id)) ENGINE=InnoDB;
+INSERT INTO t1 VALUES(DEFAULT);
+FLUSH BINARY LOGS;
+INSERT INTO t1 VALUES(DEFAULT);
+FLUSH BINARY LOGS;
+INSERT INTO t1 VALUES(DEFAULT);
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+
+*** Executing the Binlog Server utility to download all binlog data
+*** from the server.
+
+*** 1. Binlog index is a derived object that is never read back.
+
+*** 1a. Replacing binlog index content with garbage.
+
+*** Executing the Binlog Server utility and expecting it to regenerate
+*** binlog index.
+include/assert_grep.inc [Binlog index does not contain garbage]
+include/assert_grep.inc [Binlog index lists all three binlog files]
+include/assert_grep.inc [Binlog index lists the third binlog file]
+
+*** 1b. Removing binlog index.
+
+*** Executing the Binlog Server utility and expecting it to recreate
+*** binlog index.
+include/assert_grep.inc [Recreated binlog index lists all three binlog files]
+
+*** 2. Binlog data files left after an interrupted binlog file creation
+***    are removed.
+
+*** Simulating two interrupted binlog file creations: one killed after
+*** writing the magic payload and one killed right after creating an
+*** empty file.
+
+*** Executing the Binlog Server utility and expecting it to remove both
+*** binlog data files.
+include/assert_grep.inc [Binlog storage initialization found the first uncommitted binlog data file]
+include/assert_grep.inc [Binlog storage initialization found the second uncommitted binlog data file]
+include/assert_grep.inc [Binlog storage initialization removed uncommitted binlog data files]
+
+*** 3. A binlog data file with events but without metadata is an error.
+
+*** Executing the Binlog Server utility and expecting it to fail.
+include/assert_grep.inc [Binlog storage initialization detected a binlog data file without metadata]
+
+*** 4. An object with an unexpected name is an error.
+
+*** Executing the Binlog Server utility and expecting it to fail.
+include/assert_grep.inc [Binlog storage initialization detected an object with an unexpected name]
+
+*** 5. Binlog metadata without its binlog data file is an error.
+
+*** Executing the Binlog Server utility and expecting it to fail.
+include/assert_grep.inc [Binlog storage initialization detected binlog metadata without binlog data file]
+
+*** 6. A missing binlog metadata in the middle of the sequence is an
+***    error.
+
+*** Executing the Binlog Server utility and expecting it to fail.
+include/assert_grep.inc [Binlog storage initialization detected a gap in binlog metadata ordinals]
+
+*** 7. Binlog files left below the purge horizon after an interrupted
+***    purge are removed.
+
+*** Simulating a purge of the first binlog file that was committed (the
+*** purge horizon was moved) but was killed before removing any objects.
+
+*** Executing the Binlog Server utility and expecting it to finish the
+*** purge.
+include/assert_grep.inc [Binlog storage initialization found the binlog file below the purge horizon]
+include/assert_grep.inc [Binlog storage initialization removed the binlog file below the purge horizon]
+
+*** Checking that binlog index no longer lists the first binlog file.
+include/assert_grep.inc [Binlog index lists the two remaining binlog files]
+include/assert_grep.inc [Binlog index does not list the first binlog file]
+
+*** Comparing server and downloaded versions of the second binlog file
+*** to make sure that the reconciliation did not damage binlog data.
+DROP TABLE t1;
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.

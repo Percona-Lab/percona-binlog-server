@@ -30,11 +30,16 @@ namespace binsrv {
 
 class [[nodiscard]] storage_metadata {
 private:
+  // The 'purge_horizon' field is the lowest binlog file ordinal that is
+  // still considered to be a part of the storage - binlog files with
+  // smaller ordinals were purged (even if their objects are still present
+  // in the storage because of an interrupted cleanup).
   using impl_type = util::nv_tuple<
       // clang-format off
       util::nv<"version", std::uint32_t>,
       util::nv<"mode", replication_mode_type>,
-      util::nv<"encryption", optional_encryption_format_type>
+      util::nv<"encryption", optional_encryption_format_type>,
+      util::nv<"purge_horizon", std::uint64_t>
       // clang-format on
       >;
 
