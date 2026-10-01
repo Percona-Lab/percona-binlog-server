@@ -49,7 +49,21 @@ namespace binsrv {
 storage::storage(basic_logger_ptr logger, const main_config &config,
                  storage_construction_mode_type construction_mode)
     : core_{std::make_unique<storage_core>(std::move(logger), config,
-                                           construction_mode)} {}
+                                           construction_mode)} {
+  const auto &storage_config{config.root().get<"storage">()};
+
+  const auto &checkpoint_size_opt{storage_config.get<"checkpoint_size">()};
+  if (checkpoint_size_opt.has_value()) {
+    checkpoint_size_bytes_ = checkpoint_size_opt->get_value();
+  }
+
+  const auto &checkpoint_interval_opt{
+      storage_config.get<"checkpoint_interval">()};
+  if (checkpoint_interval_opt.has_value()) {
+    checkpoint_interval_seconds_ =
+        std::chrono::seconds{checkpoint_interval_opt->get_value()};
+  }
+}
 
 storage::~storage() {
   if (core_->get_construction_mode() ==
