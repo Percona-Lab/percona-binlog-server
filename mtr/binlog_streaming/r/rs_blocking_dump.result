@@ -1,0 +1,80 @@
+*** Resetting replication at the very beginning of the test.
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+
+*** Determining the first binary log name.
+
+*** Starting Binlog Server Utility in background in pull mode.
+include/read_file_to_var.inc
+
+*** Waiting for the replication source listener port ready to accept
+*** connections.
+
+*** Starting the first downstream mysqlbinlog --read-from-remote-server
+*** --stop-never session against PBS. --stop-never clears the
+*** BINLOG_DUMP_NON_BLOCK flag on the COM_BINLOG_DUMP packet, so PBS
+*** must keep the connection open and deliver events as they become
+*** available instead of disconnecting on EOF.
+include/read_file_to_var.inc
+
+*** Starting a second downstream mysqlbinlog session against PBS so
+*** that two concurrent blocking COM_BINLOG_DUMP sessions are
+*** exercised at the same time.
+include/read_file_to_var.inc
+
+*** First batch of transactions on the source.
+CREATE DATABASE test1;
+CREATE TABLE test1.t(id INT UNSIGNED NOT NULL PRIMARY KEY) ENGINE=InnoDB;
+INSERT INTO test1.t VALUES (1), (2), (3);
+
+*** Waiting for the first batch to reach the first downstream
+*** mysqlbinlog through its blocking COM_BINLOG_DUMP connection.
+include/wait_for_pattern_in_file.inc [test1]
+
+*** Waiting for the first batch to reach the second downstream
+*** mysqlbinlog as well.
+include/wait_for_pattern_in_file.inc [test1]
+
+*** Idle period: no events are produced on the source for a few
+*** seconds. Both blocking connections must remain open throughout.
+
+*** Second batch of transactions on the source. If blocking-mode
+*** support were missing, the connections would have closed on EOF
+*** after the first batch and these events would never reach the
+*** downstreams (the following waits would then time out).
+CREATE DATABASE test2;
+CREATE TABLE test2.t(id INT UNSIGNED NOT NULL PRIMARY KEY) ENGINE=InnoDB;
+INSERT INTO test2.t VALUES (4), (5), (6);
+
+*** Waiting for the second batch to reach the first downstream
+*** mysqlbinlog.
+include/wait_for_pattern_in_file.inc [test2]
+
+*** Waiting for the second batch to reach the second downstream
+*** mysqlbinlog.
+include/wait_for_pattern_in_file.inc [test2]
+
+*** Sending SIGTERM to the first downstream mysqlbinlog session and
+*** waiting for it to terminate.
+
+*** Sending SIGTERM to the second downstream mysqlbinlog session and
+*** waiting for it to terminate.
+
+*** Dropping the test databases.
+DROP DATABASE test1;
+DROP DATABASE test2;
+
+*** Sending SIGTERM signal to the Binlog Server Utility and waiting
+*** for the process to terminate.
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.
