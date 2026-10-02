@@ -60,11 +60,11 @@ sender_context::~sender_context() = default;
     }
     if (buffer.empty()) {
       logger_->log(binsrv::log_severity::info, "sender : fetched EOF");
-      // resetting the sender context to its initial state on EOF
-      binlog_name_ = binsrv::events::composite_binlog_name{};
-      range_ =
-          util::byte_range{binsrv::events::magic_binlog_offset, block_size_};
-      event_index_ = 0UZ;
+      // On EOF, 'storage::fetch_event_block()' leaves 'range_' with length 0,
+      // and unchanged offset. Restore the length while
+      // keeping 'binlog_name_' and the current offset so that a subsequent
+      // call resumes polling at the same position.
+      range_ = util::byte_range{range_.get_offset(), block_size_};
 
       // setting the event span to an empty object to indicate EOF
       event = util::const_byte_span{};

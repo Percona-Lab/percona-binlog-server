@@ -52,6 +52,8 @@
 #pragma GCC diagnostic pop
 
 #include <boost/asio/redirect_error.hpp>
+#include <boost/asio/steady_timer.hpp>
+#include <boost/asio/this_coro.hpp>
 #include <boost/asio/use_awaitable.hpp>
 
 #include <boost/asio/ip/tcp.hpp>
@@ -518,14 +520,36 @@ void handle_exception(binsrv::basic_logger &logger, std::string_view context) {
       } break;
       case minimysql::client_command_type::binlog_dump: {
         static constexpr auto block_size{1048576UZ};
+        static constexpr auto blocking_poll_interval{
+            std::chrono::milliseconds{500}};
+
+        const bool blocking{!context.check_binlog_non_blocking_dump()};
 
         // TODO: initialize sender_context with binlog_name:position extracted
         //       from the COM_BINLOG_DUMP command.
         operations::sender_context sender_ctx{logger, storage, block_size};
+        boost::asio::steady_timer idle_timer{
+            co_await boost::asio::this_coro::executor};
         bool fetch_result{};
         util::const_byte_span event_data{};
-        while ((fetch_result = sender_ctx.get_event(event_data)) &&
-               !event_data.empty()) {
+        for (;;) {
+          fetch_result = sender_ctx.get_event(event_data);
+          if (!fetch_result) {
+            logger->log_format(
+                binsrv::log_severity::error,
+                "net    : failed to fetch next event block for {}",
+                remote_endpoint_str);
+            terminated = true;
+            break;
+          }
+          if (event_data.empty()) {
+            if (!blocking) {
+              break;
+            }
+            idle_timer.expires_after(blocking_poll_interval);
+            co_await idle_timer.async_wait(boost::asio::use_awaitable);
+            continue;
+          }
           const auto event_frame{
               context.generate_encoded_binlog_event(event_data)};
           print_generic(*logger, remote_endpoint, context, "binlog event");
@@ -536,11 +560,7 @@ void handle_exception(binsrv::basic_logger &logger, std::string_view context) {
               "net    : sent server binlog event ({} bytes to {})",
               std::size(event_frame), remote_endpoint_str);
         }
-        if (!fetch_result) {
-          logger->log_format(binsrv::log_severity::error,
-                             "net    : failed to fetch next event block for {}",
-                             remote_endpoint_str);
-          terminated = true;
+        if (terminated) {
           break;
         }
 
