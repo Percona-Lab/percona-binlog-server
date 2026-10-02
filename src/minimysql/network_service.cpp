@@ -52,6 +52,8 @@
 #pragma GCC diagnostic pop
 
 #include <boost/asio/redirect_error.hpp>
+#include <boost/asio/steady_timer.hpp>
+#include <boost/asio/this_coro.hpp>
 #include <boost/asio/use_awaitable.hpp>
 
 #include <boost/asio/ip/tcp.hpp>
@@ -272,6 +274,63 @@ void handle_exception(binsrv::basic_logger &logger, std::string_view context) {
     logger.log_format(binsrv::log_severity::error,
                       "net    : unknown exception caught in {}", context);
   }
+}
+
+[[nodiscard]] boost::asio::awaitable<void> handle_binlog_dump_command(
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
+    const binsrv::basic_logger_ptr &logger,
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
+    const binsrv::storage_ptr &storage,
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
+    boost::asio::ip::tcp::socket &socket,
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
+    minimysql::connection_context &context,
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
+    const boost::asio::ip::tcp::endpoint &remote_endpoint,
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
+    const std::string &remote_endpoint_str,
+    std::chrono::seconds write_timeout) {
+  static constexpr auto block_size{1048576UZ};
+  static constexpr auto blocking_poll_interval{std::chrono::milliseconds{500}};
+
+  const bool blocking{!context.check_binlog_non_blocking_dump()};
+
+  // TODO: initialize sender_context with binlog_name:position extracted
+  //       from the COM_BINLOG_DUMP command.
+  operations::sender_context sender_ctx{logger, storage, block_size};
+  boost::asio::steady_timer idle_timer{
+      co_await boost::asio::this_coro::executor};
+  util::const_byte_span event_data{};
+  for (;;) {
+    if (!sender_ctx.get_event(event_data)) {
+      logger->log_format(binsrv::log_severity::error,
+                         "net    : failed to fetch next event block for {}",
+                         remote_endpoint_str);
+      co_return;
+    }
+    if (event_data.empty()) {
+      if (!blocking) {
+        break;
+      }
+      idle_timer.expires_after(blocking_poll_interval);
+      co_await idle_timer.async_wait(boost::asio::use_awaitable);
+      continue;
+    }
+    const auto event_frame{context.generate_encoded_binlog_event(event_data)};
+    print_generic(*logger, remote_endpoint, context, "binlog event");
+    co_await minimysql::async_write_mysql_frame(socket, event_frame,
+                                                write_timeout);
+    logger->log_format(binsrv::log_severity::debug,
+                       "net    : sent server binlog event ({} bytes to {})",
+                       std::size(event_frame), remote_endpoint_str);
+  }
+
+  const auto eof = context.generate_encoded_eof();
+  print_generic(*logger, remote_endpoint, context, "binlog eof");
+  co_await minimysql::async_write_mysql_frame(socket, eof, write_timeout);
+  logger->log_format(binsrv::log_severity::debug,
+                     "net    : sent server eof ({} bytes to {})",
+                     std::size(eof), remote_endpoint_str);
 }
 
 #pragma GCC diagnostic push
@@ -517,39 +576,9 @@ void handle_exception(binsrv::basic_logger &logger, std::string_view context) {
             std::size(ok_after_ping), remote_endpoint_str);
       } break;
       case minimysql::client_command_type::binlog_dump: {
-        static constexpr auto block_size{1048576UZ};
-
-        // TODO: initialize sender_context with binlog_name:position extracted
-        //       from the COM_BINLOG_DUMP command.
-        operations::sender_context sender_ctx{logger, storage, block_size};
-        bool fetch_result{};
-        util::const_byte_span event_data{};
-        while ((fetch_result = sender_ctx.get_event(event_data)) &&
-               !event_data.empty()) {
-          const auto event_frame{
-              context.generate_encoded_binlog_event(event_data)};
-          print_generic(*logger, remote_endpoint, context, "binlog event");
-          co_await minimysql::async_write_mysql_frame(socket, event_frame,
-                                                      write_timeout);
-          logger->log_format(
-              binsrv::log_severity::debug,
-              "net    : sent server binlog event ({} bytes to {})",
-              std::size(event_frame), remote_endpoint_str);
-        }
-        if (!fetch_result) {
-          logger->log_format(binsrv::log_severity::error,
-                             "net    : failed to fetch next event block for {}",
-                             remote_endpoint_str);
-          terminated = true;
-          break;
-        }
-
-        const auto eof = context.generate_encoded_eof();
-        print_generic(*logger, remote_endpoint, context, "binlog eof");
-        co_await minimysql::async_write_mysql_frame(socket, eof, write_timeout);
-        logger->log_format(binsrv::log_severity::debug,
-                           "net    : sent server eof ({} bytes to {})",
-                           std::size(eof), remote_endpoint_str);
+        co_await handle_binlog_dump_command(logger, storage, socket, context,
+                                            remote_endpoint,
+                                            remote_endpoint_str, write_timeout);
         terminated = true;
       } break;
       case minimysql::client_command_type::quit: {

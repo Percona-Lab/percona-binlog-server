@@ -1,0 +1,153 @@
+--source ../include/have_binsrv.inc
+
+--source ../include/v80_v84_compatibility_defines.inc
+
+--source include/count_sessions.inc
+
+# in case of --repeat=N, we need to start from a fresh binary log to make
+# this test deterministic
+--echo *** Resetting replication at the very beginning of the test.
+--disable_query_log
+eval $stmt_reset_binary_logs_and_gtids;
+--enable_query_log
+
+# identifying backend storage type ('file' or 's3')
+--source ../include/identify_storage_backend.inc
+
+# A 1-second checkpoint interval makes PBS flush small test transactions
+# to storage quickly, so the downstream mysqlbinlog sessions can observe
+# them within a few seconds. 'binsrv_idle_time' controls how long PBS
+# waits before re-connecting to the upstream source after a read timeout.
+--let $binsrv_connect_timeout = 3
+--let $binsrv_read_timeout = 3
+--let $binsrv_idle_time = 1
+--let $binsrv_verify_checksum = TRUE
+--let $binsrv_replication_mode = position
+--let $binsrv_checkpoint_interval = 1s
+--source ../include/set_up_binsrv_environment.inc
+
+--echo
+--echo *** Determining the first binary log name.
+--let $first_binlog = query_get_value($stmt_show_binary_log_status, File, 1)
+
+--echo
+--echo *** Starting Binlog Server Utility in background in pull mode.
+--let $proc_command_line = $BINSRV pull $binsrv_config_file_path > /dev/null
+--source ../include/start_proc_in_background.inc
+--let $binsrv_pid = $proc_pid
+
+--echo
+--echo *** Waiting for the replication source listener port ready to accept
+--echo *** connections.
+--let $listening_port = $binsrv_replication_source_port
+--source ../include/wait_for_listening_port.inc
+
+--echo
+--echo *** Starting the first downstream mysqlbinlog --read-from-remote-server
+--echo *** --stop-never session against PBS. --stop-never clears the
+--echo *** BINLOG_DUMP_NON_BLOCK flag on the COM_BINLOG_DUMP packet, so PBS
+--echo *** must keep the connection open and deliver events as they become
+--echo *** available instead of disconnecting on EOF.
+--let $downstream1_dump = $MYSQL_TMP_DIR/rs_blocking_dump_1.sql
+--let $proc_command_line = $MYSQL_BINLOG --read-from-remote-server --stop-never --host=127.0.0.1 --port=$binsrv_replication_source_port --user=rpl --password=password --default-auth=caching_sha2_password $first_binlog > $downstream1_dump 2>/dev/null
+--source ../include/start_proc_in_background.inc
+--let $downstream1_pid = $proc_pid
+
+--echo
+--echo *** Starting a second downstream mysqlbinlog session against PBS so
+--echo *** that two concurrent blocking COM_BINLOG_DUMP sessions are
+--echo *** exercised at the same time.
+--let $downstream2_dump = $MYSQL_TMP_DIR/rs_blocking_dump_2.sql
+--let $proc_command_line = $MYSQL_BINLOG --read-from-remote-server --stop-never --host=127.0.0.1 --port=$binsrv_replication_source_port --user=rpl --password=password --default-auth=caching_sha2_password $first_binlog > $downstream2_dump 2>/dev/null
+--source ../include/start_proc_in_background.inc
+--let $downstream2_pid = $proc_pid
+
+--echo
+--echo *** First batch of transactions on the source.
+CREATE DATABASE test1;
+CREATE TABLE test1.t(id INT UNSIGNED NOT NULL PRIMARY KEY) ENGINE=InnoDB;
+INSERT INTO test1.t VALUES (1), (2), (3);
+
+--echo
+--echo *** Waiting for the first batch to reach the first downstream
+--echo *** mysqlbinlog through its blocking COM_BINLOG_DUMP connection.
+--let $grep_pattern = test1
+--let $grep_file = $downstream1_dump
+--let $wait_timeout = 60
+--source include/wait_for_pattern_in_file.inc
+
+--echo
+--echo *** Waiting for the first batch to reach the second downstream
+--echo *** mysqlbinlog as well.
+--let $grep_pattern = test1
+--let $grep_file = $downstream2_dump
+--let $wait_timeout = 60
+--source include/wait_for_pattern_in_file.inc
+
+--echo
+--echo *** Idle period: no events are produced on the source for a few
+--echo *** seconds. Both blocking connections must remain open throughout.
+--sleep 3
+
+--echo
+--echo *** Second batch of transactions on the source. If blocking-mode
+--echo *** support were missing, the connections would have closed on EOF
+--echo *** after the first batch and these events would never reach the
+--echo *** downstreams (the following waits would then time out).
+CREATE DATABASE test2;
+CREATE TABLE test2.t(id INT UNSIGNED NOT NULL PRIMARY KEY) ENGINE=InnoDB;
+INSERT INTO test2.t VALUES (4), (5), (6);
+
+--echo
+--echo *** Waiting for the second batch to reach the first downstream
+--echo *** mysqlbinlog.
+--let $grep_pattern = test2
+--let $grep_file = $downstream1_dump
+--let $wait_timeout = 60
+--source include/wait_for_pattern_in_file.inc
+
+--echo
+--echo *** Waiting for the second batch to reach the second downstream
+--echo *** mysqlbinlog.
+--let $grep_pattern = test2
+--let $grep_file = $downstream2_dump
+--let $wait_timeout = 60
+--source include/wait_for_pattern_in_file.inc
+
+--echo
+--echo *** Sending SIGTERM to the first downstream mysqlbinlog session and
+--echo *** waiting for it to terminate.
+--let $proc_pid = $downstream1_pid
+--source ../include/terminate_proc.inc
+
+--echo
+--echo *** Sending SIGTERM to the second downstream mysqlbinlog session and
+--echo *** waiting for it to terminate.
+--let $proc_pid = $downstream2_pid
+--source ../include/terminate_proc.inc
+
+--echo
+--echo *** Dropping the test databases.
+DROP DATABASE test1;
+DROP DATABASE test2;
+
+--echo
+--echo *** Sending SIGTERM signal to the Binlog Server Utility and waiting
+--echo *** for the process to terminate.
+--let $proc_pid = $binsrv_pid
+--source ../include/terminate_proc.inc
+
+--remove_file $downstream1_dump
+--remove_file $downstream2_dump
+
+# cleaning up
+--source ../include/tear_down_binsrv_environment.inc
+
+# As the Binlog Server Utility interrupts the connection upon timeout, here we
+# need to close it on the MySQL server side as well in order to make sure that
+# MTR 'check-test' before and after the test produces the same output.
+--source ../include/kill_binlog_dump_connection.inc
+
+# Also, we use 'count_sessions' include files to make sure that 'Binlog Dump'
+# connection is indeed closed.
+--source include/wait_until_count_sessions.inc
