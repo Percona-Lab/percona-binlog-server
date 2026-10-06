@@ -55,6 +55,12 @@ inline constexpr std::size_t max_number_of_events{
              get_number_of_events(latest_known_protocol_server_version))};
 inline constexpr std::size_t default_common_header_length{19U};
 
+// Matches MySQL's MAX_MAX_ALLOWED_PACKET: no legitimate binlog event may
+// exceed this size on the wire. Used as a sanity cap when a corrupt
+// event-size field would otherwise trigger a multi-GiB allocation.
+inline constexpr std::size_t max_event_size_bytes{1024ULL * 1024ULL * 1024ULL};
+static_assert(max_event_size_bytes > default_common_header_length);
+
 inline constexpr std::size_t default_footer_length{4U};
 
 inline constexpr std::size_t unspecified_post_header_length{
