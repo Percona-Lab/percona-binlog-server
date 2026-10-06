@@ -1,0 +1,117 @@
+--source ../include/have_binsrv.inc
+
+--source ../include/v80_v84_compatibility_defines.inc
+
+--source include/count_sessions.inc
+
+# in case of --repeat=N, start from a fresh binary log so the test is
+# deterministic.
+--echo *** Resetting replication at the very beginning of the test.
+--disable_query_log
+eval $stmt_reset_binary_logs_and_gtids;
+--enable_query_log
+
+--source ../include/identify_storage_backend.inc
+
+--let $binsrv_connect_timeout = 10
+--let $binsrv_read_timeout = 10
+--let $binsrv_idle_time = 1
+--let $binsrv_verify_checksum = TRUE
+--let $binsrv_replication_mode = position
+--source ../include/set_up_binsrv_environment.inc
+
+--echo
+--echo *** Determining the first binary log name.
+--let $first_binlog = query_get_value($stmt_show_binary_log_status, File, 1)
+
+--echo
+--echo *** Creating a table with a LONGBLOB column.
+CREATE DATABASE source_db;
+CREATE TABLE source_db.tbl(
+  id INT UNSIGNED NOT NULL,
+  data LONGBLOB NOT NULL,
+  PRIMARY KEY(id)
+) ENGINE=InnoDB;
+
+--echo
+--echo *** Inserting a single row whose row-based binlog event exceeds
+--echo *** PBS's 1 MiB fetch block, so sender_context must perform an
+--echo *** exact-size retry when streaming the event to the downstream.
+INSERT INTO source_db.tbl VALUES (1, REPEAT('X', 1500000));
+
+--echo
+--echo *** Fetching the source binary logs into PBS storage.
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+--echo
+--echo *** Starting Binlog Server Utility in background in pull mode.
+--let $proc_command_line = $BINSRV pull $binsrv_config_file_path > /dev/null
+--source ../include/start_proc_in_background.inc
+
+--echo
+--echo *** Waiting for the replication source listener port ready to
+--echo *** accept connections.
+--let $listening_port = $binsrv_replication_source_port
+--source ../include/wait_for_listening_port.inc
+
+--echo
+--echo *** Dumping the binary logs from the Binlog Server replication
+--echo *** source. --stop-never is NOT set, so PBS disconnects on EOF
+--echo *** once it has streamed everything in storage.
+--let $large_event_dump = $MYSQL_TMP_DIR/rs_large_event.sql
+--exec $MYSQL_BINLOG --read-from-remote-server --host=127.0.0.1 --port=$binsrv_replication_source_port --user=$binsrv_auth_user --password=$binsrv_auth_password --default-auth=caching_sha2_password $first_binlog > $large_event_dump 2>/dev/null
+
+--echo
+--echo *** Waiting for the exact-size-retry log entry in the PBS log.
+--echo *** Its presence confirms sender_context detected that the first
+--echo *** event in the block did not fit and re-issued the fetch with
+--echo *** the exact event size.
+--let $grep_pattern = sender : block too small for first event
+--let $grep_file = $binsrv_log_path
+--let $wait_timeout = 30
+--source include/wait_for_pattern_in_file.inc
+
+--echo
+--echo *** Sending SIGTERM signal to the Binlog Server Utility and
+--echo *** waiting for the process to terminate.
+--source ../include/terminate_proc.inc
+
+--echo
+--echo *** Moving source_db.tbl to backup_db.tbl.
+CREATE DATABASE backup_db;
+RENAME TABLE source_db.tbl TO backup_db.tbl;
+DROP DATABASE source_db;
+
+--echo
+--echo *** Restoring source_db from the PBS-served dump.
+--exec $MYSQL < $large_event_dump
+
+--echo
+--echo *** Comparing the restored and backup rows by (id, length, MD5).
+--echo *** Using MD5 rather than diff_tables.inc so we do not have to pull
+--echo *** the 1.5 MiB blob through the sort buffer.
+--let $src_sig = `SELECT CONCAT(id, ':', LENGTH(data), ':', MD5(data)) FROM source_db.tbl WHERE id = 1`
+--let $bkp_sig = `SELECT CONCAT(id, ':', LENGTH(data), ':', MD5(data)) FROM backup_db.tbl WHERE id = 1`
+if ($src_sig != $bkp_sig) {
+  --echo source signature: $src_sig
+  --echo backup signature: $bkp_sig
+  --die Round-trip row mismatch
+}
+
+--echo
+--echo *** Dropping the round-trip databases.
+DROP DATABASE source_db;
+DROP DATABASE backup_db;
+
+--remove_file $large_event_dump
+
+--source ../include/tear_down_binsrv_environment.inc
+
+# As the Binlog Server Utility interrupts the connection upon timeout, we
+# need to close it on the MySQL server side as well to make MTR 'check-test'
+# before and after the test produce the same output.
+--source ../include/kill_binlog_dump_connection.inc
+
+--source include/wait_until_count_sessions.inc
+
+# End of test.
