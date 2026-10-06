@@ -50,7 +50,7 @@ eval $stmt_reset_binary_logs_and_gtids;
 --echo *** (caching_sha2_password). No AuthMethodSwitch is expected on the
 --echo *** wire; a zero exit code from mysql confirms the session got as
 --echo *** far as running the probe query.
---exec $MYSQL --protocol=TCP --host=127.0.0.1 --port=$binsrv_replication_source_port --user=rpl --password=password --default-auth=caching_sha2_password --skip-column-names -e "$probe_query" >/dev/null 2>&1
+--exec $MYSQL --host=127.0.0.1 --port=$binsrv_replication_source_port --user=$binsrv_auth_user --password=$binsrv_auth_password --default-auth=caching_sha2_password -e "$probe_query" >/dev/null 2>&1
 
 --echo
 --echo *** Trigger: client forces mysql_native_password in its handshake so
@@ -61,7 +61,7 @@ eval $stmt_reset_binary_logs_and_gtids;
 --echo *** MTR fails the --exec. The log grep that follows the shutdown
 --echo *** is what actually proves the switch happened - this line only
 --echo *** proves the session survived it.
---exec $MYSQL --protocol=TCP --host=127.0.0.1 --port=$binsrv_replication_source_port --user=rpl --password=password --default-auth=mysql_native_password --skip-column-names -e "$probe_query" >/dev/null 2>&1
+--exec $MYSQL --host=127.0.0.1 --port=$binsrv_replication_source_port --user=$binsrv_auth_user --password=$binsrv_auth_password --default-auth=mysql_native_password -e "$probe_query" >/dev/null 2>&1
 
 --echo
 --echo *** Sending SIGTERM signal to the Binlog Server Utility and waiting for

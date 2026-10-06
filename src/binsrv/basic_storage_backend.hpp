@@ -50,7 +50,7 @@ public:
   // reader either sees the previous bytes in full or the new bytes in
   // full, never a partial mix.
   void put_object(std::string_view name, util::const_byte_span content);
-  // 'resize_object' is supposed to set a new size for the the specified
+  // 'resize_object' is supposed to set a new size for the specified
   // object
   void resize_object(std::string_view name, std::uint64_t new_size);
   // Single-object remove followed by a durability barrier. On

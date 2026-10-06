@@ -15,10 +15,6 @@
 #   $stmt_show_binary_log_status
 
 --echo
---echo *** Determining the first binary log name.
---let $first_binlog = query_get_value($stmt_show_binary_log_status, File, 1)
-
---echo
 --echo *** Creating source_db.tbl and inserting the first batch of rows.
 CREATE DATABASE source_db;
 CREATE TABLE source_db.tbl(
@@ -29,7 +25,7 @@ CREATE TABLE source_db.tbl(
 INSERT INTO source_db.tbl VALUES (1, 'one'), (2, 'two'), (3, 'three');
 
 --echo
---echo *** Flushing the source binary log.
+--echo *** Flushing the source binary log for the first time.
 FLUSH BINARY LOGS;
 
 --echo
@@ -37,28 +33,107 @@ FLUSH BINARY LOGS;
 INSERT INTO source_db.tbl VALUES (4, 'four'), (5, 'five'), (6, 'six');
 
 --echo
---echo *** Fetching the source binary logs in position mode.
+--echo *** Determining checkpoint binary log name and position.
+--let $checkpoint_binlog_name = query_get_value($stmt_show_binary_log_status, File, 1)
+--let $checkpoint_binlog_position = query_get_value($stmt_show_binary_log_status, Position, 1)
+
+--echo
+--echo *** Fetching the source binary logs in position mode for the first time.
 --exec $BINSRV fetch $binsrv_config_file_path > /dev/null
 
 --echo
---echo *** Starting Binlog Server Utility in background in pull mode.
+--echo *** Starting Binlog Server Utility in background in pull mode for the first time.
 --let $proc_command_line = $BINSRV pull $binsrv_config_file_path > /dev/null
 --source ../include/start_proc_in_background.inc
 
 --echo
 --echo *** Waiting for the replication source listener port ready to accept
---echo *** connections.
+--echo *** connections for the first time.
 --let $listening_port = $binsrv_replication_source_port
 --source ../include/wait_for_listening_port.inc
 
 --echo
---echo *** Dumping the binary logs from the Binlog Server replication source.
---let $roundtrip_dump = $MYSQL_TMP_DIR/rs_roundtrip.sql
---exec $MYSQL_BINLOG --read-from-remote-server --host=127.0.0.1 --port=$binsrv_replication_source_port --user=rpl --password=password --default-auth=caching_sha2_password $first_binlog > $roundtrip_dump 2>/dev/null
+--echo *** Dumping the first part of binary logs from the Binlog Server
+--echo *** replication source.
+--let $first_roundtrip_dump = $MYSQL_TMP_DIR/first_rs_roundtrip.sql
+exec $MYSQL_BINLOG
+  --read-from-remote-server --host=$binsrv_connection_host --port=$binsrv_replication_source_port
+  --user=$binsrv_auth_user --password=$binsrv_auth_password --default-auth=caching_sha2_password
+  --to-last-log "" > $first_roundtrip_dump 2>/dev/null;
+--let $first_roundtrip_dump_filtered = $first_roundtrip_dump.filtered
+--exec cat $first_roundtrip_dump | grep -E "^#[[:digit:]]+" > $first_roundtrip_dump_filtered
+
+--echo
+--echo *** Dumping the first part of binary logs from the MySQL Server
+--let $first_direct_dump = $MYSQL_TMP_DIR/first_rs_direct.sql
+exec $MYSQL_BINLOG
+  --read-from-remote-server --host=$binsrv_connection_host --user=$binsrv_connection_user
+  --to-last-log "" > $first_direct_dump 2>/dev/null;
+--let $first_direct_dump_filtered = $first_direct_dump.filtered
+--exec cat $first_direct_dump | grep -E "^#[[:digit:]]+" > $first_direct_dump_filtered
+
+--echo
+--echo *** Comparing the first parts of binary logs from the PBS and MySQL Server
+--diff_files $first_roundtrip_dump_filtered $first_direct_dump_filtered
 
 --echo
 --echo *** Sending SIGTERM signal to the Binlog Server Utility and waiting for
---echo *** the process to terminate
+--echo *** the process to terminate for the first time.
+--source ../include/terminate_proc.inc
+
+--echo
+--echo *** Inserting the third batch of rows.
+INSERT INTO source_db.tbl VALUES (7, 'seven'), (8, 'eight'), (9, 'none');
+
+--echo
+--echo *** Flushing the source binary log for the second time.
+FLUSH BINARY LOGS;
+
+--echo
+--echo *** Inserting the fourth batch of rows.
+INSERT INTO source_db.tbl VALUES (10, 'ten'), (11, 'eleven'), (12, 'twelve');
+
+--echo
+--echo *** Fetching the source binary logs in position mode for the second time.
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+--echo *** Starting Binlog Server Utility in background in pull mode for the second time.
+--let $proc_command_line = $BINSRV pull $binsrv_config_file_path > /dev/null
+--source ../include/start_proc_in_background.inc
+
+--echo
+--echo *** Waiting for the replication source listener port ready to accept
+--echo *** connections for the second time.
+--let $listening_port = $binsrv_replication_source_port
+--source ../include/wait_for_listening_port.inc
+
+--echo
+--echo *** Dumping the second part of binary logs from the Binlog Server
+--echo *** replication source.
+--let $second_roundtrip_dump = $MYSQL_TMP_DIR/second_rs_roundtrip.sql
+exec $MYSQL_BINLOG
+  --read-from-remote-server --host=$binsrv_connection_host --port=$binsrv_replication_source_port
+  --user=$binsrv_auth_user --password=$binsrv_auth_password --default-auth=caching_sha2_password
+  --start-position=$checkpoint_binlog_position --to-last-log "$checkpoint_binlog_name" > $second_roundtrip_dump 2>/dev/null;
+--let $second_roundtrip_dump_filtered = $second_roundtrip_dump.filtered
+--exec cat $second_roundtrip_dump | grep -E "^#[[:digit:]]+" > $second_roundtrip_dump_filtered
+
+--echo
+--echo *** Dumping the second part of binary logs from the MySQL Server
+--let $second_direct_dump = $MYSQL_TMP_DIR/second_rs_direct.sql
+exec $MYSQL_BINLOG
+  --read-from-remote-server --host=$binsrv_connection_host --user=$binsrv_connection_user
+  --start-position=$checkpoint_binlog_position --to-last-log "$checkpoint_binlog_name" > $second_direct_dump 2>/dev/null;
+--let $second_direct_dump_filtered = $second_direct_dump.filtered
+--exec cat $second_direct_dump | grep -E "^#[[:digit:]]+" > $second_direct_dump_filtered
+
+--echo
+--echo *** Comparing the second parts of binary logs from the PBS and MySQL Server
+--diff_files $second_roundtrip_dump_filtered $second_direct_dump_filtered
+
+--echo
+--echo *** Sending SIGTERM signal to the Binlog Server Utility and waiting for
+--echo *** the process to terminate for the second time.
 --source ../include/terminate_proc.inc
 
 --echo
@@ -68,8 +143,9 @@ RENAME TABLE source_db.tbl TO backup_db.tbl;
 DROP DATABASE source_db;
 
 --echo
---echo *** Restoring source_db from the replication source dump.
---exec $MYSQL < $roundtrip_dump
+--echo *** Restoring source_db from two replication source dumps.
+--exec $MYSQL < $first_roundtrip_dump
+--exec $MYSQL < $second_roundtrip_dump
 
 --echo
 --echo *** Comparing the restored and backup tables.
@@ -81,4 +157,14 @@ DROP DATABASE source_db;
 DROP DATABASE source_db;
 DROP DATABASE backup_db;
 
---remove_file $roundtrip_dump
+--echo
+--echo *** Cleaning up.
+--remove_file $first_roundtrip_dump
+--remove_file $first_roundtrip_dump_filtered
+--remove_file $first_direct_dump
+--remove_file $first_direct_dump_filtered
+
+--remove_file $second_roundtrip_dump
+--remove_file $second_roundtrip_dump_filtered
+--remove_file $second_direct_dump
+--remove_file $second_direct_dump_filtered

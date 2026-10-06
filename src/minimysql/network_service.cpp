@@ -288,16 +288,19 @@ void handle_exception(binsrv::basic_logger &logger, std::string_view context) {
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
     const boost::asio::ip::tcp::endpoint &remote_endpoint,
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
-    const std::string &remote_endpoint_str,
-    std::chrono::seconds write_timeout) {
+    const std::string &remote_endpoint_str, std::chrono::seconds write_timeout,
+    bool session_source_binlog_checksum) {
   static constexpr auto block_size{1048576UZ};
   static constexpr auto blocking_poll_interval{std::chrono::milliseconds{500}};
 
   const bool blocking{!context.check_binlog_non_blocking_dump()};
 
-  // TODO: initialize sender_context with binlog_name:position extracted
-  //       from the COM_BINLOG_DUMP command.
-  operations::sender_context sender_ctx{logger, storage, block_size};
+  const auto &binlog_name{context.get_binlog_filename()};
+  const auto position{context.get_binlog_position()};
+
+  operations::sender_context sender_ctx{
+      logger,      storage,  block_size,
+      binlog_name, position, session_source_binlog_checksum};
   boost::asio::steady_timer idle_timer{
       co_await boost::asio::this_coro::executor};
   util::const_byte_span event_data{};
@@ -481,8 +484,18 @@ void handle_exception(binsrv::basic_logger &logger, std::string_view context) {
             minimysql::connection_context & context)>;
     using query_container = std::unordered_map<std::string, query_handler_type>;
 
-    const auto set_checksum_query_handler =
-        [](minimysql::connection_context &ctx) {
+    bool session_source_binlog_checksum{false};
+
+    const auto set_checksum_on_query_handler =
+        [&session_source_binlog_checksum](minimysql::connection_context &ctx) {
+          session_source_binlog_checksum = true;
+          minimysql::network_buffer_container resultset;
+          resultset.emplace_back(ctx.generate_encoded_ok());
+          return resultset;
+        };
+    const auto set_checksum_off_query_handler =
+        [&session_source_binlog_checksum](minimysql::connection_context &ctx) {
+          session_source_binlog_checksum = false;
           minimysql::network_buffer_container resultset;
           resultset.emplace_back(ctx.generate_encoded_ok());
           return resultset;
@@ -525,10 +538,16 @@ void handle_exception(binsrv::basic_logger &logger, std::string_view context) {
          }},
         {"SET @source_binlog_checksum = 'NONE', @master_binlog_checksum = "
          "'NONE'",
-         set_checksum_query_handler},
+         set_checksum_off_query_handler},
         {"SET @master_binlog_checksum = 'NONE', @source_binlog_checksum = "
          "'NONE'",
-         set_checksum_query_handler}};
+         set_checksum_off_query_handler},
+        {"SET @source_binlog_checksum = 'CRC32', @master_binlog_checksum = "
+         "'CRC32'",
+         set_checksum_on_query_handler},
+        {"SET @master_binlog_checksum = 'CRC32', @source_binlog_checksum = "
+         "'CRC32'",
+         set_checksum_on_query_handler}};
 
     // starting command loop
     bool terminated{false};
@@ -576,9 +595,9 @@ void handle_exception(binsrv::basic_logger &logger, std::string_view context) {
             std::size(ok_after_ping), remote_endpoint_str);
       } break;
       case minimysql::client_command_type::binlog_dump: {
-        co_await handle_binlog_dump_command(logger, storage, socket, context,
-                                            remote_endpoint,
-                                            remote_endpoint_str, write_timeout);
+        co_await handle_binlog_dump_command(
+            logger, storage, socket, context, remote_endpoint,
+            remote_endpoint_str, write_timeout, session_source_binlog_checksum);
         terminated = true;
       } break;
       case minimysql::client_command_type::quit: {
