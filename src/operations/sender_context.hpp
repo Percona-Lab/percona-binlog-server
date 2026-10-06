@@ -19,15 +19,21 @@
 #include "operations/sender_context_fwd.hpp" // IWYU pragma: export
 
 #include <cstddef>
+#include <cstdint>
+
+// needed for 'event_storage'
+#include <boost/container/small_vector.hpp> // IWYU pragma: keep
 
 #include "binsrv/basic_logger_fwd.hpp"
 #include "binsrv/indexed_event_block_fwd.hpp"
 #include "binsrv/storage_fwd.hpp"
 
 #include "binsrv/events/composite_binlog_name.hpp"
+#include "binsrv/events/event_fwd.hpp"
 
 #include "util/byte_range.hpp"
 #include "util/byte_span_fwd.hpp"
+#include "util/common_optional_types.hpp"
 
 namespace operations {
 
@@ -35,7 +41,8 @@ class sender_context {
 public:
   // deliberately passing by value as we will be moving from these objects
   sender_context(binsrv::basic_logger_ptr logger, binsrv::storage_ptr storage,
-                 std::size_t block_size);
+                 std::size_t block_size, std::string_view binlog_name,
+                 std::uint64_t position, bool session_source_binlog_checksum);
 
   sender_context(const sender_context &) = delete;
   sender_context &operator=(const sender_context &) = delete;
@@ -53,10 +60,39 @@ private:
   binsrv::storage_ptr storage_{};
 
   std::size_t block_size_{};
+  bool current_binlog_checksum_{};
+
+  enum class fsm_state_type : std::uint8_t {
+    start_from_beginning,
+    start_from_offset,
+    generate_artificial_fde,
+    fetch_event_from_storage
+  };
+  fsm_state_type fsm_state_{};
+
+  std::uint64_t position_for_artificial_rotate_{};
   binsrv::events::composite_binlog_name binlog_name_{};
   util::byte_range range_{};
+  binsrv::events::event_storage artificial_rotate_{};
+  binsrv::events::event_storage fde_{};
   binsrv::indexed_event_block_ptr event_block_{};
   std::size_t event_index_{};
+
+  [[nodiscard]] static std::size_t
+  calculate_fde_size(std::uint32_t encoded_server_version);
+  [[nodiscard]] bool fetch_fde_from_storage();
+  [[nodiscard]] bool extract_fde_from_event_block();
+  void extract_fields_from_fde(std::uint32_t &server_id,
+                               bool &checksum_enabled) const;
+  void transform_fde_to_artificial();
+
+  [[nodiscard]] util::optional_bool
+  populate_event_block(util::const_byte_span &event);
+  [[nodiscard]] bool handle_start_states(util::const_byte_span &event);
+  [[nodiscard]] bool
+  handle_generate_artificial_fde_state(util::const_byte_span &event);
+  [[nodiscard]] bool
+  handle_fetch_event_from_storage_state(util::const_byte_span &event);
 };
 
 } // namespace operations

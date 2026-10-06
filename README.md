@@ -712,7 +712,7 @@ Running the utility for the second time (in any mode) results in resuming stream
 
 ### Graceful termination
 
-The user can request the utility operating in either `fetch` or `pull` mode to be gracefully terminated leaving storage in consistent state. For this, the utility sets custom handlers for the the following POSIX signals.
+The user can request the utility operating in either `fetch` or `pull` mode to be gracefully terminated leaving storage in consistent state. For this, the utility sets custom handlers for the following POSIX signals.
 - `SIGINT` - for processing `^C` in console.
 - `SIGTERM` - for processing `kill <pid>`.
 

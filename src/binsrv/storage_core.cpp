@@ -1006,7 +1006,7 @@ storage_core::generate_binlog_encryption_record() const {
   // ('<storage.encryption.kek_id>' parameter)
   const auto &keyring_record{keyring_->get_key(active_kek_id_)};
 
-  // identifying the the cipher name and the key data from the
+  // identifying the cipher name and the key data from the
   // keyring record - this data will be used to encrypt random file
   // keys generated for new binlog data files
   const auto &kek_cipher{keyring_record.get<"cipher">()};

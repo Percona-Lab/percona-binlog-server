@@ -69,12 +69,20 @@ common_header::common_header(util::const_byte_span portion)
     std::uint32_t offset, std::uint32_t event_size,
     const util::ctime_timestamp &timestamp, code_type type_code,
     std::uint32_t server_id, common_header_flag_set flags) noexcept {
-  // artificial ROTATE event must have next_event_position set to zero
+  // artificial ROTATE and FORMAT_DESCRIPTION events must have
+  // next_event_position set to zero
   const std::uint32_t next_event_position{
-      type_code == code_type::rotate &&
+      (type_code == code_type::rotate ||
+       type_code == code_type::format_description) &&
               flags.has_element(common_header_flag_type::artificial)
           ? 0U
           : offset + event_size};
+  // 'artificial' flag for FORMAT_DESCRIPTION event is used only as a marker
+  // for this function to set 'next_event_position' to 0 - it should not be
+  // serialized as part of the flags
+  if (type_code == code_type::format_description) {
+    flags.clear_element(common_header_flag_type::artificial);
+  }
   return common_header{timestamp,  type_code,           server_id,
                        event_size, next_event_position, flags};
 }

@@ -24,6 +24,8 @@ namespace util {
 
 using optional_string = std::optional<std::string>;
 
+using optional_bool = std::optional<bool>;
+
 using optional_uint8_t = std::optional<std::uint8_t>;
 using optional_uint16_t = std::optional<std::uint16_t>;
 using optional_uint32_t = std::optional<std::uint32_t>;

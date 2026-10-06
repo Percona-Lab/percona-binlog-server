@@ -16,6 +16,7 @@ eval $stmt_reset_binary_logs_and_gtids;
 --let $binsrv_idle_time = 1
 --let $binsrv_verify_checksum = TRUE
 --let $binsrv_replication_mode = position
+--let $binsrv_checkpoint_size = 1
 --source ../include/set_up_binsrv_environment.inc
 
 --source ../include/rs_roundtrip_body.inc

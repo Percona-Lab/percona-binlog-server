@@ -53,6 +53,11 @@ public:
     assert(std::has_single_bit(underlying));
     bits_ |= underlying;
   }
+  void clear_element(element_type element) noexcept {
+    auto underlying{static_cast<underlying_type>(element)};
+    assert(std::has_single_bit(underlying));
+    bits_ &= static_cast<underlying_type>(~underlying);
+  }
   void flip_element(element_type element) noexcept {
     auto underlying{static_cast<underlying_type>(element)};
     assert(std::has_single_bit(underlying));

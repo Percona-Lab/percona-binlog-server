@@ -378,28 +378,30 @@ void collector_context::rewrite_and_process_binlog_event(
       offset = static_cast<std::uint32_t>(storage_->get_current_position());
       const auto generated_rotate_event_v{generate_rotate_event(
           event_buffer, context, offset, true /* current timestamp */,
-          server_id, false /* non-artificial */, binlog_name)};
+          server_id, false /* non-artificial */, binlog_name,
+          binsrv::events::magic_binlog_offset)};
       logger_->log(binsrv::log_severity::info,
                    "rewrite: generated rotate event in the rewrite mode");
       process_binlog_event(generated_rotate_event_v, context);
     }
 
     // generate and process ROTATE(artificial) event
-    offset = 0U;
+    offset = binsrv::events::magic_binlog_offset;
     // artificial ROTATE event must include zero timestamp
     const auto generated_artificial_rotate_event_v{generate_rotate_event(
         event_buffer, context, offset, false /* zero timestamp */, server_id,
-        true /* artificial */, binlog_name)};
+        true /* artificial */, binlog_name,
+        binsrv::events::magic_binlog_offset)};
     logger_->log(
         binsrv::log_severity::info,
         "rewrite: generated artificial rotate event in the rewrite mode");
     process_binlog_event(generated_artificial_rotate_event_v, context);
 
     // generate and process FORMAT_DESCRIPTION event
-    offset = binsrv::events::magic_binlog_offset;
     const auto generated_format_description_event_v{
         generate_format_description_event(event_buffer, context, offset,
-                                          server_id)};
+                                          server_id, true /* enable checksum */,
+                                          false /* non-artificial */)};
     logger_->log(
         binsrv::log_severity::info,
         "rewrite: generated format description event in the rewrite mode");

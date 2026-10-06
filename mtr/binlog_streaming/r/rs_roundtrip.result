@@ -8,8 +8,6 @@
 *** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
 *** binlog files downloaded via the Binlog Server utility.
 
-*** Determining the first binary log name.
-
 *** Creating source_db.tbl and inserting the first batch of rows.
 CREATE DATABASE source_db;
 CREATE TABLE source_db.tbl(
@@ -19,31 +17,64 @@ PRIMARY KEY(id)
 ) ENGINE=InnoDB;
 INSERT INTO source_db.tbl VALUES (1, 'one'), (2, 'two'), (3, 'three');
 
-*** Flushing the source binary log.
+*** Flushing the source binary log for the first time.
 FLUSH BINARY LOGS;
 
 *** Inserting the second batch of rows.
 INSERT INTO source_db.tbl VALUES (4, 'four'), (5, 'five'), (6, 'six');
 
-*** Fetching the source binary logs in position mode.
+*** Determining checkpoint binary log name and position.
 
-*** Starting Binlog Server Utility in background in pull mode.
+*** Fetching the source binary logs in position mode for the first time.
+
+*** Starting Binlog Server Utility in background in pull mode for the first time.
 include/read_file_to_var.inc
 
 *** Waiting for the replication source listener port ready to accept
-*** connections.
+*** connections for the first time.
 
-*** Dumping the binary logs from the Binlog Server replication source.
+*** Dumping the first part of binary logs from the Binlog Server
+*** replication source.
+
+*** Dumping the first part of binary logs from the MySQL Server
+
+*** Comparing the first parts of binary logs from the PBS and MySQL Server
 
 *** Sending SIGTERM signal to the Binlog Server Utility and waiting for
-*** the process to terminate
+*** the process to terminate for the first time.
+
+*** Inserting the third batch of rows.
+INSERT INTO source_db.tbl VALUES (7, 'seven'), (8, 'eight'), (9, 'none');
+
+*** Flushing the source binary log for the second time.
+FLUSH BINARY LOGS;
+
+*** Inserting the fourth batch of rows.
+INSERT INTO source_db.tbl VALUES (10, 'ten'), (11, 'eleven'), (12, 'twelve');
+
+*** Fetching the source binary logs in position mode for the second time.
+*** Starting Binlog Server Utility in background in pull mode for the second time.
+include/read_file_to_var.inc
+
+*** Waiting for the replication source listener port ready to accept
+*** connections for the second time.
+
+*** Dumping the second part of binary logs from the Binlog Server
+*** replication source.
+
+*** Dumping the second part of binary logs from the MySQL Server
+
+*** Comparing the second parts of binary logs from the PBS and MySQL Server
+
+*** Sending SIGTERM signal to the Binlog Server Utility and waiting for
+*** the process to terminate for the second time.
 
 *** Moving source_db.tbl to backup_db.tbl.
 CREATE DATABASE backup_db;
 RENAME TABLE source_db.tbl TO backup_db.tbl;
 DROP DATABASE source_db;
 
-*** Restoring source_db from the replication source dump.
+*** Restoring source_db from two replication source dumps.
 
 *** Comparing the restored and backup tables.
 include/diff_tables.inc [source_db.tbl, backup_db.tbl]
@@ -51,6 +82,8 @@ include/diff_tables.inc [source_db.tbl, backup_db.tbl]
 *** Dropping the round-trip databases.
 DROP DATABASE source_db;
 DROP DATABASE backup_db;
+
+*** Cleaning up.
 
 *** Removing the Binlog Server utility storage directory.
 
