@@ -26,6 +26,7 @@
 #include "binsrv/log_severity.hpp"
 #include "binsrv/storage.hpp"
 
+#include "binsrv/events/common_header_view.hpp"
 #include "binsrv/events/protocol_traits_fwd.hpp"
 
 #include "util/byte_span_fwd.hpp"
@@ -74,13 +75,43 @@ sender_context::~sender_context() = default;
                         "sender : fetched event block of size {}, {}:{}",
                         std::size(buffer), binlog_name_.str(),
                         range_.to_string());
+
+    // Check that the buffer contains at least one complete event before
+    // parsing. If the first event's common header does not even fit, the
+    // binlog is corrupt or truncated. If the header fits but advertises an
+    // event larger than what we fetched, re-issue the fetch at the same
+    // offset with exactly 'event_size' bytes.
+    if (std::size(buffer) <
+        binsrv::events::common_header_view_base::size_in_bytes) {
+      return false;
+    }
+    const binsrv::events::common_header_view header{
+        util::const_byte_span{buffer}.subspan(
+            0UZ, binsrv::events::common_header_view_base::size_in_bytes)};
+    const auto first_event_size{
+        static_cast<std::size_t>(header.get_event_size_raw())};
+    if (first_event_size > binsrv::events::max_event_size_bytes) {
+      // Nonsensically large event size: corrupt or malicious header.
+      return false;
+    }
+    if (first_event_size > std::size(buffer)) {
+      logger_->log_format(
+          binsrv::log_severity::info,
+          "sender : block too small for first event (needs {} bytes), "
+          "retrying with exact size at {}:{}",
+          first_event_size, binlog_name_.str(), range_.to_string());
+
+      buffer.clear();
+      range_ = util::byte_range{range_.get_offset(), first_event_size};
+      if (!storage_->fetch_event_block(binlog_name_, range_, buffer)) {
+        return false;
+      }
+    }
+
     event_block_ =
         std::make_unique<binsrv::indexed_event_block>(std::move(buffer));
     if (event_block_->is_empty()) {
-      // in case when the received buffer is not empty but after parsing it has
-      // no valid events, we should treat this situation as an error
-
-      // TODO: double the length of the requested block and retry fetching
+      // Exact-size request still yielded no complete event: corrupt binlog.
       return false;
     }
     event_index_ = 0UZ;
