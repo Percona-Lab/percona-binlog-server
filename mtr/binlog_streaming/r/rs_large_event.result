@@ -1,0 +1,66 @@
+*** Resetting replication at the very beginning of the test.
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+
+*** Determining the first binary log name.
+
+*** Creating a table with a LONGBLOB column.
+CREATE DATABASE source_db;
+CREATE TABLE source_db.tbl(
+id INT UNSIGNED NOT NULL,
+data LONGBLOB NOT NULL,
+PRIMARY KEY(id)
+) ENGINE=InnoDB;
+
+*** Inserting a single row whose row-based binlog event exceeds
+*** PBS's 1 MiB fetch block, so sender_context must perform an
+*** exact-size retry when streaming the event to the downstream.
+INSERT INTO source_db.tbl VALUES (1, REPEAT('X', 1500000));
+
+*** Fetching the source binary logs into PBS storage.
+
+*** Starting Binlog Server Utility in background in pull mode.
+include/read_file_to_var.inc
+
+*** Waiting for the replication source listener port ready to
+*** accept connections.
+
+*** Dumping the binary logs from the Binlog Server replication
+*** source. --stop-never is NOT set, so PBS disconnects on EOF
+*** once it has streamed everything in storage.
+
+*** Waiting for the exact-size-retry log entry in the PBS log.
+*** Its presence confirms sender_context detected that the first
+*** event in the block did not fit and re-issued the fetch with
+*** the exact event size.
+include/wait_for_pattern_in_file.inc [sender : block too small for first event]
+
+*** Sending SIGTERM signal to the Binlog Server Utility and
+*** waiting for the process to terminate.
+
+*** Moving source_db.tbl to backup_db.tbl.
+CREATE DATABASE backup_db;
+RENAME TABLE source_db.tbl TO backup_db.tbl;
+DROP DATABASE source_db;
+
+*** Restoring source_db from the PBS-served dump.
+
+*** Comparing the restored and backup rows by (id, length, MD5).
+*** Using MD5 rather than diff_tables.inc so we do not have to pull
+*** the 1.5 MiB blob through the sort buffer.
+
+*** Dropping the round-trip databases.
+DROP DATABASE source_db;
+DROP DATABASE backup_db;
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.
