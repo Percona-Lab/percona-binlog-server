@@ -1,0 +1,156 @@
+--source ../include/have_binsrv.inc
+
+--source ../include/v80_v84_compatibility_defines.inc
+
+--source include/count_sessions.inc
+
+--echo *** Resetting replication at the very beginning of the test.
+--disable_query_log
+eval $stmt_reset_binary_logs_and_gtids;
+--enable_query_log
+
+--source ../include/identify_storage_backend.inc
+
+--let $binsrv_connect_timeout = 3
+--let $binsrv_read_timeout = 3
+--let $binsrv_idle_time = 1
+--let $binsrv_verify_checksum = TRUE
+--let $binsrv_replication_mode = position
+--let $binsrv_checkpoint_size = 1
+--source ../include/set_up_binsrv_environment.inc
+
+--echo
+--echo *** Initializing the @checkpoints session variable (a JSON array) for
+--echo *** storing (binlog name, position) checkpoints.
+--disable_query_log
+SET @checkpoints = JSON_ARRAY();
+--enable_query_log
+
+--echo
+--echo *** Saving the ["":4] checkpoint (everything from the beginning of the
+--echo *** oldest binary log file).
+--let $checkpoint_label = from the beginning of the oldest binary log file
+--let $checkpoint_binlog_name =
+--let $checkpoint_binlog_position = 4
+--source ../include/rs_position_based_consistency_save.inc
+
+--echo
+--echo *** Step 0: Saving the initial binary log position.
+--let $checkpoint_label = at the very beginning
+--source ../include/rs_position_based_consistency_save.inc
+
+--echo
+--echo *** Step 1: Creating tbl.
+CREATE TABLE tbl(
+  id INT UNSIGNED NOT NULL,
+  value VARCHAR(32) NOT NULL,
+  PRIMARY KEY(id)
+) ENGINE=InnoDB;
+--let $checkpoint_label = after creating tbl
+--source ../include/rs_position_based_consistency_save.inc
+
+--echo
+--echo *** Step 2: Inserting the first batch of rows.
+INSERT INTO tbl VALUES (1, 'one'), (2, 'two'), (3, 'three');
+--let $checkpoint_label = after inserting the first batch of rows
+--source ../include/rs_position_based_consistency_save.inc
+
+--echo
+--echo *** Step 3: Flushing the source binary log for the first time.
+FLUSH BINARY LOGS;
+--let $checkpoint_label = after the first FLUSH BINARY LOGS
+--source ../include/rs_position_based_consistency_save.inc
+
+--echo
+--echo *** Step 4: Inserting the second batch of rows.
+INSERT INTO tbl VALUES (4, 'four'), (5, 'five'), (6, 'six');
+--let $checkpoint_label = after inserting the second batch of rows
+--source ../include/rs_position_based_consistency_save.inc
+
+--echo
+--echo *** Step 5: Flushing the source binary log for the second time.
+FLUSH BINARY LOGS;
+--let $checkpoint_label = after the second FLUSH BINARY LOGS
+--source ../include/rs_position_based_consistency_save.inc
+
+--echo
+--echo *** Step 6: Flushing the source binary log for the third time (producing an
+--echo *** empty binary log file).
+FLUSH BINARY LOGS;
+--let $checkpoint_label = after the third FLUSH BINARY LOGS
+--source ../include/rs_position_based_consistency_save.inc
+
+--echo
+--echo *** Step 7: Inserting the third batch of rows.
+INSERT INTO tbl VALUES (7, 'seven'), (8, 'eight'), (9, 'nine');
+--let $checkpoint_label = after inserting the third batch of rows
+--source ../include/rs_position_based_consistency_save.inc
+
+--echo
+--echo *** Saving end-of-file positions (sizes) of all binary log files as
+--echo *** checkpoints.
+--let $binlog_file_index = 1
+--let $binlog_file_name = query_get_value(SHOW BINARY LOGS, Log_name, $binlog_file_index)
+--let $binlog_file_exists = `SELECT '$binlog_file_name' <> 'No such row'`
+while ($binlog_file_exists)
+{
+  --let $checkpoint_binlog_position = query_get_value(SHOW BINARY LOGS, File_size, $binlog_file_index)
+  --let $checkpoint_binlog_name = $binlog_file_name
+  --let $checkpoint_label = end of binary log file $binlog_file_index
+  --source ../include/rs_position_based_consistency_save.inc
+  --inc $binlog_file_index
+  --let $binlog_file_name = query_get_value(SHOW BINARY LOGS, Log_name, $binlog_file_index)
+  --let $binlog_file_exists = `SELECT '$binlog_file_name' <> 'No such row'`
+}
+--let $assert_text = There must be exactly 4 binary log files
+--let $assert_cond = $binlog_file_index = 5
+--source include/assert.inc
+
+--echo
+--echo *** Fetching the source binary logs in position mode.
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+--echo
+--echo *** Starting Binlog Server Utility in background in pull mode.
+--let $proc_command_line = $BINSRV pull $binsrv_config_file_path > /dev/null
+--source ../include/start_proc_in_background.inc
+
+--echo
+--echo *** Waiting for the replication source listener port ready to accept
+--echo *** connections.
+--let $listening_port = $binsrv_replication_source_port
+--source ../include/wait_for_listening_port.inc
+
+--let $number_of_checkpoints = `SELECT JSON_LENGTH(@checkpoints)`
+--let $checkpoint_json_index = 0
+while ($checkpoint_json_index < $number_of_checkpoints)
+{
+  --let $checkpoint_binlog_name = `SELECT JSON_UNQUOTE(JSON_EXTRACT(@checkpoints, '\$[$checkpoint_json_index].binlog_file'))`
+  --let $checkpoint_binlog_position = `SELECT JSON_UNQUOTE(JSON_EXTRACT(@checkpoints, '\$[$checkpoint_json_index].position'))`
+  --let $checkpoint_label = `SELECT JSON_UNQUOTE(JSON_EXTRACT(@checkpoints, '\$[$checkpoint_json_index].test_label'))`
+  --source ../include/rs_compare_dumps.inc
+  --inc $checkpoint_json_index
+}
+
+--echo
+--echo *** Sending SIGTERM signal to the Binlog Server Utility and waiting for
+--echo *** the process to terminate.
+--source ../include/terminate_proc.inc
+
+--echo
+--echo *** Dropping the table.
+DROP TABLE tbl;
+--disable_query_log
+SET @checkpoints = NULL;
+--enable_query_log
+
+--source ../include/tear_down_binsrv_environment.inc
+
+# As the Binlog Server Utility interrupts the connection upon timeout, here we
+# need to close it on the MySQL server side as well in order to make sure that
+# MTR 'check-test' before and after the test produces the same output.
+--source ../include/kill_binlog_dump_connection.inc
+
+--source include/wait_until_count_sessions.inc
+
+# End of test.

@@ -23,7 +23,7 @@ FLUSH BINARY LOGS;
 *** Inserting the second batch of rows.
 INSERT INTO source_db.tbl VALUES (4, 'four'), (5, 'five'), (6, 'six');
 
-*** Determining checkpoint binary log name and position.
+*** Determining binary log name and position for the second part.
 
 *** Fetching the source binary logs in position mode for the first time.
 
@@ -33,18 +33,14 @@ include/read_file_to_var.inc
 *** Waiting for the replication source listener port ready to accept
 *** connections for the first time.
 
-*** Dumping the first part of binary logs from the Binlog Server
-*** replication source.
-
-*** Dumping the first part of binary logs from the MySQL Server
-
-*** Comparing the first parts of binary logs from the PBS and MySQL Server
+*** Comparing event sequences from the PBS and MySQL Server starting
+*** from checkpoint 'the beginning of the oldest binlog file'.
 
 *** Sending SIGTERM signal to the Binlog Server Utility and waiting for
 *** the process to terminate for the first time.
 
 *** Inserting the third batch of rows.
-INSERT INTO source_db.tbl VALUES (7, 'seven'), (8, 'eight'), (9, 'none');
+INSERT INTO source_db.tbl VALUES (7, 'seven'), (8, 'eight'), (9, 'nine');
 
 *** Flushing the source binary log for the second time.
 FLUSH BINARY LOGS;
@@ -59,12 +55,8 @@ include/read_file_to_var.inc
 *** Waiting for the replication source listener port ready to accept
 *** connections for the second time.
 
-*** Dumping the second part of binary logs from the Binlog Server
-*** replication source.
-
-*** Dumping the second part of binary logs from the MySQL Server
-
-*** Comparing the second parts of binary logs from the PBS and MySQL Server
+*** Comparing event sequences from the PBS and MySQL Server starting
+*** from checkpoint 'after inserting the second batch of rows'.
 
 *** Sending SIGTERM signal to the Binlog Server Utility and waiting for
 *** the process to terminate for the second time.

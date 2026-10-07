@@ -1,0 +1,106 @@
+*** Resetting replication at the very beginning of the test.
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+
+*** Initializing the @checkpoints session variable (a JSON array) for
+*** storing (binlog name, position) checkpoints.
+
+*** Saving the ["":4] checkpoint (everything from the beginning of the
+*** oldest binary log file).
+
+*** Step 0: Saving the initial binary log position.
+
+*** Step 1: Creating tbl.
+CREATE TABLE tbl(
+id INT UNSIGNED NOT NULL,
+value VARCHAR(32) NOT NULL,
+PRIMARY KEY(id)
+) ENGINE=InnoDB;
+
+*** Step 2: Inserting the first batch of rows.
+INSERT INTO tbl VALUES (1, 'one'), (2, 'two'), (3, 'three');
+
+*** Step 3: Flushing the source binary log for the first time.
+FLUSH BINARY LOGS;
+
+*** Step 4: Inserting the second batch of rows.
+INSERT INTO tbl VALUES (4, 'four'), (5, 'five'), (6, 'six');
+
+*** Step 5: Flushing the source binary log for the second time.
+FLUSH BINARY LOGS;
+
+*** Step 6: Flushing the source binary log for the third time (producing an
+*** empty binary log file).
+FLUSH BINARY LOGS;
+
+*** Step 7: Inserting the third batch of rows.
+INSERT INTO tbl VALUES (7, 'seven'), (8, 'eight'), (9, 'nine');
+
+*** Saving end-of-file positions (sizes) of all binary log files as
+*** checkpoints.
+include/assert.inc [There must be exactly 4 binary log files]
+
+*** Fetching the source binary logs in position mode.
+
+*** Starting Binlog Server Utility in background in pull mode.
+include/read_file_to_var.inc
+
+*** Waiting for the replication source listener port ready to accept
+*** connections.
+
+*** Comparing event sequences from the PBS and MySQL Server starting
+*** from checkpoint 'from the beginning of the oldest binary log file'.
+
+*** Comparing event sequences from the PBS and MySQL Server starting
+*** from checkpoint 'at the very beginning'.
+
+*** Comparing event sequences from the PBS and MySQL Server starting
+*** from checkpoint 'after creating tbl'.
+
+*** Comparing event sequences from the PBS and MySQL Server starting
+*** from checkpoint 'after inserting the first batch of rows'.
+
+*** Comparing event sequences from the PBS and MySQL Server starting
+*** from checkpoint 'after the first FLUSH BINARY LOGS'.
+
+*** Comparing event sequences from the PBS and MySQL Server starting
+*** from checkpoint 'after inserting the second batch of rows'.
+
+*** Comparing event sequences from the PBS and MySQL Server starting
+*** from checkpoint 'after the second FLUSH BINARY LOGS'.
+
+*** Comparing event sequences from the PBS and MySQL Server starting
+*** from checkpoint 'after the third FLUSH BINARY LOGS'.
+
+*** Comparing event sequences from the PBS and MySQL Server starting
+*** from checkpoint 'after inserting the third batch of rows'.
+
+*** Comparing event sequences from the PBS and MySQL Server starting
+*** from checkpoint 'end of binary log file 1'.
+
+*** Comparing event sequences from the PBS and MySQL Server starting
+*** from checkpoint 'end of binary log file 2'.
+
+*** Comparing event sequences from the PBS and MySQL Server starting
+*** from checkpoint 'end of binary log file 3'.
+
+*** Comparing event sequences from the PBS and MySQL Server starting
+*** from checkpoint 'end of binary log file 4'.
+
+*** Sending SIGTERM signal to the Binlog Server Utility and waiting for
+*** the process to terminate.
+
+*** Dropping the table.
+DROP TABLE tbl;
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.

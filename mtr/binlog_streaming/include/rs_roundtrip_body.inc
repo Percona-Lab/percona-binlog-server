@@ -33,9 +33,9 @@ FLUSH BINARY LOGS;
 INSERT INTO source_db.tbl VALUES (4, 'four'), (5, 'five'), (6, 'six');
 
 --echo
---echo *** Determining checkpoint binary log name and position.
---let $checkpoint_binlog_name = query_get_value($stmt_show_binary_log_status, File, 1)
---let $checkpoint_binlog_position = query_get_value($stmt_show_binary_log_status, Position, 1)
+--echo *** Determining binary log name and position for the second part.
+--let $second_part_binlog_name = query_get_value($stmt_show_binary_log_status, File, 1)
+--let $second_part_binlog_position = query_get_value($stmt_show_binary_log_status, Position, 1)
 
 --echo
 --echo *** Fetching the source binary logs in position mode for the first time.
@@ -52,29 +52,12 @@ INSERT INTO source_db.tbl VALUES (4, 'four'), (5, 'five'), (6, 'six');
 --let $listening_port = $binsrv_replication_source_port
 --source ../include/wait_for_listening_port.inc
 
---echo
---echo *** Dumping the first part of binary logs from the Binlog Server
---echo *** replication source.
 --let $first_roundtrip_dump = $MYSQL_TMP_DIR/first_rs_roundtrip.sql
-exec $MYSQL_BINLOG
-  --read-from-remote-server --host=$binsrv_connection_host --port=$binsrv_replication_source_port
-  --user=$binsrv_auth_user --password=$binsrv_auth_password --default-auth=caching_sha2_password
-  --to-last-log "" > $first_roundtrip_dump 2>/dev/null;
---let $first_roundtrip_dump_filtered = $first_roundtrip_dump.filtered
---exec cat $first_roundtrip_dump | grep -E "^#[[:digit:]]+" > $first_roundtrip_dump_filtered
-
---echo
---echo *** Dumping the first part of binary logs from the MySQL Server
---let $first_direct_dump = $MYSQL_TMP_DIR/first_rs_direct.sql
-exec $MYSQL_BINLOG
-  --read-from-remote-server --host=$binsrv_connection_host --user=$binsrv_connection_user
-  --to-last-log "" > $first_direct_dump 2>/dev/null;
---let $first_direct_dump_filtered = $first_direct_dump.filtered
---exec cat $first_direct_dump | grep -E "^#[[:digit:]]+" > $first_direct_dump_filtered
-
---echo
---echo *** Comparing the first parts of binary logs from the PBS and MySQL Server
---diff_files $first_roundtrip_dump_filtered $first_direct_dump_filtered
+--let $checkpoint_label = the beginning of the oldest binlog file
+--let $checkpoint_binlog_name =
+--let $checkpoint_binlog_position = 4
+--let $saved_roundtrip_dump = $first_roundtrip_dump
+--source ../include/rs_compare_dumps.inc
 
 --echo
 --echo *** Sending SIGTERM signal to the Binlog Server Utility and waiting for
@@ -83,7 +66,7 @@ exec $MYSQL_BINLOG
 
 --echo
 --echo *** Inserting the third batch of rows.
-INSERT INTO source_db.tbl VALUES (7, 'seven'), (8, 'eight'), (9, 'none');
+INSERT INTO source_db.tbl VALUES (7, 'seven'), (8, 'eight'), (9, 'nine');
 
 --echo
 --echo *** Flushing the source binary log for the second time.
@@ -107,29 +90,12 @@ INSERT INTO source_db.tbl VALUES (10, 'ten'), (11, 'eleven'), (12, 'twelve');
 --let $listening_port = $binsrv_replication_source_port
 --source ../include/wait_for_listening_port.inc
 
---echo
---echo *** Dumping the second part of binary logs from the Binlog Server
---echo *** replication source.
 --let $second_roundtrip_dump = $MYSQL_TMP_DIR/second_rs_roundtrip.sql
-exec $MYSQL_BINLOG
-  --read-from-remote-server --host=$binsrv_connection_host --port=$binsrv_replication_source_port
-  --user=$binsrv_auth_user --password=$binsrv_auth_password --default-auth=caching_sha2_password
-  --start-position=$checkpoint_binlog_position --to-last-log "$checkpoint_binlog_name" > $second_roundtrip_dump 2>/dev/null;
---let $second_roundtrip_dump_filtered = $second_roundtrip_dump.filtered
---exec cat $second_roundtrip_dump | grep -E "^#[[:digit:]]+" > $second_roundtrip_dump_filtered
-
---echo
---echo *** Dumping the second part of binary logs from the MySQL Server
---let $second_direct_dump = $MYSQL_TMP_DIR/second_rs_direct.sql
-exec $MYSQL_BINLOG
-  --read-from-remote-server --host=$binsrv_connection_host --user=$binsrv_connection_user
-  --start-position=$checkpoint_binlog_position --to-last-log "$checkpoint_binlog_name" > $second_direct_dump 2>/dev/null;
---let $second_direct_dump_filtered = $second_direct_dump.filtered
---exec cat $second_direct_dump | grep -E "^#[[:digit:]]+" > $second_direct_dump_filtered
-
---echo
---echo *** Comparing the second parts of binary logs from the PBS and MySQL Server
---diff_files $second_roundtrip_dump_filtered $second_direct_dump_filtered
+--let $checkpoint_label = after inserting the second batch of rows
+--let $checkpoint_binlog_name = $second_part_binlog_name
+--let $checkpoint_binlog_position = $second_part_binlog_position
+--let $saved_roundtrip_dump = $second_roundtrip_dump
+--source ../include/rs_compare_dumps.inc
 
 --echo
 --echo *** Sending SIGTERM signal to the Binlog Server Utility and waiting for
@@ -160,11 +126,4 @@ DROP DATABASE backup_db;
 --echo
 --echo *** Cleaning up.
 --remove_file $first_roundtrip_dump
---remove_file $first_roundtrip_dump_filtered
---remove_file $first_direct_dump
---remove_file $first_direct_dump_filtered
-
 --remove_file $second_roundtrip_dump
---remove_file $second_roundtrip_dump_filtered
---remove_file $second_direct_dump
---remove_file $second_direct_dump_filtered
