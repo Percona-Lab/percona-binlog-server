@@ -34,6 +34,7 @@
 #include "util/byte_range.hpp"
 #include "util/byte_span_fwd.hpp"
 #include "util/common_optional_types.hpp"
+#include "util/dynamic_byte_buffer_fwd.hpp"
 
 namespace operations {
 
@@ -75,6 +76,7 @@ private:
   util::byte_range range_{};
   binsrv::events::event_storage artificial_rotate_{};
   binsrv::events::event_storage fde_{};
+  util::dynamic_byte_buffer carry_buffer_{};
   binsrv::indexed_event_block_ptr event_block_{};
   std::size_t event_index_{};
 
@@ -88,6 +90,12 @@ private:
 
   [[nodiscard]] util::optional_bool
   populate_event_block(util::const_byte_span &event);
+  // Fetches the next block from storage, prepending any carried tail, and
+  // parses it into 'event_block_' / resets 'event_index_'. Sets 'is_eof' to
+  // true when storage reports no more data; in that case 'event_block_'
+  // stays unset and any carried bytes remain in 'carry_buffer_' for the
+  // next attempt. Returns false on fatal error.
+  [[nodiscard]] bool load_next_event_block(bool &is_eof);
   [[nodiscard]] bool handle_start_states(util::const_byte_span &event);
   [[nodiscard]] bool
   handle_generate_artificial_fde_state(util::const_byte_span &event);

@@ -50,8 +50,10 @@ indexed_event_block::indexed_event_block(util::dynamic_byte_buffer buffer)
     index_.push_back({offset, event_size});
     offset += event_size;
   }
-  // truncating buffer so that it would only contain complete events
-  buffer_.resize(offset);
+  // 'offset' now points past the last complete event; the remaining bytes
+  // (if any) stay in 'buffer_' and are exposed via 'get_unparsed_tail()' so
+  // the caller can prepend them to the next fetch instead of re-reading them.
+  actual_size_ = offset;
 }
 
 } // namespace binsrv
