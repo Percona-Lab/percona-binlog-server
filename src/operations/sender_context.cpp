@@ -369,6 +369,12 @@ sender_context::populate_event_block(util::const_byte_span &event) {
   // previous iteration (empty on the very first call).
   util::dynamic_byte_buffer buffer{std::move(carry_buffer_)};
   carry_buffer_.clear();
+  if (!std::empty(buffer)) {
+    logger_->log_format(
+        binsrv::log_severity::info,
+        "sender : reusing {} byte(s) carried from previous fetch",
+        std::size(buffer));
+  }
 
   // Fetch loop: top up until the buffer holds the full first event, but not
   // less than 'block_size_' (1 MiB by default). In the steady state the
