@@ -81,9 +81,6 @@ public:
   void set_create_timestamp_raw(std::uint32_t create_timestamp) noexcept {
     create_timestamp_ = create_timestamp;
   }
-  void
-  set_create_timestamp(const util::ctime_timestamp &create_timestamp) noexcept;
-  void set_readable_create_timestamp(std::string_view create_timestamp);
 
   [[nodiscard]] std::uint8_t get_common_header_length_raw() const noexcept {
     return common_header_length_;

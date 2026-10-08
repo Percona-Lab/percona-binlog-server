@@ -180,17 +180,6 @@ generic_post_header_impl<code_type::format_description>::get_create_timestamp()
   return get_create_timestamp().simple_str();
 }
 
-void generic_post_header_impl<code_type::format_description>::
-    set_create_timestamp(
-        const util::ctime_timestamp &create_timestamp) noexcept {
-  set_create_timestamp_raw(
-      static_cast<std::uint32_t>(create_timestamp.get_value()));
-}
-void generic_post_header_impl<code_type::format_description>::
-    set_readable_create_timestamp(std::string_view create_timestamp) {
-  set_create_timestamp(util::ctime_timestamp{create_timestamp});
-}
-
 void generic_post_header_impl<code_type::format_description>::encode_to(
     util::byte_span &destination) const {
   if (std::size(destination) < calculate_encoded_size()) {
