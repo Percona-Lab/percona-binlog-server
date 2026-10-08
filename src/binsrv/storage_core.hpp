@@ -324,6 +324,9 @@ private:
   open_existing_binlog_file_internal(std::uint64_t open_stream_offset);
 
   void load_binlog_index();
+  void cleanup_unindexed_objects(
+      storage_object_name_container &object_names,
+      storage_object_name_container &object_metadata_names);
   void validate_binlog_index(
       const storage_object_name_container &object_names) const;
   void save_binlog_index() const;

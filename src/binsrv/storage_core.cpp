@@ -212,6 +212,7 @@ storage_core::storage_core(basic_logger_ptr logger, const main_config &config,
     }
   }
   load_binlog_index();
+  cleanup_unindexed_objects(storage_objects, storage_metadata_objects);
   validate_binlog_index(storage_objects);
 
   load_and_validate_binlog_metadata_set(storage_objects,
@@ -750,6 +751,85 @@ void storage_core::load_binlog_index() {
         current_binlog_name_parsed, 0ULL, std::move(previous_binlog_gtids),
         std::move(added_binlog_gtids), util::ctime_timestamp_range{});
   }
+}
+
+void storage_core::cleanup_unindexed_objects(
+    storage_object_name_container &object_names,
+    storage_object_name_container &object_metadata_names) {
+  // TODO: This automatic recovery procedure won't cover the case when the
+  //       crash happens during the binlog rotation with base name change
+  //       (e.g. 'binlog.000001' -> 'my_base.000001'). In this case, manual
+  //       user intervention will be required. However, the probability of
+  //       such case is by an order of magnitude lower.
+  //       In order to support this "change base name" scenario as well,
+  //       we would need to fetch the last binlog event from the last data
+  //       file, hope that it is ROTATE and extract next binlog file name
+  //       from it. The complexity of this approach makes it less desirable.
+
+  // querying_only mode must not modify the storage (a concurrent streaming
+  // process may be in the middle of creating the next binlog)
+  if (construction_mode_ == storage_construction_mode_type::querying_only ||
+      binlog_records_.empty()) {
+    return;
+  }
+
+  if (binlog_records_.empty()) {
+    return;
+  }
+
+  // PBS does the following on binlog rotation:
+  // 1. Creates a new binlog data file
+  // 2. Creates a new binlog metadata file
+  // 3. Updates the binlog index to include the new binlog data file entry
+
+  // Here we try to deal with the following scenarios:
+  // 1. If crash happens after (1), we will have only 1 orphaned binlog data
+  //    file.
+  // 2. If crash happens after (2), we will have 1 orphaned binlog data file
+  //    and 1 orphaned binlog metadata file.
+  // 3. There should not be a situation when we have an orphaned binlog
+  //    metadata file without the corresponding orphaned binlog data file.
+
+  const auto next_binlog_name{binlog_records_.back().name.next()};
+
+  auto next_binlog_name_str{next_binlog_name.str()};
+  const auto object_it{object_names.find(next_binlog_name_str)};
+  if (object_it == std::end(object_names)) {
+    return;
+  }
+
+  using cleanup_object_container = std::vector<std::string>;
+  cleanup_object_container cleanup_objects{};
+
+  object_names.erase(object_it);
+  logger_->log_format(log_severity::warning,
+                      "found an orphaned binlog data file '{}' left after "
+                      "improper shutdown",
+                      next_binlog_name_str);
+  cleanup_objects.push_back(std::move(next_binlog_name_str));
+
+  auto next_binlog_metadata_name_str{
+      generate_binlog_metadata_name(next_binlog_name)};
+  const auto metadata_it{
+      object_metadata_names.find(next_binlog_metadata_name_str)};
+  if (metadata_it != std::end(object_metadata_names)) {
+    object_metadata_names.erase(metadata_it);
+    logger_->log_format(log_severity::warning,
+                        "found an orphaned binlog metadata file '{}' left "
+                        "after improper shutdown",
+                        next_binlog_metadata_name_str);
+    // inserting here to the front as the objects will be removed in the
+    // specified order and in case when the removal itself fails after
+    // removing just 1 object (not 2), we won't end up in scenario (3)
+    // mentioned above
+    cleanup_objects.insert(std::begin(cleanup_objects),
+                           std::move(next_binlog_metadata_name_str));
+  }
+  backend_->remove_objects(cleanup_objects);
+  logger_->log_format(
+      log_severity::warning,
+      "removed {} orphaned storage objects left after improper shutdown",
+      cleanup_objects.size());
 }
 
 void storage_core::validate_binlog_index(
