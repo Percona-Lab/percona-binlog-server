@@ -21,8 +21,19 @@
 
 namespace binsrv {
 
+struct [[nodiscard]] logger_creation_options {
+  // keep the existing content of the log file (if configured) instead of
+  // removing it
+  bool keep_file_content{false};
+  // write to the standard error stream instead of the standard output if no
+  // log file is configured
+  bool use_standard_error{false};
+};
+
 struct [[nodiscard]] logger_factory {
-  [[nodiscard]] static basic_logger_ptr create(const logger_config &config);
+  [[nodiscard]] static basic_logger_ptr
+  create(const logger_config &config,
+         const logger_creation_options &options = {});
 };
 
 } // namespace binsrv

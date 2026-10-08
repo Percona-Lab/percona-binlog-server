@@ -16,12 +16,10 @@
 
 #include <exception>
 #include <iostream>
-#include <memory>
 #include <stdexcept>
 #include <string>
 
 #include "binsrv/main_config.hpp"
-#include "binsrv/null_logger.hpp"
 #include "binsrv/storage.hpp"
 #include "binsrv/storage_core.hpp"
 
@@ -29,6 +27,7 @@
 #include "binsrv/models/search_response.hpp"
 
 #include "operations/basic_operation.hpp"
+#include "operations/logger_helpers.hpp"
 #include "operations/mode_type.hpp"
 #include "operations/model_helpers.hpp"
 
@@ -55,7 +54,7 @@ generic_operation<mode_type::search_by_timestamp>::execute() const {
     const binsrv::main_config config{get_config_file_path()};
 
     const binsrv::storage storage{
-        std::make_shared<binsrv::null_logger>(), config,
+        create_querying_logger(config), config,
         binsrv::storage_construction_mode_type::querying_only};
 
     binsrv::models::search_response response;

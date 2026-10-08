@@ -27,6 +27,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <utility>
 
 #include <boost/url/host_type.hpp>
 #include <boost/url/parse.hpp>
@@ -46,7 +47,7 @@ namespace binsrv {
 
 filesystem_storage_backend::filesystem_storage_backend(
     const storage_config &config)
-    : root_path_{}, ofs_{} {
+    : root_path_{}, ofs_{}, current_file_path_{} {
   // TODO: switch to utf8 file names
 
   // setting "unbuffered mode" as we will be using our own buffer
@@ -196,7 +197,7 @@ void filesystem_storage_backend::do_fsync() {
 [[nodiscard]] std::uint64_t filesystem_storage_backend::do_open_stream(
     std::string_view name, storage_backend_open_stream_mode mode) {
   assert(!ofs_.is_open());
-  const std::filesystem::path current_file_path{get_object_path(name)};
+  std::filesystem::path current_file_path{get_object_path(name)};
 
   const auto open_mode{std::ios_base::out | std::ios_base::binary |
                        (mode == storage_backend_open_stream_mode::create
@@ -207,6 +208,7 @@ void filesystem_storage_backend::do_fsync() {
     util::exception_location().raise<std::runtime_error>(
         "cannot open underlying file for the stream");
   }
+  current_file_path_ = std::move(current_file_path);
 
   const auto open_position{static_cast<std::streamoff>(ofs_.tellp())};
 
@@ -226,13 +228,17 @@ void filesystem_storage_backend::do_write_data_to_stream(
     util::exception_location().raise<std::runtime_error>(
         "cannot flush the underlying stream file");
   }
-  // TODO: make sure that the data is properly written to the disk
-  //       use fsync() system call here
+  // the storage layer commits every write to the stream by updating the
+  // corresponding binlog metadata object afterwards, so the data must be
+  // durable before this method returns - otherwise, after a power loss the
+  // metadata may describe bytes that never reached the disk
+  util::fsync(current_file_path_);
 }
 
 void filesystem_storage_backend::do_close_stream() {
   assert(ofs_.is_open());
   ofs_.close();
+  current_file_path_.clear();
 }
 
 [[nodiscard]] std::string

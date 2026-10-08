@@ -13,23 +13,16 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef BINSRV_COUT_LOGGER_HPP
-#define BINSRV_COUT_LOGGER_HPP
+#include "binsrv/ostream_logger.hpp"
 
+#include <ostream>
 #include <string_view>
-
-#include "binsrv/basic_logger.hpp" // IWYU pragma: export
 
 namespace binsrv {
 
-class [[nodiscard]] cout_logger final : public basic_logger {
-public:
-  explicit cout_logger(log_severity min_level) : basic_logger{min_level} {}
-
-private:
-  void do_log(std::string_view message) override;
-};
+void ostream_logger::do_log(std::string_view message) {
+  *stream_ << message << '\n';
+  stream_->flush();
+}
 
 } // namespace binsrv
-
-#endif // BINSRV_COUT_LOGGER_HPP

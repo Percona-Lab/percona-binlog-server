@@ -629,6 +629,16 @@ If this an optional section that specifies keyring configuration parameters. It 
   - 'h' (e.g. "42h") means hours ('42 * 60 * 60' seconds)
   - 'd' (e.g. "42d") means days ('42 * 60 * 60 *24' seconds)
 
+##### Storage consistency checks
+
+When the Binlog Server process is not properly shut down (killed, crashed, power loss), the storage may be left in an inconsistent state. Every time the storage is opened, the following hierarchy of sources of truth is used to check it:
+1. `binlog.index` defines the set of binlog files in the storage. Binlog data / metadata files not listed in it (left after an interrupted binlog file creation or an interrupted purge) and temporary objects (`*.tmp`) left after interrupted writes are garbage. If `binlog.index` does not exist, the storage contains no binlog files. Only objects whose names have the form of objects created by the Binlog Server (`metadata.json`, `binlog.index`, `<base name>.<sequence number>`, `<base name>.<sequence number>.json` and their `.tmp` versions) are considered; any other object is ignored and left intact.
+2. The binlog metadata file (`<binlog name>.json`) defines the size of the binlog data file. If the most recent binlog data file is bigger than recorded in its metadata, it is truncated to the recorded size.
+
+In the `fetch`, `pull` and `purge_binlogs` modes, the storage is fixed accordingly (garbage objects are removed after the whole storage has been checked), every fix is logged with the `warning` severity, and the operation continues. The `purge_binlogs` mode appends its messages to the configured log file (which may be in use by a concurrently running `fetch` / `pull` operation), marking them with the `[storage-maintenance]` tag; if no log file is configured, they are printed to the standard error stream. The operation fails if the storage cannot be fixed automatically: a binlog file listed in `binlog.index` has no data file or no valid metadata file, a binlog data file is smaller than recorded in its metadata, the size mismatch is found in a binlog file that is not the most recent one, or `binlog.index` is missing while the storage contains more than a single binlog file. Nothing is removed from a storage that cannot be fixed. Please notice that these fixes are not safe to perform while another instance is fetching / pulling data to the same storage (see the note about the `purge_binlogs` mode above).
+
+In the `list`, `search_by_timestamp` and `search_by_gtid_set` modes, the storage is never modified. Found problems, together with how they will be fixed (or that they cannot be fixed automatically), are printed to the standard error stream (nothing is printed if the storage is consistent); the JSON response is not affected, except that binlog files that cannot be used are skipped (if `binlog.index` is missing while the storage contains more than a single binlog file, the storage is considered empty).
+
 ##### Storage URI format
 
 - When `<storage.backend>` is set to `file`, `<storage.uri>` must be `file://...`.

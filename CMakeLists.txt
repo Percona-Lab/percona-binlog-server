@@ -72,12 +72,51 @@ if(WITH_ASAN)
   target_link_options(binlog_server_compiler_flags INTERFACE "-fsanitize=address")
 endif()
 
-find_package(Boost 1.90.0 EXACT REQUIRED COMPONENTS url json asio)
+# use BoostConfig.cmake shipped with Boost instead of the deprecated FindBoost module
+if(POLICY CMP0167)
+  cmake_policy(SET CMP0167 NEW)
+endif()
+find_package(Boost 1.90.0 EXACT REQUIRED COMPONENTS url json OPTIONAL_COMPONENTS asio)
+if(NOT TARGET Boost::asio)
+  # distro-packaged Boost (e.g. Debian / Ubuntu) does not provide a separate
+  # CMake package for the header-only Boost.Asio library
+  find_package(Threads REQUIRED)
+  add_library(Boost::asio INTERFACE IMPORTED)
+  target_link_libraries(Boost::asio INTERFACE Boost::headers Threads::Threads)
+endif()
 
 find_package(MySQL REQUIRED)
 
 find_package(ZLIB REQUIRED)
-find_package(AWSSDK 1.11.774 EXACT REQUIRED COMPONENTS s3-crt)
+# the CMake presets point CMAKE_PREFIX_PATH to the AWS SDK CPP installation
+# that matches the preset ('../aws-sdk-cpp-install-<preset>'); for a plain
+# 'cmake' invocation without a preset, if the standard locations
+# (CMAKE_PREFIX_PATH, AWSSDK_ROOT, system prefixes) do not have it, also look
+# for an installation made by the AWS SDK CPP presets next to the source tree,
+# but only if it is unambiguous
+find_package(AWSSDK 1.11.774 EXACT QUIET COMPONENTS s3-crt)
+if(NOT AWSSDK_FOUND)
+  file(GLOB aws_sdk_sibling_install_candidates LIST_DIRECTORIES true
+    "${PROJECT_SOURCE_DIR}/../aws-sdk-cpp-install-*"
+  )
+  set(aws_sdk_sibling_install_dirs)
+  foreach(candidate IN LISTS aws_sdk_sibling_install_candidates)
+    if(IS_DIRECTORY "${candidate}")
+      list(APPEND aws_sdk_sibling_install_dirs "${candidate}")
+    endif()
+  endforeach()
+  list(LENGTH aws_sdk_sibling_install_dirs number_of_aws_sdk_sibling_install_dirs)
+  if(number_of_aws_sdk_sibling_install_dirs GREATER 1)
+    message(FATAL_ERROR
+      "Found several AWS SDK CPP installations next to the source tree "
+      "(${aws_sdk_sibling_install_dirs}) - please use a CMake preset or specify "
+      "the one to use via CMAKE_PREFIX_PATH or AWSSDK_ROOT")
+  endif()
+  # appended to CMAKE_PREFIX_PATH rather than passed via PATHS, as
+  # AWSSDKConfig.cmake looks up its own dependencies via CMAKE_PREFIX_PATH
+  list(APPEND CMAKE_PREFIX_PATH ${aws_sdk_sibling_install_dirs})
+  find_package(AWSSDK 1.11.774 EXACT REQUIRED COMPONENTS s3-crt)
+endif()
 
 # various utility files
 set(util_source_files
@@ -560,9 +599,6 @@ set(binsrv_source_files
   src/binsrv/binlog_file_metadata.hpp
   src/binsrv/binlog_file_metadata.cpp
 
-  src/binsrv/cout_logger.hpp
-  src/binsrv/cout_logger.cpp
-
   src/binsrv/encryption_config_fwd.hpp
   src/binsrv/encryption_config.hpp
   src/binsrv/encryption_config.cpp
@@ -609,7 +645,8 @@ set(binsrv_source_files
   src/binsrv/main_config.hpp
   src/binsrv/main_config.cpp
 
-  src/binsrv/null_logger.hpp
+  src/binsrv/ostream_logger.hpp
+  src/binsrv/ostream_logger.cpp
 
   src/binsrv/replication_config_fwd.hpp
   src/binsrv/replication_config.hpp
