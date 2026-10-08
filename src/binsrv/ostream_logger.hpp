@@ -13,17 +13,29 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#include "binsrv/cout_logger.hpp"
+#ifndef BINSRV_OSTREAM_LOGGER_HPP
+#define BINSRV_OSTREAM_LOGGER_HPP
 
-#include <iostream>
-#include <ostream>
+#include <iosfwd>
 #include <string_view>
+
+#include "binsrv/basic_logger.hpp" // IWYU pragma: export
 
 namespace binsrv {
 
-void cout_logger::do_log(std::string_view message) {
-  std::cout << message << '\n';
-  std::cout.flush();
-}
+// writes log messages to a standard stream ('std::cout' / 'std::cerr'),
+// which must outlive the logger
+class [[nodiscard]] ostream_logger final : public basic_logger {
+public:
+  ostream_logger(log_severity min_level, std::ostream &stream)
+      : basic_logger{min_level}, stream_{&stream} {}
+
+private:
+  std::ostream *stream_;
+
+  void do_log(std::string_view message) override;
+};
 
 } // namespace binsrv
+
+#endif // BINSRV_OSTREAM_LOGGER_HPP

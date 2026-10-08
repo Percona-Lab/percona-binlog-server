@@ -27,7 +27,12 @@ namespace binsrv {
 
 class [[nodiscard]] file_logger final : public basic_logger {
 public:
-  file_logger(log_severity min_level, std::string_view file_name);
+  // the log file is always written in the append mode, so that messages
+  // from several processes writing to the same file (e.g. 'fetch' and
+  // 'purge_binlogs') do not overwrite each other; unless 'keep_content' is
+  // set, the existing content of the file is removed first
+  file_logger(log_severity min_level, std::string_view file_name,
+              bool keep_content = false);
 
 private:
   std::ofstream stream_;

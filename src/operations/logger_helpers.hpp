@@ -37,6 +37,23 @@
 
 namespace operations {
 
+// creates a logger for the querying-only operations ('list',
+// 'search_by_timestamp', 'search_by_gtid_set') - their standard output is
+// reserved for the JSON response, so problems found in the storage are
+// printed to the standard error stream (respecting the configured logging
+// level)
+[[nodiscard]] binsrv::basic_logger_ptr
+create_querying_logger(const binsrv::main_config &config);
+
+// creates a logger for the 'purge_binlogs' operation - it appends to the
+// configured log file, which may be in use by a concurrently running
+// 'fetch' / 'pull' operation, marking every message with the
+// 'storage-maintenance' tag; if no log file is configured, messages are
+// printed to the standard error stream as the standard output is reserved
+// for the JSON response
+[[nodiscard]] binsrv::basic_logger_ptr
+create_storage_maintenance_logger(const binsrv::main_config &config);
+
 void log_ssl_config_info(binsrv::basic_logger &logger,
                          const easymysql::ssl_config &ssl_config);
 void log_tls_config_info(binsrv::basic_logger &logger,

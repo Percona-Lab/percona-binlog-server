@@ -19,8 +19,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <format>
+#include <iostream>
 #include <iterator>
 #include <locale>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -32,7 +34,10 @@
 #include "binsrv/encryption_format_type.hpp" // IWYU pragma: keep
 #include "binsrv/keyring_config.hpp"
 #include "binsrv/log_severity.hpp"
+#include "binsrv/logger_config.hpp"
+#include "binsrv/logger_factory.hpp"
 #include "binsrv/main_config.hpp"
+#include "binsrv/ostream_logger.hpp"
 #include "binsrv/replication_config.hpp"
 #include "binsrv/replication_mode_type.hpp"
 #include "binsrv/rewrite_config.hpp"
@@ -195,6 +200,21 @@ void log_storage_config_info(binsrv::basic_logger &logger,
   if (optional_encryption_config.has_value()) {
     log_encryption_config_info(logger, *optional_encryption_config);
   }
+}
+
+[[nodiscard]] binsrv::basic_logger_ptr
+create_querying_logger(const binsrv::main_config &config) {
+  return std::make_shared<binsrv::ostream_logger>(
+      config.root().get<"logger">().get<"level">(), std::cerr);
+}
+
+[[nodiscard]] binsrv::basic_logger_ptr
+create_storage_maintenance_logger(const binsrv::main_config &config) {
+  auto result{binsrv::logger_factory::create(
+      config.root().get<"logger">(),
+      {.keep_file_content = true, .use_standard_error = true})};
+  result->set_tag("storage-maintenance");
+  return result;
 }
 
 void log_config_info(binsrv::basic_logger &logger,

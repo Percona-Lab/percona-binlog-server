@@ -1,0 +1,158 @@
+*** Resetting replication at the very beginning of the test.
+
+*** Generating two binary logs with some data in each of them.
+CREATE TABLE t1(id INT UNSIGNED NOT NULL AUTO_INCREMENT, PRIMARY KEY(id)) ENGINE=InnoDB;
+INSERT INTO t1 VALUES(DEFAULT);
+FLUSH BINARY LOGS;
+INSERT INTO t1 VALUES(DEFAULT);
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+
+*** Executing the Binlog Server utility to download all binlog data
+*** from the server.
+
+*** Saving a copy of the second binlog data and metadata files to be
+*** used for simulating garbage objects.
+
+*** Executing the Binlog Server utility in the 'list' mode on a
+*** consistent storage and expecting nothing in the standard error
+*** stream.
+include/assert_grep.inc [Nothing reported for a consistent storage]
+
+*** 1. Objects not referenced in the binlog index are removed.
+
+*** Simulating a binlog file creation interrupted after its metadata
+*** was written but before the binlog index was updated, and an
+*** interrupted binlog index update.
+
+*** Adding objects that were not created by the Binlog Server.
+
+*** Executing the Binlog Server utility and expecting it to remove
+*** garbage objects.
+include/assert_grep.inc [Found unreferenced binlog data file]
+include/assert_grep.inc [Found unreferenced binlog metadata file]
+include/assert_grep.inc [Removed unreferenced objects]
+include/assert_grep.inc [Removed temporary object]
+
+*** Checking that objects not created by the Binlog Server are kept.
+include/assert_grep.inc [Ignored foreign object]
+include/assert_grep.inc [Ignored foreign temporary object]
+
+*** 2. Querying-only operations report problems and do not modify the
+***    storage, the next streaming operation removes the garbage.
+
+*** Simulating an interrupted binlog file creation one more time.
+
+*** Executing the Binlog Server utility in the 'list' mode and
+*** expecting warnings in the standard error stream.
+include/assert_grep.inc [List response is not affected]
+include/assert_grep.inc [List reports unreferenced binlog data file]
+include/assert_grep.inc [List explains how the problem will be fixed]
+
+*** Checking that garbage objects are still in the storage.
+
+*** Executing the Binlog Server utility and expecting it to remove
+*** garbage objects.
+include/assert_grep.inc [Found unreferenced binlog data file]
+include/assert_grep.inc [Removed unreferenced objects]
+
+*** 3. The most recent binlog data file is truncated to the size from
+***    its metadata.
+
+*** Appending extra bytes to the second binlog data file.
+
+*** Executing the Binlog Server utility in the 'list' mode and
+*** expecting a warning in the standard error stream.
+include/assert_grep.inc [List reports binlog data file size mismatch]
+
+*** Executing the Binlog Server utility and expecting it to truncate
+*** the second binlog data file.
+include/assert_grep.inc [Truncated the second binlog data file]
+
+*** 4. The storage with a missing metadata file of a binlog listed in
+***    the binlog index or with a size mismatch in an older binlog file
+***    cannot be repaired, and garbage objects are not removed from it.
+
+*** Simulating an interrupted binlog file creation one more time.
+
+*** Removing the first binlog metadata file.
+
+*** Executing the Binlog Server utility in the 'list' mode and
+*** expecting a warning in the standard error stream.
+include/assert_grep.inc [List reports missing binlog metadata]
+
+*** Executing the Binlog Server utility and expecting it to fail.
+include/assert_grep.inc [Refused to open storage with missing binlog metadata]
+include/assert_grep.inc [Nothing removed from the storage with missing binlog metadata]
+
+*** Restoring the first binlog metadata file.
+
+*** Appending extra bytes to the first (not the most recent) binlog
+*** data file.
+
+*** Executing the Binlog Server utility in the 'list' mode and
+*** expecting the first binlog file to be reported and skipped.
+include/assert_grep.inc [List reports unrepairable binlog data file size mismatch]
+include/assert_grep.inc [List response does not contain the first binlog file]
+include/assert_grep.inc [List response contains the second binlog file]
+
+*** Executing the Binlog Server utility and expecting it to fail.
+include/assert_grep.inc [Refused to open storage with size mismatch in an older binlog]
+include/assert_grep.inc [Nothing removed from the storage with size mismatch in an older binlog]
+
+*** Restoring the first binlog data file.
+
+*** 5. The storage with binlog files but without the binlog index cannot
+***    be repaired, querying-only operations only report it.
+
+*** Removing the binlog index.
+
+*** Executing the Binlog Server utility in the 'list' mode and
+*** expecting an empty response and a warning in the standard error
+*** stream.
+include/assert_grep.inc [List reports missing binlog index]
+include/assert_grep.inc [List response contains no binlog files]
+
+*** Executing the Binlog Server utility and expecting it to fail.
+include/assert_grep.inc [Refused to open storage without binlog index]
+include/assert_grep.inc [Nothing removed from the storage without binlog index]
+
+*** Restoring the binlog index.
+
+*** Flushing the second binary log and dropping the table.
+FLUSH BINARY LOGS;
+DROP TABLE t1;
+
+*** Executing the Binlog Server utility to receive the rest of the
+*** events.
+
+*** Comparing server and downloaded (decrypted, if needed) versions of
+*** both binlog files.
+include/read_file_to_var.inc
+SET @diff_with_decrypted_storage_object_metadata = NULL;
+include/read_file_to_var.inc
+SET @diff_with_decrypted_storage_object_metadata = NULL;
+
+*** 6. The 'purge_binlogs' operation removes garbage objects and appends
+***    its messages to the log file of the streaming operation.
+
+*** Simulating an interrupted binlog file creation one more time.
+
+*** Executing the Binlog Server utility in the 'purge_binlogs' mode.
+include/assert_grep.inc [Purge response is not affected]
+include/assert_grep.inc [Purge printed nothing to the standard error stream]
+include/assert_grep.inc [Log file of the streaming operation was not truncated]
+include/assert_grep.inc [Purge logged the unreferenced binlog data file with the tag]
+include/assert_grep.inc [Purge logged the removal with the tag]
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.

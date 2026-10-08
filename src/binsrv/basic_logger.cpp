@@ -45,13 +45,18 @@ void basic_logger::log_internal(log_severity level, std::string_view message) {
                                   ' ');
   std::string buf;
   buf.reserve(1U + timestamp_length + 1U + 1U + 1U + padded_label_length + 1U +
-              1U + std::size(message));
+              1U + std::size(tag_) + 3U + std::size(message));
   buf += '[';
   buf += boost::posix_time::to_iso_extended_string(timestamp);
   buf += "] [";
   buf += label_padding;
   buf += level_label;
   buf += "] ";
+  if (!tag_.empty()) {
+    buf += '[';
+    buf += tag_;
+    buf += "] ";
+  }
   buf += message;
 
   const std::scoped_lock do_log_lock{do_log_mutex_};

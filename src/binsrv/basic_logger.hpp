@@ -21,6 +21,7 @@
 #include <atomic>
 #include <format>
 #include <mutex>
+#include <string>
 #include <string_view>
 #include <utility>
 
@@ -44,6 +45,12 @@ public:
     min_level_.store(min_level, std::memory_order_relaxed);
   }
 
+  // an optional tag printed in square brackets after the severity label -
+  // helps to distinguish messages from different processes writing to the
+  // same log file; not synchronized, so must be set before the logger is
+  // used
+  void set_tag(std::string_view tag) { tag_ = tag; }
+
   void log(log_severity level, std::string_view message) {
     if (level >= get_min_level()) {
       log_internal(level, message);
@@ -64,6 +71,7 @@ protected:
 private:
   using atomic_log_severity = std::atomic<log_severity>;
   atomic_log_severity min_level_;
+  std::string tag_{};
   std::mutex do_log_mutex_;
 
   // called only after the severity check has already been performed

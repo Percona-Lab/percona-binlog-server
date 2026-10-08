@@ -15,21 +15,26 @@
 
 #include "binsrv/logger_factory.hpp"
 
+#include <iostream>
 #include <memory>
 
 #include "binsrv/basic_logger_fwd.hpp"
-#include "binsrv/cout_logger.hpp"
 #include "binsrv/file_logger.hpp"
 #include "binsrv/logger_config.hpp"
+#include "binsrv/ostream_logger.hpp"
 
 namespace binsrv {
-basic_logger_ptr logger_factory::create(const logger_config &config) {
+basic_logger_ptr
+logger_factory::create(const logger_config &config,
+                       const logger_creation_options &options) {
   const auto level = config.get<"level">();
   if (!config.has_file()) {
-    return std::make_shared<cout_logger>(level);
+    return std::make_shared<ostream_logger>(
+        level, options.use_standard_error ? std::cerr : std::cout);
   }
 
-  return std::make_shared<file_logger>(level, config.get<"file">());
+  return std::make_shared<file_logger>(level, config.get<"file">(),
+                                       options.keep_file_content);
 }
 
 } // namespace binsrv

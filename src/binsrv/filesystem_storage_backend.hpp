@@ -41,6 +41,9 @@ public:
 private:
   std::filesystem::path root_path_;
   std::ofstream ofs_;
+  // the path of the file currently opened in 'ofs_' - needed to make the
+  // data written to the stream durable via 'fsync(2)'
+  std::filesystem::path current_file_path_;
 
   [[nodiscard]] storage_object_name_container do_list_objects() override;
 

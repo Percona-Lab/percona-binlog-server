@@ -16,6 +16,7 @@
 #include "binsrv/file_logger.hpp"
 
 #include <filesystem>
+#include <ios>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -26,8 +27,19 @@
 
 namespace binsrv {
 
-file_logger::file_logger(log_severity min_level, std::string_view file_name)
-    : basic_logger{min_level}, stream_{std::filesystem::path{file_name}} {
+file_logger::file_logger(log_severity min_level, std::string_view file_name,
+                         bool keep_content)
+    : basic_logger{min_level}, stream_{} {
+  const std::filesystem::path file_path{file_name};
+  if (!keep_content) {
+    // just truncating the file (if it cannot be created, the error will be
+    // reported below)
+    const std::ofstream truncating_stream{file_path, std::ios_base::out |
+                                                         std::ios_base::trunc};
+  }
+  // 'std::ios_base::app' makes every write go to the current end of the
+  // file (O_APPEND)
+  stream_.open(file_path, std::ios_base::out | std::ios_base::app);
   if (!stream_.is_open()) {
     util::exception_location().raise<std::runtime_error>(
         "unable to create \"" + std::string(file_name) + "\" file for logging");

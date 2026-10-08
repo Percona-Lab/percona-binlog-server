@@ -21,6 +21,7 @@
 #include <chrono>
 #include <mutex>
 #include <shared_mutex>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -272,7 +273,24 @@ private:
     return binlog_records_.empty();
   }
 
-  void remove_temporary_objects(storage_object_name_container &object_names);
+  using storage_object_name_list = std::vector<std::string>;
+
+  void report_reconciliation_issue(std::string_view message) const;
+  // checks whether the object name has the form of an object created by the
+  // Binlog Server (storage metadata, binlog index, binlog data and binlog
+  // metadata files) - only such objects can be considered garbage
+  [[nodiscard]] static bool is_own_object_name(std::string_view object_name);
+  // the following methods extract the objects of the corresponding kind from
+  // 'object_names' - garbage objects are returned so that they can be
+  // removed only after the storage has been validated
+  [[nodiscard]] storage_object_name_list
+  extract_temporary_objects(storage_object_name_container &object_names) const;
+  void
+  extract_foreign_objects(storage_object_name_container &object_names) const;
+  [[nodiscard]] storage_object_name_list extract_unreferenced_objects(
+      storage_object_name_container &object_names) const;
+  void remove_garbage_objects(std::span<const std::string> object_names,
+                              std::string_view description);
 
   void initialize_storage_encryption(
       const optional_encryption_config &encryption_config);
@@ -324,8 +342,7 @@ private:
   open_existing_binlog_file_internal(std::uint64_t open_stream_offset);
 
   void load_binlog_index();
-  void validate_binlog_index(
-      const storage_object_name_container &object_names) const;
+  void validate_binlog_index(const storage_object_name_container &object_names);
   void save_binlog_index() const;
 
   void load_metadata();
@@ -340,6 +357,17 @@ private:
   load_binlog_metadata(const events::composite_binlog_name &binlog_name) const;
   void validate_binlog_metadata(const binlog_record &record) const;
   void save_binlog_metadata(const binlog_record &record) const;
+
+  // checks whether the storage objects can be the leftovers of an interrupted
+  // creation of a single binlog file (its data file and, optionally, its
+  // metadata file)
+  [[nodiscard]] static bool contains_at_most_one_binlog(
+      const storage_object_name_container &object_names);
+  // returns false if the binlog file cannot be used (possible only in the
+  // querying_only mode, otherwise an exception is thrown)
+  [[nodiscard]] bool reconcile_binlog_file_size(const binlog_record &record,
+                                                std::uint64_t actual_size,
+                                                bool is_last);
 
   void load_and_validate_binlog_metadata_set(
       const storage_object_name_container &object_names,
