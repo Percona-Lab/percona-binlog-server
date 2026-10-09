@@ -1,0 +1,130 @@
+--source ../include/have_binsrv.inc
+
+--source ../include/v80_v84_compatibility_defines.inc
+
+--source include/count_sessions.inc
+
+# in case of --repeat=N, start from a fresh binary log so the test is
+# deterministic.
+--echo *** Resetting replication at the very beginning of the test.
+--disable_query_log
+eval $stmt_reset_binary_logs_and_gtids;
+--enable_query_log
+
+--source ../include/identify_storage_backend.inc
+
+--let $binsrv_connect_timeout = 10
+--let $binsrv_read_timeout = 10
+--let $binsrv_idle_time = 1
+--let $binsrv_verify_checksum = TRUE
+--let $binsrv_replication_mode = position
+--source ../include/set_up_binsrv_environment.inc
+
+--echo
+--echo *** Determining the first binary log name.
+--let $first_binlog = query_get_value($stmt_show_binary_log_status, File, 1)
+
+--echo
+--echo *** Creating a table with a MEDIUMBLOB column.
+CREATE DATABASE source_db;
+CREATE TABLE source_db.tbl(
+  id INT UNSIGNED NOT NULL,
+  data MEDIUMBLOB NOT NULL,
+  PRIMARY KEY(id)
+) ENGINE=InnoDB;
+
+--echo
+--echo *** Inserting 20 rows of ~100 KiB each. The cumulative row-based
+--echo *** event stream reliably straddles multiple 1 MiB PBS fetch blocks,
+--echo *** so most blocks end mid-event and leave a partial-event tail that
+--echo *** sender_context must carry over to the next fetch instead of
+--echo *** re-reading it from storage. Individual events stay well under
+--echo *** 1 MiB, so the oversize-event path is not exercised here -- this
+--echo *** isolates tail reuse.
+--disable_query_log
+--let $i = 1
+while ($i <= 20)
+{
+  eval INSERT INTO source_db.tbl
+    VALUES ($i, CONCAT(LPAD($i, 10, '0'), REPEAT('X', 100000)));
+  --inc $i
+}
+--enable_query_log
+
+--echo
+--echo *** Fetching the source binary logs into PBS storage.
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+--echo
+--echo *** Starting Binlog Server Utility in background in pull mode.
+--let $proc_command_line = $BINSRV pull $binsrv_config_file_path > /dev/null
+--source ../include/start_proc_in_background.inc
+
+--echo
+--echo *** Waiting for the replication source listener port ready to
+--echo *** accept connections.
+--let $listening_port = $binsrv_replication_source_port
+--source ../include/wait_for_listening_port.inc
+
+--echo
+--echo *** Dumping the binary logs from the Binlog Server replication
+--echo *** source. --stop-never is NOT set, so PBS disconnects on EOF
+--echo *** once it has streamed everything in storage.
+--let $tail_reuse_dump = $MYSQL_TMP_DIR/rs_tail_reuse.sql
+--exec $MYSQL_BINLOG --read-from-remote-server --host=127.0.0.1 --port=$binsrv_replication_source_port --user=$binsrv_auth_user --password=$binsrv_auth_password --default-auth=caching_sha2_password $first_binlog > $tail_reuse_dump 2>/dev/null
+
+--echo
+--echo *** Waiting for the tail-reuse log entry in the PBS log. Its
+--echo *** presence confirms sender_context carried partial-event bytes
+--echo *** from a prior fetch and prepended them to the next fetch,
+--echo *** instead of re-reading those bytes from storage.
+--let $grep_pattern = sender : reusing
+--let $grep_file = $binsrv_log_path
+--let $wait_timeout = 30
+--source include/wait_for_pattern_in_file.inc
+
+--echo
+--echo *** Sending SIGTERM signal to the Binlog Server Utility and
+--echo *** waiting for the process to terminate.
+--source ../include/terminate_proc.inc
+
+--echo
+--echo *** Moving source_db.tbl to backup_db.tbl.
+CREATE DATABASE backup_db;
+RENAME TABLE source_db.tbl TO backup_db.tbl;
+DROP DATABASE source_db;
+
+--echo
+--echo *** Restoring source_db from the PBS-served dump.
+--exec $MYSQL < $tail_reuse_dump
+
+--echo
+--echo *** Comparing the restored and backup rows via an order-independent
+--echo *** per-row signature. BIT_XOR of CRC32 over (id, length, MD5(data))
+--echo *** fits in a single BIGINT and avoids both GROUP_CONCAT limits and
+--echo *** sort-buffer sizing for the ~2 MiB total blob payload.
+--let $src_sig = `SELECT BIT_XOR(CRC32(CONCAT_WS('|', id, LENGTH(data), MD5(data)))) FROM source_db.tbl`
+--let $bkp_sig = `SELECT BIT_XOR(CRC32(CONCAT_WS('|', id, LENGTH(data), MD5(data)))) FROM backup_db.tbl`
+if ($src_sig != $bkp_sig) {
+  --echo source signature: $src_sig
+  --echo backup signature: $bkp_sig
+  --die Round-trip row mismatch
+}
+
+--echo
+--echo *** Dropping the round-trip databases.
+DROP DATABASE source_db;
+DROP DATABASE backup_db;
+
+--remove_file $tail_reuse_dump
+
+--source ../include/tear_down_binsrv_environment.inc
+
+# As the Binlog Server Utility interrupts the connection upon timeout, we
+# need to close it on the MySQL server side as well to make MTR 'check-test'
+# before and after the test produce the same output.
+--source ../include/kill_binlog_dump_connection.inc
+
+--source include/wait_until_count_sessions.inc
+
+# End of test.
