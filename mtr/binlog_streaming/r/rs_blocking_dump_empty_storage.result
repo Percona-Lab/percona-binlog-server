@@ -1,0 +1,76 @@
+*** Resetting replication at the very beginning of the test.
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+
+*** Determining the first binary log name to request from PBS.
+
+*** Shutting down the upstream MySQL server so PBS cannot pull
+*** anything and 'binlog_records_' stays empty while the
+*** downstream replica connects.
+
+*** Starting Binlog Server Utility in background in pull mode.
+*** With the upstream down, PBS enters its reconnect loop and
+*** storage stays empty for the whole 'empty' phase of this
+*** test.
+include/read_file_to_var.inc
+
+*** Waiting for the replication source listener port ready to accept
+*** connections.
+
+*** Starting a downstream mysqlbinlog --read-from-remote-server
+*** --stop-never session against PBS. --stop-never clears the
+*** BINLOG_DUMP_NON_BLOCK flag on the COM_BINLOG_DUMP packet, so
+*** PBS must block the session until the requested binlog shows
+*** up in storage instead of disconnecting.
+include/read_file_to_var.inc
+
+*** Waiting for PBS's log to record that the sender reached the
+*** empty-storage polling path. This marker is only written when
+*** 'populate_event_block()' takes the EOF branch for an empty
+*** storage - pre-fix PBS returned 'false' and 'co_return'ed
+*** before ever logging it, so timing out here would itself be
+*** a regression of PBS-91.
+include/wait_for_pattern_in_file.inc [sender : fetched EOF]
+
+*** Verifying the downstream mysqlbinlog session is still alive
+*** while PBS has nothing in storage. Before the PBS-91 fix PBS
+*** would have closed the socket as soon as the sender saw an
+*** empty storage with a specific binlog name, and mysqlbinlog
+*** would have exited within ~1 second.
+
+*** Starting the upstream MySQL server again. PBS's collector
+*** thread will notice on its next iteration (idle_time=1s),
+*** switch to replication and start populating storage.
+# restart
+
+*** Producing a batch of transactions on the upstream source.
+CREATE DATABASE test1;
+CREATE TABLE test1.t(id INT UNSIGNED NOT NULL PRIMARY KEY) ENGINE=InnoDB;
+INSERT INTO test1.t VALUES (1), (2), (3);
+
+*** Waiting for the batch to reach the downstream mysqlbinlog
+*** session via PBS. This proves PBS stayed connected to the
+*** replica across the empty-storage window and then started
+*** delivering events once storage became non-empty.
+include/wait_for_pattern_in_file.inc [test1]
+
+*** Sending SIGTERM to the downstream mysqlbinlog session and
+*** waiting for it to terminate.
+
+*** Dropping the test database.
+DROP DATABASE test1;
+
+*** Sending SIGTERM signal to the Binlog Server Utility and waiting
+*** for the process to terminate.
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.

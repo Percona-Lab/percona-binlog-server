@@ -198,11 +198,15 @@ public:
   // - If the specified 'binlog_name' is an empty object and offset of the
   //   'range' is not equal to 'binsrv::events::magic_binlog_offset' (4),
   //   the method will return false.
-  // - If the specified 'binlog_name' is an empty object and offset of the
-  //   'range' is equal to 'binsrv::events::magic_binlog_offset' (4), and
-  //   storage has no binlog records, the method will return true,
-  //   will set binlog name to an empty object, range to "[4; 0]",
-  //   and buffer to an empty buffer.
+  // - If storage has no binlog records at all, the method will return
+  //   true, set 'range' to "[4; 0]", and leave 'buffer' empty.
+  //   'binlog_name' is left as the caller passed it (so that an empty
+  //   name can still be resolved to the first binlog once records
+  //   exist, and a specific name can still fail with "not found" if
+  //   that binlog never shows up). This "EOF on empty storage" rule
+  //   applies regardless of whether 'binlog_name' was specified: an
+  //   empty storage is a transient startup condition and a blocking
+  //   replication client can poll until data arrives.
   // - If the specified 'binlog_name' is an empty object and offset of the
   //   'range' is equal to 'binsrv::events::magic_binlog_offset' (4), and
   //   there is at least one binlog record available, when checking other

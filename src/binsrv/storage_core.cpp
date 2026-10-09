@@ -453,16 +453,18 @@ storage_core::fetch_event_block(events::composite_binlog_name &binlog_name,
 
   const std::shared_lock lock{mutex_};
 
-  // If the specified 'binlog_name' is an empty object and offset of the
-  // 'range' is equal to 'binsrv::events::magic_binlog_offset' (4), and
-  // storage has no binlog records, the method will return true,
-  // will set binlog name to an empty object, range to "[4; 0]",
-  // and buffer to an empty buffer.
+  // If storage has no binlog records at all, we treat this as EOF
+  // regardless of whether 'binlog_name' was specified: an empty storage
+  // is a transient condition during PBS startup (the collector thread
+  // has not yet received the first artificial ROTATE from upstream
+  // which populates 'binlog_records_'). Returning EOF instead of an
+  // error lets a blocking replication client poll until the requested
+  // binlog becomes available; a non-blocking client just gets an empty
+  // response and closes. 'binlog_name' is left as the caller passed it
+  // so that the next fetch can still either resolve an empty name once
+  // records exist or fail with "not found" if the specific binlog
+  // never shows up.
   if (binlog_records_.empty()) {
-    // EOF is returned only when 'binlog_name' is an empty object
-    if (!binlog_name.is_empty()) {
-      return false;
-    }
     range = magic_empty_range;
     buffer.clear();
     return true;
