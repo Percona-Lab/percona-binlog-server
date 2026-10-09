@@ -34,6 +34,7 @@
 #include "util/byte_range.hpp"
 #include "util/byte_span_fwd.hpp"
 #include "util/common_optional_types.hpp"
+#include "util/dynamic_byte_buffer_fwd.hpp"
 
 namespace operations {
 
@@ -75,6 +76,7 @@ private:
   util::byte_range range_{};
   binsrv::events::event_storage artificial_rotate_{};
   binsrv::events::event_storage fde_{};
+  util::dynamic_byte_buffer carry_buffer_{};
   binsrv::indexed_event_block_ptr event_block_{};
   std::size_t event_index_{};
 

@@ -52,9 +52,9 @@ public:
   ~indexed_event_block() = default;
 
   [[nodiscard]] std::size_t get_actual_size() const noexcept {
-    return std::size(buffer_);
+    return actual_size_;
   }
-  [[nodiscard]] bool is_empty() const noexcept { return std::empty(buffer_); }
+  [[nodiscard]] bool is_empty() const noexcept { return std::empty(index_); }
 
   [[nodiscard]] std::size_t get_number_of_events() const noexcept {
     return std::size(index_);
@@ -65,8 +65,15 @@ public:
     return util::const_byte_span{buffer_}.subspan(record.offset, record.size);
   }
 
+  // Trailing bytes of the input buffer that did not form a complete event.
+  // The caller is expected to carry them over and prepend to the next fetch.
+  [[nodiscard]] util::const_byte_span get_unparsed_tail() const noexcept {
+    return util::const_byte_span{buffer_}.subspan(actual_size_);
+  }
+
 private:
   util::dynamic_byte_buffer buffer_;
+  std::size_t actual_size_{};
   index_type index_;
 };
 
