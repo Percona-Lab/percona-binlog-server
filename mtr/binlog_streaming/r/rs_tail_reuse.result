@@ -1,0 +1,70 @@
+*** Resetting replication at the very beginning of the test.
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+
+*** Determining the first binary log name.
+
+*** Creating a table with a MEDIUMBLOB column.
+CREATE DATABASE source_db;
+CREATE TABLE source_db.tbl(
+id INT UNSIGNED NOT NULL,
+data MEDIUMBLOB NOT NULL,
+PRIMARY KEY(id)
+) ENGINE=InnoDB;
+
+*** Inserting 20 rows of ~100 KiB each. The cumulative row-based
+*** event stream reliably straddles multiple 1 MiB PBS fetch blocks,
+*** so most blocks end mid-event and leave a partial-event tail that
+*** sender_context must carry over to the next fetch instead of
+*** re-reading it from storage. Individual events stay well under
+*** 1 MiB, so the oversize-event path is not exercised here -- this
+*** isolates tail reuse.
+
+*** Fetching the source binary logs into PBS storage.
+
+*** Starting Binlog Server Utility in background in pull mode.
+include/read_file_to_var.inc
+
+*** Waiting for the replication source listener port ready to
+*** accept connections.
+
+*** Dumping the binary logs from the Binlog Server replication
+*** source. --stop-never is NOT set, so PBS disconnects on EOF
+*** once it has streamed everything in storage.
+
+*** Waiting for the tail-reuse log entry in the PBS log. Its
+*** presence confirms sender_context carried partial-event bytes
+*** from a prior fetch and prepended them to the next fetch,
+*** instead of re-reading those bytes from storage.
+include/wait_for_pattern_in_file.inc [sender : reusing]
+
+*** Sending SIGTERM signal to the Binlog Server Utility and
+*** waiting for the process to terminate.
+
+*** Moving source_db.tbl to backup_db.tbl.
+CREATE DATABASE backup_db;
+RENAME TABLE source_db.tbl TO backup_db.tbl;
+DROP DATABASE source_db;
+
+*** Restoring source_db from the PBS-served dump.
+
+*** Comparing the restored and backup rows via an order-independent
+*** per-row signature. BIT_XOR of CRC32 over (id, length, MD5(data))
+*** fits in a single BIGINT and avoids both GROUP_CONCAT limits and
+*** sort-buffer sizing for the ~2 MiB total blob payload.
+
+*** Dropping the round-trip databases.
+DROP DATABASE source_db;
+DROP DATABASE backup_db;
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.
