@@ -192,6 +192,13 @@ set(opensslpp_source_files
   src/opensslpp/core_error_fwd.hpp
   src/opensslpp/core_error.hpp
   src/opensslpp/core_error.cpp
+
+  src/opensslpp/encryption_padding_fwd.hpp
+  src/opensslpp/encryption_padding.hpp
+
+  src/opensslpp/evp_pkey_fwd.hpp
+  src/opensslpp/evp_pkey.hpp
+  src/opensslpp/evp_pkey.cpp
 )
 add_library(lib_opensslpp STATIC ${opensslpp_source_files})
 target_link_libraries(lib_opensslpp

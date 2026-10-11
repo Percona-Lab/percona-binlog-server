@@ -17,19 +17,25 @@
 
 #include <algorithm>
 #include <cassert>
-#include <cstdint>
+#include <cstddef>
 #include <functional>
 #include <iterator>
 #include <string>
 #include <string_view>
 
+// needed for 'digest_storage'
+#include <boost/container/static_vector.hpp> // IWYU pragma: keep
+
 #include "opensslpp/digest_context.hpp"
+
+#include "util/byte_span_fwd.hpp"
 
 namespace minimysql {
 
-std::string caching_sha2_password_authenticator::scramble(
+[[nodiscard]] opensslpp::digest_storage
+caching_sha2_password_authenticator::scramble(
     // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
-    std::string_view password, std::string_view salt) {
+    util::const_byte_span password, util::const_byte_span salt) {
   // this is how client calculates client_auth_data for caching_sha2_password
   // plugin: SHA256(password) XOR SHA256(SHA256(SHA256(password)),
   // server_auth_data)
@@ -50,11 +56,14 @@ std::string caching_sha2_password_authenticator::scramble(
   opensslpp::digest_context ctx{digest_name};
   ctx.update(double_hashed_password);
   ctx.update(salt);
-  const auto salted_triple_hashed_password{ctx.finalize()};
+
+  opensslpp::digest_storage salted_triple_hashed_password(
+      ctx.get_digest_size_in_bytes());
+  ctx.finalize(salted_triple_hashed_password);
 
   assert(std::size(result) == std::size(salted_triple_hashed_password));
   std::ranges::transform(result, salted_triple_hashed_password,
-                         std::begin(result), std::bit_xor<std::uint8_t>{});
+                         std::begin(result), std::bit_xor<std::byte>{});
   return result;
 }
 
