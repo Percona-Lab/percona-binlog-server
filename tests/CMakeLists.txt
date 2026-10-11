@@ -134,6 +134,18 @@ set_target_properties(digest_context_test PROPERTIES
   CXX_EXTENSIONS NO
 )
 
+add_executable(evp_pkey_test evp_pkey_test.cpp)
+target_include_directories(evp_pkey_test PRIVATE "${PROJECT_SOURCE_DIR}/src")
+target_link_libraries(evp_pkey_test
+  PRIVATE
+    binlog_server_compiler_flags
+    binsrv::lib_opensslpp
+    Boost::unit_test_framework
+)
+set_target_properties(evp_pkey_test PROPERTIES
+  CXX_STANDARD_REQUIRED YES
+  CXX_EXTENSIONS NO
+)
 
 set(test_run_options --no_color_output)
 add_test(NAME byte_span_encoding_test COMMAND byte_span_encoding_test ${test_run_options})
@@ -145,3 +157,4 @@ add_test(NAME event_test COMMAND event_test ${test_run_options})
 add_test(NAME cipher_context_test COMMAND cipher_context_test ${test_run_options})
 add_test(NAME crypto_rnd_test COMMAND crypto_rnd_test ${test_run_options})
 add_test(NAME digest_context_test COMMAND digest_context_test ${test_run_options})
+add_test(NAME evp_pkey_test COMMAND evp_pkey_test ${test_run_options})

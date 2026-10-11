@@ -28,6 +28,7 @@
 #include "minimysql/network_io_operations_fwd.hpp"
 
 #include "util/byte_span_fwd.hpp"
+#include "util/dynamic_byte_buffer_fwd.hpp"
 
 namespace minimysql {
 
@@ -80,7 +81,7 @@ public:
   [[nodiscard]] const std::string &get_server_auth_method() const noexcept {
     return server_auth_method_;
   }
-  [[nodiscard]] const std::string &
+  [[nodiscard]] const util::dynamic_byte_buffer &
   get_server_auth_method_data() const noexcept {
     return server_auth_method_data_;
   }
@@ -88,7 +89,7 @@ public:
   [[nodiscard]] const std::string &get_client_auth_method() const noexcept {
     return client_auth_method_;
   }
-  [[nodiscard]] const std::string &
+  [[nodiscard]] const util::dynamic_byte_buffer &
   get_client_auth_method_data() const noexcept {
     return client_auth_method_data_;
   }
@@ -137,6 +138,7 @@ public:
   void parse_client_auth_method_switch(const network_buffer_type &payload);
 
   [[nodiscard]] network_buffer_type generate_encoded_fast_auth();
+  [[nodiscard]] network_buffer_type generate_encoded_full_auth();
   [[nodiscard]] network_buffer_type generate_encoded_ok();
   [[nodiscard]] network_buffer_type generate_encoded_eof();
   [[nodiscard]] network_buffer_type
@@ -212,10 +214,10 @@ private:
   capability_bitset client_capabilities_{};
 
   std::string server_auth_method_{};
-  std::string server_auth_method_data_{};
+  util::dynamic_byte_buffer server_auth_method_data_{};
 
   std::string client_auth_method_{};
-  std::string client_auth_method_data_{};
+  util::dynamic_byte_buffer client_auth_method_data_{};
 
   std::string client_username_{};
   std::string client_schema_{};
@@ -233,9 +235,13 @@ private:
 
   [[nodiscard]] static capability_bitset
   get_default_server_capabilities() noexcept;
-  [[nodiscard]] const std::string &generate_server_auth_method_data();
+  [[nodiscard]] const util::dynamic_byte_buffer &
+  generate_server_auth_method_data();
   [[nodiscard]] std::uint8_t generate_sequence_number();
   void validate_and_update_sequence_number(std::uint8_t sequence_number);
+
+  [[nodiscard]] network_buffer_type
+  generate_encoded_generic_auth_internal(char packet_code);
 
   void encode_resultset_number_of_columns_internal(
       network_buffer_container &result_buffers, std::size_t number_of_columns);

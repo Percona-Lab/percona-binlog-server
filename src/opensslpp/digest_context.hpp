@@ -18,9 +18,11 @@
 
 #include "opensslpp/digest_context_fwd.hpp" // IWYU pragma: export
 
+#include <cstddef>
 #include <memory>
 #include <string>
-#include <string_view>
+
+#include "util/byte_span_fwd.hpp"
 
 namespace opensslpp {
 
@@ -37,19 +39,29 @@ public:
   digest_context &operator=(const digest_context &) = delete;
   digest_context &operator=(digest_context &&) noexcept = default;
 
+  void swap(digest_context &obj) noexcept { impl_.swap(obj.impl_); }
+
   [[nodiscard]] bool is_empty() const noexcept { return !impl_; }
 
-  void update(std::string_view data);
-  [[nodiscard]] std::string finalize();
+  [[nodiscard]] std::size_t get_digest_size_in_bytes() const noexcept;
 
-  [[nodiscard]] static std::string calculate(const std::string &digest_name,
-                                             std::string_view data);
+  [[nodiscard]] static std::size_t
+  get_digest_size_in_bytes(const std::string &digest_name) noexcept;
+
+  void update(util::const_byte_span input);
+  // 'output' must be exactly get_digest_size_in_bytes() bytes long.
+  void finalize(util::byte_span output);
+
+  [[nodiscard]] static digest_storage calculate(const std::string &digest_name,
+                                                util::const_byte_span input);
 
 private:
+  struct native_helper;
   struct impl_deleter {
     void operator()(void *digest_ctx) const noexcept;
   };
-  std::unique_ptr<void, impl_deleter> impl_;
+  using impl_ptr = std::unique_ptr<void, impl_deleter>;
+  impl_ptr impl_;
 };
 
 } // namespace opensslpp

@@ -29,37 +29,41 @@ core_error::generate_error_message(std::string_view prefix) {
   static constexpr std::string_view prefix_separator{": "};
   static constexpr std::string_view lib_reason_separator{"::"};
 
-  const auto native_err{ERR_get_error()};
-  if (native_err == 0L) {
-    return (prefix.empty() ? std::string{} : std::string{prefix});
+  if (ERR_peek_error() == 0) {
+    return std::string{prefix};
   }
 
-  // ERR_get_error() pops an element from the error queue, so we need to ensure
-  // that it is empty after the first call.
-  assert(ERR_get_error() == 0L);
-
-  const char *const lib_error_string{ERR_lib_error_string(native_err)};
-  const std::string_view lib_error_string_sv{
-      lib_error_string != nullptr ? lib_error_string : "<unknown library>"};
-
-  const char *reason_error_string{ERR_reason_error_string(native_err)};
-  const std::string_view reason_error_string_sv{reason_error_string != nullptr
-                                                    ? reason_error_string
-                                                    : "<unknown reason>"};
-
-  const std::size_t max_message_length{
-      (prefix.empty() ? 0U : prefix.size() + prefix_separator.size()) +
-      std::size(lib_error_string_sv) + std::size(lib_reason_separator) +
-      std::size(reason_error_string_sv)};
   std::string message{};
-  message.reserve(max_message_length);
   if (!prefix.empty()) {
     message += prefix;
     message += prefix_separator;
   }
-  message += lib_error_string_sv;
-  message += lib_reason_separator;
-  message += reason_error_string_sv;
+
+  bool first_error{true};
+  unsigned long native_err{0L};
+  while ((native_err = ERR_get_error()) != 0L) {
+
+    const char *const lib_error_string{ERR_lib_error_string(native_err)};
+    const std::string_view lib_error_string_sv{
+        lib_error_string != nullptr ? lib_error_string : "<unknown library>"};
+
+    const char *reason_error_string{ERR_reason_error_string(native_err)};
+    const std::string_view reason_error_string_sv{reason_error_string != nullptr
+                                                      ? reason_error_string
+                                                      : "<unknown reason>"};
+
+    if (!first_error) {
+      message += "; ";
+    }
+    first_error = false;
+    message += lib_error_string_sv;
+    message += lib_reason_separator;
+    message += reason_error_string_sv;
+  }
+
+  // ERR_get_error() pops an element from the error queue, so we need to ensure
+  // that it is empty after this loop.
+  assert(ERR_peek_error() == 0L);
 
   return message;
 }

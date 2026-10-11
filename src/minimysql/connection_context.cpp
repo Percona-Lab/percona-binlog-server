@@ -15,11 +15,13 @@
 
 #include "minimysql/connection_context.hpp"
 
+#include <algorithm>
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <optional>
+#include <ranges>
 #include <span>
 #include <string>
 #include <string_view>
@@ -28,6 +30,9 @@
 #include <utility>
 
 #include <boost/asio/buffer.hpp>
+
+// needed for 'digest_storage'
+#include <boost/container/static_vector.hpp> // IWYU pragma: keep
 
 #include <boost/system/system_error.hpp>
 
@@ -58,6 +63,7 @@
 #include "opensslpp/crypto_rng.hpp"
 
 #include "util/byte_span.hpp"
+#include "util/dynamic_byte_buffer_fwd.hpp"
 
 namespace minimysql {
 
@@ -82,9 +88,10 @@ decode_client_command_frame(const network_buffer_type &payload,
 // for historical reasons the server auth data field on the wire carries a
 // trailing NUL filler byte (both in the initial Greeting packet and in the
 // AuthMethodSwitch packet)
-std::string fix_server_auth_data(std::string_view data) {
-  std::string result{data};
-  result.push_back('\0');
+util::dynamic_byte_buffer
+fix_server_auth_data(const util::dynamic_byte_buffer &data) {
+  util::dynamic_byte_buffer result{data};
+  result.push_back(std::byte{} /* 0 */);
   return result;
 }
 
@@ -103,9 +110,10 @@ connection_context::connection_context(
 
 [[nodiscard]] bool connection_context::check_client_authentication() const {
   return get_client_username() == get_server_username() &&
-         get_client_auth_method_data() ==
-             caching_sha2_password_authenticator::scramble(
-                 get_server_password(), get_server_auth_method_data());
+         std::ranges::equal(get_client_auth_method_data(),
+                            caching_sha2_password_authenticator::scramble(
+                                util::as_const_byte_span(get_server_password()),
+                                get_server_auth_method_data()));
 }
 
 [[nodiscard]] bool
@@ -141,14 +149,14 @@ connection_context::generate_encoded_server_greeting() {
   server_capabilities_ = get_default_server_capabilities();
   server_auth_method_ = std::string{default_server_auth_method};
 
-  const std::string fixed_server_auth_data{
+  const auto fixed_server_auth_data{
       fix_server_auth_data(generate_server_auth_method_data())};
 
   const classic_protocol::message::server::Greeting server_greeting{
       default_server_protocol_version,
       std::string{default_server_version},
       get_connection_id(),
-      fixed_server_auth_data,
+      std::string{util::as_string_view(fixed_server_auth_data)},
       get_server_capabilities(),
       default_server_collation,
       default_server_status_flags,
@@ -183,7 +191,8 @@ void connection_context::parse_client_greeting(
 
   client_capabilities_ = client_greeting.capabilities();
   client_auth_method_ = client_greeting.auth_method_name();
-  client_auth_method_data_ = client_greeting.auth_method_data();
+  client_auth_method_data_ = std::ranges::to<util::dynamic_byte_buffer>(
+      util::as_const_byte_span(client_greeting.auth_method_data()));
   client_username_ = client_greeting.username();
   client_schema_ = client_greeting.schema();
   client_collation_ = client_greeting.collation();
@@ -198,11 +207,12 @@ connection_context::generate_encoded_auth_method_switch() {
   // refresh the server scramble so the client hashes its password against a
   // fresh challenge, then wrap it with the same trailing-NUL convention used
   // in the initial Greeting packet
-  const std::string fixed_server_auth_data{
+  const auto fixed_server_auth_data{
       fix_server_auth_data(generate_server_auth_method_data())};
 
   const classic_protocol::message::server::AuthMethodSwitch auth_method_switch{
-      get_server_auth_method(), fixed_server_auth_data};
+      get_server_auth_method(),
+      std::string{util::as_string_view(fixed_server_auth_data)}};
   using auth_method_switch_frame = classic_protocol::frame::Frame<
       classic_protocol::message::server::AuthMethodSwitch>;
   auto encode_result{classic_protocol::encode<auth_method_switch_frame>(
@@ -231,26 +241,22 @@ void connection_context::parse_client_auth_method_switch(
   // after the auth method switch the client uses the server's auth method
   client_auth_method_ = server_auth_method_;
   client_auth_method_data_ =
-      decode_result.value().second.payload().auth_method_data();
+      std::ranges::to<util::dynamic_byte_buffer>(util::as_const_byte_span(
+          decode_result.value().second.payload().auth_method_data()));
 }
 
 [[nodiscard]] network_buffer_type
 connection_context::generate_encoded_fast_auth() {
-  std::string result_buffer{};
+  // 0x03 means "fast auth success" in caching_sha2_password protocol
+  static constexpr char fast_auth_code{'\x03'};
+  return generate_encoded_generic_auth_internal(fast_auth_code);
+}
 
-  static constexpr std::string_view fast_auth_code{
-      "\x03"}; // 0x03 means "fast auth success" in caching_sha2_password
-               // protocol
-  using auth_method_data_frame = classic_protocol::frame::Frame<
-      classic_protocol::message::server::AuthMethodData>;
-  auto encode_res = classic_protocol::encode<auth_method_data_frame>(
-      {generate_sequence_number(), {std::string{fast_auth_code}}},
-      get_shared_capabilities(), boost::asio::dynamic_buffer(result_buffer));
-
-  if (!encode_res) {
-    throw boost::system::system_error{encode_res.error()};
-  }
-  return result_buffer;
+[[nodiscard]] network_buffer_type
+connection_context::generate_encoded_full_auth() {
+  // 0x04 means "full auth required" in caching_sha2_password protocol
+  static constexpr char full_auth_code{'\x04'};
+  return generate_encoded_generic_auth_internal(full_auth_code);
 }
 
 [[nodiscard]] network_buffer_type connection_context::generate_encoded_ok() {
@@ -478,7 +484,7 @@ connection_context::get_default_server_capabilities() noexcept {
       ;
 }
 
-[[nodiscard]] const std::string &
+[[nodiscard]] const util::dynamic_byte_buffer &
 connection_context::generate_server_auth_method_data() {
   // caching_sha2_password (and mysql_native_password) expect a 20-byte
   // scramble. Follows the shape of MySQL server's `generate_user_salt()` in
@@ -489,15 +495,19 @@ connection_context::generate_server_auth_method_data() {
   // client side).
   static constexpr std::size_t server_auth_method_data_length{20U};
   static constexpr std::uint8_t seven_bit_mask{0x7FU};
-  server_auth_method_data_.assign(server_auth_method_data_length, '\0');
+  static constexpr std::byte zero_byte{};
+  static constexpr std::byte dollar_byte{static_cast<std::byte>('$')};
+
+  server_auth_method_data_.assign(server_auth_method_data_length, zero_byte);
 
   opensslpp::crypto_rng::generate(std::as_writable_bytes(std::span{
       std::data(server_auth_method_data_), server_auth_method_data_length}));
 
   for (auto &byte : server_auth_method_data_) {
-    byte = static_cast<char>(static_cast<std::uint8_t>(byte) & seven_bit_mask);
-    if (byte == '\0' || byte == '$') {
-      byte = static_cast<char>(byte + 1);
+    byte = static_cast<std::byte>(static_cast<std::uint8_t>(byte) &
+                                  seven_bit_mask);
+    if (byte == zero_byte || byte == dollar_byte) {
+      byte = static_cast<std::byte>(static_cast<std::uint8_t>(byte) + 1U);
     }
   }
   return server_auth_method_data_;
@@ -516,15 +526,31 @@ void connection_context::validate_and_update_sequence_number(
   ++sequence_number_;
 }
 
+[[nodiscard]] network_buffer_type
+connection_context::generate_encoded_generic_auth_internal(char packet_code) {
+  std::string result_buffer{};
+
+  using auth_method_data_frame = classic_protocol::frame::Frame<
+      classic_protocol::message::server::AuthMethodData>;
+  auto encode_res{classic_protocol::encode<auth_method_data_frame>(
+      {generate_sequence_number(), {std::string(1UZ, packet_code)}},
+      get_shared_capabilities(), boost::asio::dynamic_buffer(result_buffer))};
+
+  if (!encode_res) {
+    throw boost::system::system_error{encode_res.error()};
+  }
+  return result_buffer;
+}
+
 void connection_context::encode_resultset_number_of_columns_internal(
     network_buffer_container &result_buffers, std::size_t number_of_columns) {
   const classic_protocol::wire::VarInt column_count{
       static_cast<std::int64_t>(number_of_columns)};
   using column_count_frame =
       classic_protocol::frame::Frame<classic_protocol::wire::VarInt>;
-  const auto encode_result = classic_protocol::encode<column_count_frame>(
+  const auto encode_result{classic_protocol::encode<column_count_frame>(
       {generate_sequence_number(), column_count}, get_shared_capabilities(),
-      boost::asio::dynamic_buffer(result_buffers.emplace_back()));
+      boost::asio::dynamic_buffer(result_buffers.emplace_back()))};
   if (!encode_result) {
     throw boost::system::system_error{encode_result.error()};
   }
@@ -642,10 +668,10 @@ void connection_context::encode_resultset_column_definition_internal(
   };
   using column_definition_frame = classic_protocol::frame::Frame<
       classic_protocol::message::server::ColumnMeta>;
-  const auto encode_result = classic_protocol::encode<column_definition_frame>(
+  const auto encode_result{classic_protocol::encode<column_definition_frame>(
       {generate_sequence_number(), std::move(column_definition)},
       get_shared_capabilities(),
-      boost::asio::dynamic_buffer(result_buffers.emplace_back()));
+      boost::asio::dynamic_buffer(result_buffers.emplace_back()))};
   if (!encode_result) {
     throw boost::system::system_error{encode_result.error()};
   }
@@ -653,10 +679,10 @@ void connection_context::encode_resultset_column_definition_internal(
 
 void connection_context::encode_resultset_intermediate_eof_internal(
     network_buffer_container &result_buffers) {
-  const auto encode_result = classic_protocol::encode<
+  const auto encode_result{classic_protocol::encode<
       classic_protocol::frame::Frame<classic_protocol::message::server::Eof>>(
       {generate_sequence_number(), {}}, get_shared_capabilities(),
-      boost::asio::dynamic_buffer(result_buffers.emplace_back()));
+      boost::asio::dynamic_buffer(result_buffers.emplace_back()))};
   if (!encode_result) {
     throw boost::system::system_error{encode_result.error()};
   }
@@ -670,9 +696,9 @@ void connection_context::encode_resultset_textualized_row_internal(
                      classic_protocol::message::server::Row::value_type>);
   using row_frame =
       classic_protocol::frame::Frame<classic_protocol::message::server::Row>;
-  const auto encode_result = classic_protocol::encode<row_frame>(
+  const auto encode_result{classic_protocol::encode<row_frame>(
       {generate_sequence_number(), {row_values}}, get_shared_capabilities(),
-      boost::asio::dynamic_buffer(result_buffers.emplace_back()));
+      boost::asio::dynamic_buffer(result_buffers.emplace_back()))};
   if (!encode_result) {
     throw boost::system::system_error{encode_result.error()};
   }
@@ -686,9 +712,9 @@ void connection_context::encode_resultset_eof_internal(
   eof_packet.status_flags(eof_status_flags);
   using eof_frame =
       classic_protocol::frame::Frame<classic_protocol::message::server::Eof>;
-  const auto encode_result = classic_protocol::encode<eof_frame>(
+  const auto encode_result{classic_protocol::encode<eof_frame>(
       {generate_sequence_number(), eof_packet}, get_shared_capabilities(),
-      boost::asio::dynamic_buffer(result_buffers.emplace_back()));
+      boost::asio::dynamic_buffer(result_buffers.emplace_back()))};
   if (!encode_result) {
     throw boost::system::system_error{encode_result.error()};
   }

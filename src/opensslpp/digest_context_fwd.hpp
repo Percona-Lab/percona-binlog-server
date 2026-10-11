@@ -16,9 +16,18 @@
 #ifndef OPENSSLPP_DIGEST_CONTEXT_FWD_HPP
 #define OPENSSLPP_DIGEST_CONTEXT_FWD_HPP
 
+#include <cstddef>
+
+#include <boost/container/container_fwd.hpp>
+
 namespace opensslpp {
 
 class digest_context;
+
+inline constexpr std::size_t max_fixed_digest_size_in_bytes{64UZ};
+
+using digest_storage =
+    boost::container::static_vector<std::byte, max_fixed_digest_size_in_bytes>;
 
 } // namespace opensslpp
 

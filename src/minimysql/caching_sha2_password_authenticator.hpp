@@ -19,13 +19,18 @@
 #include <string>
 #include <string_view>
 
+#include "opensslpp/digest_context_fwd.hpp"
+
+#include "util/byte_span_fwd.hpp"
+
 namespace minimysql {
 
 class caching_sha2_password_authenticator {
 public:
   static constexpr std::string_view plugin_name{"caching_sha2_password"};
 
-  static std::string scramble(std::string_view password, std::string_view salt);
+  [[nodiscard]] static opensslpp::digest_storage
+  scramble(util::const_byte_span password, util::const_byte_span salt);
 };
 
 } // namespace minimysql
