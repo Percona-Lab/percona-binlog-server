@@ -17,9 +17,7 @@
 *** Starting Binlog Server Utility in background in pull mode.
 *** With the upstream down, PBS enters its reconnect loop and
 *** storage stays empty for the whole 'empty' phase of this
-*** test. The spawn is done with an inline Perl 'system' call
-*** because 'start_proc_in_background.inc' would need SQL to
-*** pick the PID back up and the server is down right now.
+*** test.
 
 *** Waiting for the replication source listener port ready to accept
 *** connections.
@@ -28,8 +26,7 @@
 *** --stop-never session against PBS. --stop-never clears the
 *** BINLOG_DUMP_NON_BLOCK flag on the COM_BINLOG_DUMP packet, so
 *** PBS must block the session until the requested binlog shows
-*** up in storage instead of disconnecting. Spawned with inline
-*** Perl, same reason as PBS above.
+*** up in storage instead of disconnecting.
 
 *** Waiting for PBS's log to record that the sender reached the
 *** empty-storage polling path. This marker is only written when
@@ -40,23 +37,15 @@
 include/wait_for_pattern_in_file.inc [sender : fetched EOF]
 
 *** Verifying the downstream mysqlbinlog session is still alive
-*** while PBS has nothing in storage. We check via inline Perl
-*** ('kill 0, pid' - no SQL path) because the server is still
-*** down. Before the PBS-91 fix PBS would have closed the
-*** socket as soon as the sender saw an empty storage with a
-*** specific binlog name, and mysqlbinlog would have exited
-*** within ~1 second.
+*** while PBS has nothing in storage. Pre-fix PBS would have
+*** closed the socket as soon as the sender saw an empty
+*** storage with a specific binlog name, and mysqlbinlog would
+*** have exited within ~1 second.
 
 *** Starting the upstream MySQL server again. PBS's collector
 *** thread will notice on its next iteration (idle_time=1s),
 *** switch to replication and start populating storage.
 # restart
-
-*** Reading back the PIDs of the background processes spawned
-*** while the server was down so later 'terminate_proc.inc'
-*** calls can shut them down cleanly.
-include/read_file_to_var.inc
-include/read_file_to_var.inc
 
 *** Producing a batch of transactions on the upstream source.
 CREATE DATABASE test1;

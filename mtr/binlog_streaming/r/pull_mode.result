@@ -9,7 +9,6 @@
 *** binlog files downloaded via the Binlog Server utility.
 
 *** Starting Binlog Server Utility in background in pull mode
-include/read_file_to_var.inc
 
 *** Determining the first fresh binary log name.
 
