@@ -328,6 +328,112 @@ void sender_context::transform_fde_to_artificial() {
   }
 }
 
+void sender_context::snapshot_block_tail_to_carry() {
+  // Snapshot the finishing block's unparsed tail into 'carry_buffer_' before
+  // destroying the block. We prepend it to the next fetch instead of
+  // re-reading those bytes from storage: with the default 1 MiB block size
+  // a block whose boundary falls mid-event would otherwise cost a redundant
+  // filesystem read, or an S3 GET plus network round-trip, for bytes that
+  // are already in RAM.
+  if (!event_block_) {
+    return;
+  }
+  const auto tail{event_block_->get_unparsed_tail()};
+  if (!std::empty(tail)) {
+    carry_buffer_.assign(std::begin(tail), std::end(tail));
+  }
+}
+
+sender_context::fetch_size_status
+sender_context::compute_fetch_size_requirements(
+    const util::dynamic_byte_buffer &buffer, std::size_t &desired_size) const {
+  desired_size = block_size_;
+  if (std::size(buffer) <
+      binsrv::events::common_header_view_base::size_in_bytes) {
+    return fetch_size_status::need_more;
+  }
+  const binsrv::events::common_header_view header{
+      util::const_byte_span{buffer}.subspan(
+          0UZ, binsrv::events::common_header_view_base::size_in_bytes)};
+  const auto first_event_size{
+      static_cast<std::size_t>(header.get_event_size_raw())};
+  if (first_event_size > binsrv::events::max_event_size_bytes) {
+    // Nonsensically large event size: corrupt or malicious header.
+    return fetch_size_status::event_too_large;
+  }
+  if (std::size(buffer) >= first_event_size) {
+    // Defensive: 'indexed_event_block' leaves at most one partial event
+    // in the carry, so entering this branch on the first iteration
+    // should not happen. On later iterations an exact-sized top-up
+    // lands here naturally.
+    return fetch_size_status::ready;
+  }
+  if (first_event_size > block_size_) {
+    logger_->log_format(
+        binsrv::log_severity::info,
+        "sender : block too small for first event (needs {} bytes), "
+        "topping up to exact size at {}:{}",
+        first_event_size, binlog_name_.str(), range_.to_string());
+    desired_size = first_event_size;
+  }
+  return fetch_size_status::need_more;
+}
+
+void sender_context::finalize_fetch_eof(util::dynamic_byte_buffer &buffer,
+                                        util::const_byte_span &event) {
+  logger_->log(binsrv::log_severity::info, "sender : fetched EOF");
+  // leaving 'binlog_name_' as is so that on next fetch after this EOF
+  // we could make another attempt to check if new events were added.
+  //
+  // 'range_', on the other hand, was set to empty inside
+  // 'fetch_event_block()' - here we restore its length for the next
+  // fetch attempt. Hand the carry back for the next call to retry the
+  // fetch with it still in hand.
+  if (!std::empty(buffer)) {
+    carry_buffer_ = std::move(buffer);
+  }
+  range_ = util::byte_range{range_.get_offset(), block_size_};
+  event_block_.reset();
+  event_index_ = 0UZ;
+
+  // setting the event span to an empty object to indicate EOF
+  event = util::const_byte_span{};
+}
+
+bool sender_context::handle_binlog_file_switch(
+    const binsrv::events::composite_binlog_name &saved_binlog_name,
+    const util::dynamic_byte_buffer &buffer) {
+  if (saved_binlog_name.is_empty()) {
+    logger_->log_format(binsrv::log_severity::info,
+                        "sender : empty binlog name resolved to {}",
+                        binlog_name_.str());
+    return true;
+  }
+  if (binlog_name_ == saved_binlog_name) {
+    return true;
+  }
+  // 'fetch_event_block()' switches to the next binlog file only when
+  // the current offset is at EOF of the current one, and a single call
+  // never spans two files. MySQL binlog events never cross file
+  // boundaries, so a non-empty carry at a file switch means the
+  // previous file ended on a partial event (truncated / corrupt).
+  // Silently dropping those bytes would mask data loss on the
+  // replication path, so error out.
+  if (!std::empty(buffer)) {
+    logger_->log_format(binsrv::log_severity::error,
+                        "sender : {} byte(s) of partial event at EOF of "
+                        "binlog file {}, boundary to {} - corrupt binlog",
+                        std::size(buffer), saved_binlog_name.str(),
+                        binlog_name_.str());
+    return false;
+  }
+  logger_->log_format(binsrv::log_severity::info,
+                      "sender : switched to a new binlog file {} -> {}",
+                      saved_binlog_name.str(), binlog_name_.str());
+  fsm_state_ = fsm_state_type::start_from_beginning;
+  return true;
+}
+
 [[nodiscard]] util::optional_bool
 sender_context::populate_event_block(util::const_byte_span &event) {
   if (event_block_ && event_index_ != event_block_->get_number_of_events()) {
@@ -337,18 +443,7 @@ sender_context::populate_event_block(util::const_byte_span &event) {
   // if this is the very first call when 'event_block_' is not yet set or we
   // have consumed all events in the current block
 
-  // Snapshot the finishing block's unparsed tail into 'carry_buffer_' before
-  // destroying the block. We prepend it to the next fetch instead of
-  // re-reading those bytes from storage: with the default 1 MiB block size
-  // a block whose boundary falls mid-event would otherwise cost a redundant
-  // filesystem read, or an S3 GET plus network round-trip, for bytes that
-  // are already in RAM.
-  if (event_block_) {
-    const auto tail{event_block_->get_unparsed_tail()};
-    if (!std::empty(tail)) {
-      carry_buffer_.assign(std::begin(tail), std::end(tail));
-    }
-  }
+  snapshot_block_tail_to_carry();
   // early reset to free memory from the previous event block
   event_block_.reset();
 
@@ -371,33 +466,14 @@ sender_context::populate_event_block(util::const_byte_span &event) {
   // iteration brings in 'block_size_' bytes to reveal the header and the
   // second iteration (if any) tops up to exactly 'first_event_size'.
   while (true) {
-    std::size_t desired_size{block_size_};
-    if (std::size(buffer) >=
-        binsrv::events::common_header_view_base::size_in_bytes) {
-      const binsrv::events::common_header_view header{
-          util::const_byte_span{buffer}.subspan(
-              0UZ, binsrv::events::common_header_view_base::size_in_bytes)};
-      const auto first_event_size{
-          static_cast<std::size_t>(header.get_event_size_raw())};
-      if (first_event_size > binsrv::events::max_event_size_bytes) {
-        // Nonsensically large event size: corrupt or malicious header.
-        return false;
-      }
-      if (std::size(buffer) >= first_event_size) {
-        // Defensive: 'indexed_event_block' leaves at most one partial event
-        // in the carry, so entering this branch on the first iteration
-        // should not happen. On later iterations an exact-sized top-up
-        // lands here naturally.
-        break;
-      }
-      if (first_event_size > block_size_) {
-        logger_->log_format(
-            binsrv::log_severity::info,
-            "sender : block too small for first event (needs {} bytes), "
-            "topping up to exact size at {}:{}",
-            first_event_size, binlog_name_.str(), range_.to_string());
-        desired_size = first_event_size;
-      }
+    std::size_t desired_size{};
+    const auto size_status{
+        compute_fetch_size_requirements(buffer, desired_size)};
+    if (size_status == fetch_size_status::event_too_large) {
+      return false;
+    }
+    if (size_status == fetch_size_status::ready) {
+      break;
     }
 
     const std::size_t fetch_length{desired_size - std::size(buffer)};
@@ -409,49 +485,11 @@ sender_context::populate_event_block(util::const_byte_span &event) {
       return false;
     }
     if (std::empty(fetched_bytes)) {
-      logger_->log(binsrv::log_severity::info, "sender : fetched EOF");
-      // leaving 'binlog_name_' as is so that on next fetch after this EOF
-      // we could make another attempt to check if new events were added.
-      //
-      // 'range_', on the other hand, was set to empty inside
-      // 'fetch_event_block()' - here we restore its length for the next
-      // fetch attempt. Hand the carry back for the next call to retry the
-      // fetch with it still in hand.
-      if (!std::empty(buffer)) {
-        carry_buffer_ = std::move(buffer);
-      }
-      range_ = util::byte_range{range_.get_offset(), block_size_};
-      event_block_.reset();
-      event_index_ = 0UZ;
-
-      // setting the event span to an empty object to indicate EOF
-      event = util::const_byte_span{};
-      return true; // EOF
+      finalize_fetch_eof(buffer, event);
+      return true;
     }
-    if (saved_binlog_name.is_empty()) {
-      logger_->log_format(binsrv::log_severity::info,
-                          "sender : empty binlog name resolved to {}",
-                          binlog_name_.str());
-    } else if (binlog_name_ != saved_binlog_name) {
-      // 'fetch_event_block()' switches to the next binlog file only when
-      // the current offset is at EOF of the current one, and a single call
-      // never spans two files. MySQL binlog events never cross file
-      // boundaries, so a non-empty carry at a file switch means the
-      // previous file ended on a partial event (truncated / corrupt).
-      // Silently dropping those bytes would mask data loss on the
-      // replication path, so error out.
-      if (!std::empty(buffer)) {
-        logger_->log_format(binsrv::log_severity::error,
-                            "sender : {} byte(s) of partial event at EOF of "
-                            "binlog file {}, boundary to {} - corrupt binlog",
-                            std::size(buffer), saved_binlog_name.str(),
-                            binlog_name_.str());
-        return false;
-      }
-      logger_->log_format(binsrv::log_severity::info,
-                          "sender : switched to a new binlog file {} -> {}",
-                          saved_binlog_name.str(), binlog_name_.str());
-      fsm_state_ = fsm_state_type::start_from_beginning;
+    if (!handle_binlog_file_switch(saved_binlog_name, buffer)) {
+      return false;
     }
     logger_->log_format(binsrv::log_severity::info,
                         "sender : fetched event block of size {}, {}:{}",
