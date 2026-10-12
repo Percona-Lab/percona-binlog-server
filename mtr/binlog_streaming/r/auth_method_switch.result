@@ -14,7 +14,6 @@
 *** SIGTERM flushes std::cout unconditionally, so we do not need to
 *** rely on any per-line buffering trick that could misbehave under
 *** ASAN.
-include/read_file_to_var.inc
 
 *** Waiting for the replication source listener port ready to accept
 *** connections.

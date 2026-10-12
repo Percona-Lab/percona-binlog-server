@@ -11,7 +11,6 @@
 *** Determining the first binary log name.
 
 *** Starting Binlog Server Utility in background in pull mode.
-include/read_file_to_var.inc
 
 *** Waiting for the replication source listener port ready to accept
 *** connections.
@@ -21,12 +20,10 @@ include/read_file_to_var.inc
 *** BINLOG_DUMP_NON_BLOCK flag on the COM_BINLOG_DUMP packet, so PBS
 *** must keep the connection open and deliver events as they become
 *** available instead of disconnecting on EOF.
-include/read_file_to_var.inc
 
 *** Starting a second downstream mysqlbinlog session against PBS so
 *** that two concurrent blocking COM_BINLOG_DUMP sessions are
 *** exercised at the same time.
-include/read_file_to_var.inc
 
 *** First batch of transactions on the source.
 CREATE DATABASE test1;

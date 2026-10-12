@@ -26,7 +26,6 @@ INSERT INTO source_db.tbl VALUES (1, REPEAT('X', 1500000));
 *** Fetching the source binary logs into PBS storage.
 
 *** Starting Binlog Server Utility in background in pull mode.
-include/read_file_to_var.inc
 
 *** Waiting for the replication source listener port ready to
 *** accept connections.

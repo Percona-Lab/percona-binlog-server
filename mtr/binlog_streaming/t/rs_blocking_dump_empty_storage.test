@@ -30,14 +30,11 @@
 #   5. Run a transaction on the source. It must flow through PBS
 #      and appear in the downstream mysqlbinlog dump.
 #
-# Because 'include/shutdown_mysqld.inc' leaves 'mysqltest' with no
-# server to talk to, the background PBS and mysqlbinlog processes
-# are spawned with inline '--perl' blocks (the standard
-# 'start_proc_in_background.inc' goes through 'read_file_to_var.inc'
-# which needs SQL). The PID files written by those Perl spawns are
-# read back with 'include/read_file_to_var.inc' once the server is
-# up again and are then handed to the normal 'terminate_proc.inc'
-# path for cleanup.
+# All background processes are spawned via
+# 'start_proc_in_background.inc', which does its PID read-back from
+# Perl rather than SQL, so it works between
+# 'include/shutdown_mysqld.inc' and 'include/start_mysqld.inc' where
+# no server is listening.
 
 --echo *** Resetting replication at the very beginning of the test.
 --disable_query_log
@@ -69,16 +66,10 @@ eval $stmt_reset_binary_logs_and_gtids;
 --echo *** Starting Binlog Server Utility in background in pull mode.
 --echo *** With the upstream down, PBS enters its reconnect loop and
 --echo *** storage stays empty for the whole 'empty' phase of this
---echo *** test. The spawn is done with an inline Perl 'system' call
---echo *** because 'start_proc_in_background.inc' would need SQL to
---echo *** pick the PID back up and the server is down right now.
---let $binsrv_pid_file = $MYSQL_TMP_DIR/binsrv.pid
---let BINSRV_SPAWN_CMD = $BINSRV pull $binsrv_config_file_path > /dev/null & echo \$! > $binsrv_pid_file
---perl
-  use strict;
-  use warnings;
-  system($ENV{'BINSRV_SPAWN_CMD'});
-EOF
+--echo *** test.
+--let $proc_command_line = $BINSRV pull $binsrv_config_file_path > /dev/null
+--source ../include/start_proc_in_background.inc
+--let $binsrv_pid = $proc_pid
 
 --echo
 --echo *** Waiting for the replication source listener port ready to accept
@@ -91,16 +82,11 @@ EOF
 --echo *** --stop-never session against PBS. --stop-never clears the
 --echo *** BINLOG_DUMP_NON_BLOCK flag on the COM_BINLOG_DUMP packet, so
 --echo *** PBS must block the session until the requested binlog shows
---echo *** up in storage instead of disconnecting. Spawned with inline
---echo *** Perl, same reason as PBS above.
+--echo *** up in storage instead of disconnecting.
 --let $downstream_dump = $MYSQL_TMP_DIR/rs_blocking_dump_empty_storage.sql
---let $downstream_pid_file = $MYSQL_TMP_DIR/downstream.pid
---let DOWNSTREAM_SPAWN_CMD = $MYSQL_BINLOG --read-from-remote-server --stop-never --host=127.0.0.1 --port=$binsrv_replication_source_port --user=$binsrv_auth_user --password=$binsrv_auth_password --default-auth=caching_sha2_password $first_binlog > $downstream_dump 2>/dev/null & echo \$! > $downstream_pid_file
---perl
-  use strict;
-  use warnings;
-  system($ENV{'DOWNSTREAM_SPAWN_CMD'});
-EOF
+--let $proc_command_line = $MYSQL_BINLOG --read-from-remote-server --stop-never --host=127.0.0.1 --port=$binsrv_replication_source_port --user=$binsrv_auth_user --password=$binsrv_auth_password --default-auth=caching_sha2_password $first_binlog > $downstream_dump 2>/dev/null
+--source ../include/start_proc_in_background.inc
+--let $downstream_pid = $proc_pid
 
 --echo
 --echo *** Waiting for PBS's log to record that the sender reached the
@@ -116,47 +102,22 @@ EOF
 
 --echo
 --echo *** Verifying the downstream mysqlbinlog session is still alive
---echo *** while PBS has nothing in storage. We check via inline Perl
---echo *** ('kill 0, pid' - no SQL path) because the server is still
---echo *** down. Before the PBS-91 fix PBS would have closed the
---echo *** socket as soon as the sender saw an empty storage with a
---echo *** specific binlog name, and mysqlbinlog would have exited
---echo *** within ~1 second.
---let DOWNSTREAM_PID_FILE_FOR_CHECK = $downstream_pid_file
---perl
-  use strict;
-  use warnings;
-  open my $fh, '<', $ENV{'DOWNSTREAM_PID_FILE_FOR_CHECK'}
-    or die "cannot open downstream PID file: $!";
-  my $pid = <$fh>;
-  close $fh;
-  chomp $pid;
-  if (!kill 0, $pid) {
-    die "mysqlbinlog session (pid=$pid) was disconnected while PBS "
-      . "storage was empty - regression of PBS-91";
-  }
-EOF
+--echo *** while PBS has nothing in storage. Pre-fix PBS would have
+--echo *** closed the socket as soon as the sender saw an empty
+--echo *** storage with a specific binlog name, and mysqlbinlog would
+--echo *** have exited within ~1 second.
+--error 0, 1
+--exec kill -0 $downstream_pid 2>/dev/null
+if ($__error != 0)
+{
+  --die mysqlbinlog session was disconnected while PBS storage was empty - regression of PBS-91
+}
 
 --echo
 --echo *** Starting the upstream MySQL server again. PBS's collector
 --echo *** thread will notice on its next iteration (idle_time=1s),
 --echo *** switch to replication and start populating storage.
 --source include/start_mysqld.inc
-
---echo
---echo *** Reading back the PIDs of the background processes spawned
---echo *** while the server was down so later 'terminate_proc.inc'
---echo *** calls can shut them down cleanly.
---disable_query_log
---let $read_from_file = $binsrv_pid_file
---source include/read_file_to_var.inc
---let $binsrv_pid = $result
---remove_file $binsrv_pid_file
---let $read_from_file = $downstream_pid_file
---source include/read_file_to_var.inc
---let $downstream_pid = $result
---remove_file $downstream_pid_file
---enable_query_log
 
 --echo
 --echo *** Producing a batch of transactions on the upstream source.

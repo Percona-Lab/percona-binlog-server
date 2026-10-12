@@ -30,7 +30,6 @@ INSERT INTO source_db.tbl VALUES (4, 'four'), (5, 'five'), (6, 'six');
 *** Fetching the source binary logs in position mode for the first time.
 
 *** Starting Binlog Server Utility in background in pull mode for the first time.
-include/read_file_to_var.inc
 
 *** Waiting for the replication source listener port ready to accept
 *** connections for the first time.
@@ -52,7 +51,6 @@ INSERT INTO source_db.tbl VALUES (10, 'ten'), (11, 'eleven'), (12, 'twelve');
 
 *** Fetching the source binary logs in position mode for the second time.
 *** Starting Binlog Server Utility in background in pull mode for the second time.
-include/read_file_to_var.inc
 
 *** Waiting for the replication source listener port ready to accept
 *** connections for the second time.

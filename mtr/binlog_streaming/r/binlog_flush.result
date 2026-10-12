@@ -14,7 +14,6 @@ FLUSH BINARY LOGS;
 
 *** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
 *** binlog files downloaded via the Binlog Server utility.
-include/read_file_to_var.inc
 
 *** Waiting until Binlog Server log confirms that it processed an
 *** the ANONYMOUS_GTID_LOG event with sequence_number which is equal
