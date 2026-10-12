@@ -45,6 +45,7 @@ BOOST_DEFINE_FIXED_ENUM_CLASS(client_command_type, std::uint8_t,
   reset_connection,
   change_user,
   ping,
+  register_replica,
   binlog_dump,
   binlog_dump_gtid,
   unknown)

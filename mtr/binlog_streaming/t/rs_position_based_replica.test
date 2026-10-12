@@ -1,0 +1,162 @@
+# ==== Purpose ====
+#
+# Exercise a real MySQL replica (server_2) connected to PBS as its
+# replication source in position-based mode.
+#
+# The replica's I/O thread sends a handshake sequence of SQL statements
+# (SELECT @@GLOBAL.SERVER_ID, SELECT UNIX_TIMESTAMP(), SELECT
+# @@GLOBAL.SERVER_UUID, SET @source_heartbeat_period = ..., SELECT
+# @source_binlog_checksum, ...) before switching to COM_BINLOG_DUMP.
+# PBS must recognise and answer every one of them; any unknown
+# statement is rejected with 'syntax error', the replica I/O thread
+# aborts, and SHOW REPLICA STATUS reports a non-empty Last_IO_Error.
+#
+# This test:
+#   1. starts PBS pulling binary logs from server_1 (source)
+#   2. points server_2 (replica) at PBS and starts replication
+#   3. waits for the I/O thread to come up and asserts no error
+#   4. generates more transactions on server_1 and verifies they
+#      reach server_2 through PBS, by diffing the two tables.
+#
+# ==== References ====
+#
+# PBS-90 Extend known PBS SQL statements list with everything required
+#        to serve as a replica in position-based mode.
+
+--source ../include/have_binsrv.inc
+
+--source ../include/v80_v84_compatibility_defines.inc
+
+--connection default
+--source include/count_sessions.inc
+
+--echo *** Resetting binary logs on the source.
+--disable_query_log
+eval $stmt_reset_binary_logs_and_gtids;
+--enable_query_log
+
+--source ../include/identify_storage_backend.inc
+
+--let $binsrv_connect_timeout = 3
+--let $binsrv_read_timeout = 10
+--let $binsrv_idle_time = 1
+--let $binsrv_verify_checksum = TRUE
+--let $binsrv_replication_mode = position
+--let $binsrv_checkpoint_interval = 1s
+--source ../include/set_up_binsrv_environment.inc
+
+--echo
+--echo *** Creating test data on server_1 (source) before PBS starts.
+CREATE DATABASE source_db;
+CREATE TABLE source_db.tbl(
+  id INT UNSIGNED NOT NULL,
+  value VARCHAR(32) NOT NULL,
+  PRIMARY KEY(id)
+) ENGINE=InnoDB;
+INSERT INTO source_db.tbl VALUES (1, 'one'), (2, 'two'), (3, 'three');
+
+--echo
+--echo *** Capturing the current binary log coordinates - server_2 will be
+--echo *** pointed at PBS starting from the first available binlog file so
+--echo *** that it replays the whole history.
+--let $first_binlog_file = query_get_value($stmt_show_binary_log_status, File, 1)
+
+--echo
+--echo *** Starting Binlog Server Utility in background in pull mode.
+--let $proc_command_line = $BINSRV pull $binsrv_config_file_path > /dev/null
+--source ../include/start_proc_in_background.inc
+--let $binsrv_pid = $proc_pid
+
+--echo
+--echo *** Waiting for the replication source listener port ready to accept
+--echo *** connections.
+--let $listening_port = $binsrv_replication_source_port
+--source ../include/wait_for_listening_port.inc
+
+--echo
+--echo *** Pointing server_2 (replica) at PBS and starting replication in
+--echo *** position-based mode.
+--connect (replica, 127.0.0.1, root,, test, $SLAVE_MYPORT)
+--connection replica
+
+--replace_result $binsrv_replication_source_port BINSRV_PORT $first_binlog_file FIRST_BINLOG_FILE
+eval CHANGE REPLICATION SOURCE TO
+       SOURCE_HOST='127.0.0.1',
+       SOURCE_PORT=$binsrv_replication_source_port,
+       SOURCE_USER='$binsrv_auth_user',
+       SOURCE_PASSWORD='$binsrv_auth_password',
+       SOURCE_LOG_FILE='$first_binlog_file',
+       SOURCE_LOG_POS=4,
+       SOURCE_AUTO_POSITION=0,
+       SOURCE_CONNECT_RETRY=1,
+       SOURCE_RETRY_COUNT=1;
+START REPLICA;
+
+--echo
+--echo *** Waiting for both replica threads to be running. If PBS rejects any
+--echo *** of the handshake statements the replica sends, the I/O thread
+--echo *** aborts and this wait times out with a non-empty Last_IO_Error.
+# Inlined wait on performance_schema to stay portable across MySQL 8.0
+# (stock) and 8.4 - the equivalent 'include/rpl/wait_for_replica_to_start.inc'
+# only ships in 8.4 and in Percona Server 8.0.
+--let $wait_condition = SELECT (SELECT SERVICE_STATE FROM performance_schema.replication_connection_status) = 'ON' AND (SELECT SERVICE_STATE FROM performance_schema.replication_applier_status) = 'ON'
+--source include/wait_condition.inc
+
+--echo
+--echo *** Second batch of transactions on server_1 - these must flow
+--echo *** source -> PBS -> replica live, without an explicit 'fetch' step.
+--connection default
+INSERT INTO source_db.tbl VALUES (4, 'four'), (5, 'five'), (6, 'six');
+FLUSH BINARY LOGS;
+INSERT INTO source_db.tbl VALUES (7, 'seven'), (8, 'eight'), (9, 'nine');
+
+--echo
+--echo *** Waiting for server_2 to catch up to server_1's current binlog
+--echo *** position (reached via PBS).
+--let $wait_binlog_file = query_get_value($stmt_show_binary_log_status, File, 1)
+--let $wait_binlog_position = query_get_value($stmt_show_binary_log_status, Position, 1)
+--connection replica
+
+# Poll until the replica has consumed up to (file, pos) on the source.
+--let $wait_condition = SELECT SOURCE_POS_WAIT('$wait_binlog_file', $wait_binlog_position, 60) >= 0
+--source include/wait_condition.inc
+
+--echo
+--echo *** Comparing source_db.tbl on server_1 and server_2.
+--let $diff_tables = default:source_db.tbl, replica:source_db.tbl
+--source include/diff_tables.inc
+
+--echo
+--echo *** Dropping the test database on server_1 and letting the DROP flow
+--echo *** through PBS to server_2 before we stop replication.
+--connection default
+DROP DATABASE source_db;
+--let $wait_binlog_file = query_get_value($stmt_show_binary_log_status, File, 1)
+--let $wait_binlog_position = query_get_value($stmt_show_binary_log_status, Position, 1)
+--connection replica
+--let $wait_condition = SELECT SOURCE_POS_WAIT('$wait_binlog_file', $wait_binlog_position, 60) >= 0
+--source include/wait_condition.inc
+
+--echo
+--echo *** Stopping replication on server_2 and cleaning up its config.
+STOP REPLICA;
+RESET REPLICA ALL;
+--disconnect replica
+
+--echo
+--echo *** Sending SIGTERM signal to the Binlog Server Utility and waiting
+--echo *** for the process to terminate.
+--let $proc_pid = $binsrv_pid
+--source ../include/terminate_proc.inc
+
+--source ../include/tear_down_binsrv_environment.inc
+
+# PBS interrupts the Binlog Dump connection on timeout - close it on the
+# server side as well so that MTR's check-test before and after the run
+# produces the same output.
+--connection default
+--source ../include/kill_binlog_dump_connection.inc
+
+--source include/wait_until_count_sessions.inc
+
+# End of test.

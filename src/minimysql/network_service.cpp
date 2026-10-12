@@ -15,6 +15,7 @@
 
 #include "minimysql/network_service.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cassert>
 #include <chrono>
@@ -65,6 +66,7 @@
 #include "binsrv/authentication_config.hpp"
 #include "binsrv/basic_logger.hpp"
 #include "binsrv/log_severity.hpp"
+#include "binsrv/replication_mode_type.hpp"
 #include "binsrv/replication_source_config.hpp"
 #include "binsrv/storage.hpp"
 
@@ -74,6 +76,7 @@
 #include "operations/sender_context.hpp"
 
 #include "util/byte_span.hpp"
+#include "util/common_optional_types.hpp"
 
 namespace minimysql {
 
@@ -483,23 +486,53 @@ void handle_exception(binsrv::basic_logger &logger, std::string_view context) {
         std::function<minimysql::network_buffer_container(
             minimysql::connection_context & context)>;
     using query_container = std::unordered_map<std::string, query_handler_type>;
+    using prefix_query_container =
+        std::vector<std::pair<std::string, query_handler_type>>;
 
     bool session_source_binlog_checksum{false};
+    // Tracks the string value of @source_binlog_checksum /
+    // @master_binlog_checksum for subsequent SELECT reads. std::nullopt means
+    // the variable has never been assigned on this session (NULL on SELECT).
+    util::optional_string session_source_binlog_checksum_name{};
 
     const auto set_checksum_on_query_handler =
-        [&session_source_binlog_checksum](minimysql::connection_context &ctx) {
+        [&session_source_binlog_checksum, &session_source_binlog_checksum_name](
+            minimysql::connection_context &ctx) {
           session_source_binlog_checksum = true;
+          session_source_binlog_checksum_name = "CRC32";
           minimysql::network_buffer_container resultset;
           resultset.emplace_back(ctx.generate_encoded_ok());
           return resultset;
         };
     const auto set_checksum_off_query_handler =
-        [&session_source_binlog_checksum](minimysql::connection_context &ctx) {
+        [&session_source_binlog_checksum, &session_source_binlog_checksum_name](
+            minimysql::connection_context &ctx) {
           session_source_binlog_checksum = false;
+          session_source_binlog_checksum_name = "NONE";
           minimysql::network_buffer_container resultset;
           resultset.emplace_back(ctx.generate_encoded_ok());
           return resultset;
         };
+
+    // Replies OK without altering any session state. Suitable for parameterized
+    // SET statements that we do not need to track (e.g. heartbeat period, NAMES
+    // charset) - the replica only cares that the SET succeeds.
+    //
+    // Each handshake statement currently wired to this handler is here only
+    // because PBS does not yet implement the feature that would consume its
+    // payload. When PBS gains heartbeat emission on an idle downstream
+    // connection, SET @{source,master}_heartbeat_period must switch to a
+    // dedicated handler that records the per-session period and arms a
+    // timer. When PBS gains a SHOW REPLICAS / connected-replicas view (or
+    // uses the replica uuid for any other bookkeeping), SET @slave_uuid /
+    // SET @replica_uuid must switch to a handler that parses the value and
+    // stores it on the session. See the per-entry notes in
+    // 'known_prefix_queries' below.
+    const auto noop_ok_handler = [](minimysql::connection_context &ctx) {
+      minimysql::network_buffer_container resultset;
+      resultset.emplace_back(ctx.generate_encoded_ok());
+      return resultset;
+    };
     query_container known_queries{
         {"select * from tbl",
          [](minimysql::connection_context &ctx) {
@@ -547,7 +580,133 @@ void handle_exception(binsrv::basic_logger &logger, std::string_view context) {
          set_checksum_on_query_handler},
         {"SET @master_binlog_checksum = 'CRC32', @source_binlog_checksum = "
          "'CRC32'",
-         set_checksum_on_query_handler}};
+         set_checksum_on_query_handler},
+        // Replica form: 'take your global binlog_checksum into my session
+        // variable'. PBS always emits CRC32-checksummed events, so we treat
+        // these as 'checksum on'. Both argument orderings are accepted.
+        {"SET @master_binlog_checksum = @@global.binlog_checksum, "
+         "@source_binlog_checksum = @@global.binlog_checksum",
+         set_checksum_on_query_handler},
+        {"SET @source_binlog_checksum = @@global.binlog_checksum, "
+         "@master_binlog_checksum = @@global.binlog_checksum",
+         set_checksum_on_query_handler},
+        // Replica handshake: clock-skew probe. Returning server-side
+        // 'now' is sufficient; the replica only logs a warning if the clocks
+        // differ by too much.
+        {"SELECT UNIX_TIMESTAMP()",
+         [](minimysql::connection_context &ctx) {
+           // Signed to match MySQL/PS: Item_func_unix_timestamp::resolve_type
+           // calls set_data_type_longlong() and never touches unsigned_flag,
+           // so the column ships as BIGINT SIGNED.
+           using row_type = std::tuple<std::int64_t>;
+           const auto now_seconds{
+               std::chrono::duration_cast<std::chrono::seconds>(
+                   std::chrono::system_clock::now().time_since_epoch())
+                   .count()};
+           const std::vector<row_type> rows{
+               {static_cast<std::int64_t>(now_seconds)}};
+           const std::array column_names{
+               minimysql::column_name_pair{"UNIX_TIMESTAMP()", ""}};
+           return ctx.encode_resultset(rows, column_names);
+         }},
+        // Replica handshake: server_id advertised to downstream replicas. The
+        // replica aborts its I/O thread when this collides with its own
+        // server_id (loop detection). Taken from
+        // replication_source.server_id in main_config - independent from
+        // the upstream replication.server_id so operators can present
+        // different identities on the two sides of PBS.
+        {"SELECT @@GLOBAL.SERVER_ID",
+         [&cfg](minimysql::connection_context &ctx) {
+           using row_type = std::tuple<std::uint64_t>;
+           const std::vector<row_type> rows{{cfg.get<"server_id">()}};
+           const std::array column_names{
+               minimysql::column_name_pair{"@@GLOBAL.SERVER_ID", ""}};
+           return ctx.encode_resultset(rows, column_names);
+         }},
+        // Replica handshake: server_uuid advertised to downstream replicas.
+        // Same anti-loop reasoning as SERVER_ID; must not collide with the
+        // replica's own UUID. Taken from replication_source.server_uuid in
+        // main_config (canonical 8-4-4-4-12 hex form; validated at load).
+        {"SELECT @@GLOBAL.SERVER_UUID",
+         [&cfg](minimysql::connection_context &ctx) {
+           using row_type = std::tuple<std::string>;
+           const std::vector<row_type> rows{{cfg.get<"server_uuid">()}};
+           const std::array column_names{
+               minimysql::column_name_pair{"@@GLOBAL.SERVER_UUID", ""}};
+           return ctx.encode_resultset(rows, column_names);
+         }},
+        // Replica handshake: both variants of 'read back the checksum
+        // algorithm agreed with the source'. Returns whatever the session
+        // SET @...binlog_checksum left behind, or NULL if never set.
+        {"SELECT @source_binlog_checksum",
+         [&session_source_binlog_checksum_name](
+             minimysql::connection_context &ctx) {
+           using row_type = std::tuple<std::optional<std::string>>;
+           const std::vector<row_type> rows{
+               {session_source_binlog_checksum_name}};
+           const std::array column_names{
+               minimysql::column_name_pair{"@source_binlog_checksum", ""}};
+           return ctx.encode_resultset(rows, column_names);
+         }},
+        {"SELECT @master_binlog_checksum",
+         [&session_source_binlog_checksum_name](
+             minimysql::connection_context &ctx) {
+           using row_type = std::tuple<std::optional<std::string>>;
+           const std::vector<row_type> rows{
+               {session_source_binlog_checksum_name}};
+           const std::array column_names{
+               minimysql::column_name_pair{"@master_binlog_checksum", ""}};
+           return ctx.encode_resultset(rows, column_names);
+         }},
+        // Replica handshake: GTID mode advertised to downstream replicas.
+        // Derived from the actual mode the storage is operating in (which
+        // is in turn determined by how the binlog files it holds were
+        // captured), not from the upstream config - a position-mode storage
+        // must advertise OFF regardless of how upstream pull is configured.
+        {"SELECT @@GLOBAL.GTID_MODE",
+         [&storage](minimysql::connection_context &ctx) {
+           using row_type = std::tuple<std::string>;
+           const bool gtid_mode_on{storage->get_replication_mode() ==
+                                   binsrv::replication_mode_type::gtid};
+           const std::vector<row_type> rows{
+               {gtid_mode_on ? std::string{"ON"} : std::string{"OFF"}}};
+           const std::array column_names{
+               minimysql::column_name_pair{"@@GLOBAL.GTID_MODE", ""}};
+           return ctx.encode_resultset(rows, column_names);
+         }}};
+
+    // Statements whose payload varies between invocations (e.g. the exact
+    // heartbeat-period nanosecond count) are matched by prefix instead of by
+    // exact string. First match wins, so order the entries from longest to
+    // shortest prefix if they could ever overlap.
+    const prefix_query_container known_prefix_queries{
+        // SET @{source,master}_heartbeat_period = <nanoseconds>. The replica
+        // asks the source to emit a Heartbeat_log_event every <N> nanoseconds
+        // of binlog idleness so the receiver thread can detect a stalled
+        // source without waiting for connection.read_timeout. PBS does not
+        // emit heartbeats today, so the setting is accepted and discarded.
+        // TODO: when heartbeat emission is implemented, replace noop_ok_handler
+        // with a dedicated handler that parses the nanosecond count, stores
+        // it per-session, and (re)arms the heartbeat timer on the current
+        // COM_BINLOG_DUMP stream.
+        {"SET @source_heartbeat_period", noop_ok_handler},
+        {"SET @master_heartbeat_period", noop_ok_handler},
+        // SET NAMES <charset> - sent by libmysqlclient when the replica opens
+        // the connection to initialize the session charset. PBS only speaks
+        // the binary binlog event stream, so the session charset has no
+        // observable effect and the SET is a no-op by design.
+        {"SET NAMES ", noop_ok_handler},
+        // SET @slave_uuid = '<replica uuid>'[, @replica_uuid = ...]. The
+        // replica tells the source its own uuid for anti-loop reporting and
+        // for the SHOW REPLICAS view. PBS exposes neither today, so the
+        // value is accepted and discarded.
+        // TODO: when PBS gains SHOW REPLICAS / a connected-replicas view
+        // (or needs the uuid for duplicate-replica detection), replace
+        // noop_ok_handler with a dedicated handler that parses the uuid and
+        // stores it on the session.
+        {"SET @slave_uuid", noop_ok_handler},
+        {"SET @replica_uuid", noop_ok_handler},
+    };
 
     // starting command loop
     bool terminated{false};
@@ -562,10 +721,22 @@ void handle_exception(binsrv::basic_logger &logger, std::string_view context) {
 
       switch (context.get_client_mysql_command()) {
       case minimysql::client_command_type::query: {
-        const auto known_query_it{
-            known_queries.find(context.get_client_statement())};
-        if (known_query_it != std::end(known_queries)) {
-          const auto resultset{known_query_it->second(context)};
+        const std::string &statement{context.get_client_statement()};
+        const query_handler_type *selected_handler{nullptr};
+        const auto exact_match_it{known_queries.find(statement)};
+        if (exact_match_it != std::end(known_queries)) {
+          selected_handler = &exact_match_it->second;
+        } else {
+          const auto prefix_match_it{std::ranges::find_if(
+              known_prefix_queries, [&statement](const auto &entry) {
+                return std::string_view{statement}.starts_with(entry.first);
+              })};
+          if (prefix_match_it != std::end(known_prefix_queries)) {
+            selected_handler = &prefix_match_it->second;
+          }
+        }
+        if (selected_handler != nullptr) {
+          const auto resultset{(*selected_handler)(context)};
           print_generic(*logger, remote_endpoint, context, "resultset");
           co_await minimysql::async_write_mysql_frames(socket, resultset,
                                                        write_timeout);
@@ -594,7 +765,52 @@ void handle_exception(binsrv::basic_logger &logger, std::string_view context) {
             "net    : sent server ok after ping ({} bytes to {})",
             std::size(ok_after_ping), remote_endpoint_str);
       } break;
+      case minimysql::client_command_type::register_replica: {
+        // Replica identifies itself just before COM_BINLOG_DUMP. The payload
+        // (server_id, hostname, port, ...) is useful mainly for SHOW REPLICAS
+        // and for detecting multiple replicas sharing the same server_id;
+        // PBS exposes neither view today, so the frame is parsed only far
+        // enough to advance the sequence number and the command is answered
+        // with a bare OK.
+        // TODO: when PBS gains a connected-replicas view (SHOW REPLICAS /
+        // same-server_id duplicate detection), replace this bare-OK branch
+        // with a handler that extracts server_id/hostname/port/user from
+        // the frame payload, stores them on the session, and registers the
+        // session in a process-wide table.
+        const auto ok_after_register_replica{context.generate_encoded_ok()};
+        print_generic(*logger, remote_endpoint, context,
+                      "ok (register replica)");
+        co_await minimysql::async_write_mysql_frame(
+            socket, ok_after_register_replica, write_timeout);
+        logger->log_format(
+            binsrv::log_severity::debug,
+            "net    : sent server ok after register replica ({} bytes to {})",
+            std::size(ok_after_register_replica), remote_endpoint_str);
+      } break;
       case minimysql::client_command_type::binlog_dump: {
+        // Refuse to dump if the replica never set @source_binlog_checksum.
+        // PBS may send events with a CRC32 trailer, and a client that is
+        // not checksum-aware cannot parse them.
+        if (!session_source_binlog_checksum_name.has_value()) {
+          static constexpr std::uint16_t er_source_fatal_error_reading_binlog{
+              1236U};
+          const auto rejection_packet{context.generate_encoded_error(
+              er_source_fatal_error_reading_binlog,
+              "Replica did not declare @source_binlog_checksum before "
+              "COM_BINLOG_DUMP; PBS refuses to serve replicas that are not "
+              "checksum-aware.",
+              "HY000")};
+          print_error(*logger, remote_endpoint, context,
+                      "missing @source_binlog_checksum declaration");
+          co_await minimysql::async_write_mysql_frame(socket, rejection_packet,
+                                                      write_timeout);
+          logger->log_format(binsrv::log_severity::debug,
+                             "net    : sent server error (missing "
+                             "@source_binlog_checksum) ({} bytes to {})",
+                             std::size(rejection_packet), remote_endpoint_str);
+          terminated = true;
+          break;
+        }
         co_await handle_binlog_dump_command(
             logger, storage, socket, context, remote_endpoint,
             remote_endpoint_str, write_timeout, session_source_binlog_checksum);

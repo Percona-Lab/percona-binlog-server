@@ -133,13 +133,15 @@ eval SET @binsrv_config_json = JSON_OBJECT(
      'write_timeout', 60
   ),
   'replication', JSON_OBJECT(
-     'server_id', @@server_id + 1,
+     'server_id', @@server_id + 100,
      'idle_time', $binsrv_idle_time,
      'verify_checksum', $binsrv_verify_checksum,
      'mode', '$binsrv_replication_mode'
   ),
   'replication_source', JSON_OBJECT(
      'port', $binsrv_replication_source_port,
+     'server_id', @@server_id + 101,
+     'server_uuid', UUID(),
      'read_timeout', 60,
      'write_timeout', 60,
      'authentication', JSON_OBJECT(

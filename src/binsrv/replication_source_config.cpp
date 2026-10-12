@@ -15,17 +15,53 @@
 
 #include "binsrv/replication_source_config.hpp"
 
+#include <cctype>
+#include <cstddef>
 #include <stdexcept>
+#include <string_view>
 
 #include "util/exception_location_helpers.hpp"
 
 namespace binsrv {
+
+namespace {
+
+// Checks the canonical 8-4-4-4-12 hex shape with '-' separators (36 chars),
+// matching @@GLOBAL.SERVER_UUID.
+[[nodiscard]] bool is_canonical_uuid(std::string_view value) noexcept {
+  static constexpr std::size_t uuid_length{36U};
+  if (value.size() != uuid_length) {
+    return false;
+  }
+  for (std::size_t index{0U}; index < uuid_length; ++index) {
+    const char character{value[index]};
+    const bool separator_slot{index == 8U || index == 13U || index == 18U ||
+                              index == 23U};
+    if (separator_slot) {
+      if (character != '-') {
+        return false;
+      }
+    } else {
+      if (std::isxdigit(static_cast<unsigned char>(character)) == 0) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+} // anonymous namespace
 
 void replication_source_config::validate() const {
   if (get<"port">() == 0U) {
     util::exception_location().raise<std::invalid_argument>(
         "error validating replication source config: "
         "port must be greater than 0");
+  }
+  if (!is_canonical_uuid(get<"server_uuid">())) {
+    util::exception_location().raise<std::invalid_argument>(
+        "error validating replication source config: "
+        "server_uuid must be a canonical 8-4-4-4-12 hex UUID");
   }
   if (get<"read_timeout">() == 0U) {
     util::exception_location().raise<std::invalid_argument>(

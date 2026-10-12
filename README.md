@@ -376,6 +376,7 @@ Any error (network issues, server down, out of space, etc) encountered in this m
 
 In this mode the utility continuously tries to connect to a remote MySQL server / switch to replication mode and read binary log events. After reading the very last one, the utility does not close the connection immediately but instead waits for `<connection.read_timeout>` seconds for the server to generate more events. If this period of time elapses, the utility closes the MySQL connection and enters the `idle` mode. In this mode it just waits for `<replication.idle_time>` seconds in disconnected state. After that another reconnection attempt is made and everything starts from the beginning.
 Any network-related error (network issues, server down, etc) encountered in this mode does not result in immediate termination of the program. Instead, another reconnection attempt is made. More serious errors (like out of space, etc.) cause program termination.
+In parallel with pulling events from the upstream MySQL server, `pull` mode also exposes a MySQL-compatible listener on `<replication_source.port>` so that downstream `mysqlbinlog --read-from-remote-server` sessions and real MySQL replicas (position-based, see the `<replication_source>` section below) can dump binary log events from the utility.
 
 #### 'purge_binlogs' operation mode
 
@@ -516,6 +517,8 @@ The Percona Binary Log Server configuration file has the following format.
   },
   "replication_source": {
     "port": 3307,
+    "server_id": 142,
+    "server_uuid": "00000000-0000-0000-0000-00000000008e",
     "read_timeout": 60,
     "write_timeout": 60,
     "authentication": {
@@ -584,7 +587,7 @@ Note: you should specify either `<connection.host>` / `<connection.port>` pair o
 - `<connection.tls.version>` (optional) - specifies the list of permissible TLS protocols for encrypted connections ([--tls-version](https://dev.mysql.com/doc/refman/8.4/en/connection-options.html#option_general_tls-version) `mysql` utility command line option).
 
 #### \<replication\> section
-- `<replication.server_id>` - specifies the server ID that the utility will be using when connecting to a remote MySQL server (similar to [--connection-server-id](https://dev.mysql.com/doc/refman/8.0/en/mysqlbinlog.html#option_mysqlbinlog_connection-server-id) `mysqlbinlog` command line option).
+- `<replication.server_id>` - specifies the server ID that the utility will be using when connecting to a remote MySQL server (similar to [--connection-server-id](https://dev.mysql.com/doc/refman/8.0/en/mysqlbinlog.html#option_mysqlbinlog_connection-server-id) `mysqlbinlog` command line option). This is only the id presented to the upstream source; the id advertised to downstream replicas is a separate setting, see `<replication_source.server_id>`.
 - `<replication.idle_time>` - the number of seconds the utility will spend in disconnected mode between reconnection attempts.
 - `<replication.verify_checksum>` - a boolean value which specifies whether the utility should verify event checksums.
 - `<replication.mode>` - the replication mode, can be either `position` for position-based replication or `gtid` for GTID-based replication.
@@ -596,7 +599,14 @@ If this section is present, then the utility will not split binlog events the sa
 
 #### \<replication_source\> section
 This section configures the built-in MySQL-compatible listener the utility exposes in `pull` mode so that downstream replicas can dump binary log events from it (the utility acts as a replication source).
+
+Two kinds of client are supported today:
+- `mysqlbinlog --read-from-remote-server` in both one-shot and `--stop-never` modes.
+- A real MySQL server configured as a position-based replica via `CHANGE REPLICATION SOURCE TO ... SOURCE_AUTO_POSITION=0, SOURCE_LOG_FILE=..., SOURCE_LOG_POS=...` followed by `START REPLICA`. The listener answers the SQL statements a real replica's I/O thread issues before `COM_BINLOG_DUMP` (clock-skew probe, server id / uuid / gtid-mode queries, heartbeat negotiation, checksum negotiation, replica uuid, `COM_REGISTER_SLAVE`) using the values from `<replication_source.server_id>`, `<replication_source.server_uuid>` and the actual mode of the backing storage. GTID-based replicas (`SOURCE_AUTO_POSITION=1`) are not supported yet.
+
 - `<replication_source.port>` - the TCP port on which the utility listens for incoming replica connections.
+- `<replication_source.server_id>` - the server ID the listener returns for `SELECT @@GLOBAL.SERVER_ID` to downstream MySQL replicas. Independent from `<replication.server_id>` so the utility can present different identities to the upstream source and to the downstream replicas. Downstream replicas abort their I/O thread on loop detection if this value matches their own `server-id`, so pick a value distinct from every downstream.
+- `<replication_source.server_uuid>` - the UUID the listener returns for `SELECT @@GLOBAL.SERVER_UUID` to downstream MySQL replicas. Must be in the canonical 8-4-4-4-12 lowercase hex form (e.g. `00000000-0000-0000-0000-00000000008e`); other shapes are rejected at configuration load time. Must not collide with any downstream replica's own `@@GLOBAL.SERVER_UUID` for the same anti-loop reason as `<replication_source.server_id>`. The value the listener reports for `SELECT @@GLOBAL.GTID_MODE` is not configured here - it is derived from the actual mode of the backing storage (`OFF` for a position-mode storage, `ON` for a gtid-mode storage), so operators cannot accidentally advertise a mode the storage cannot serve.
 - `<replication_source.read_timeout>` - the number of seconds the utility will wait to read data from a connected replica before treating the connection as timed out.
 - `<replication_source.write_timeout>` - the number of seconds the utility will wait to write data to a connected replica before treating the connection as timed out.
 

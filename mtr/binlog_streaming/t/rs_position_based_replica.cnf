@@ -1,0 +1,22 @@
+!include include/default_mysqld.cnf
+!include include/default_client.cnf
+
+[mysqld.1]
+log-bin= master-bin
+loose-innodb_write_io_threads= 2
+loose-innodb_read_io_threads= 2
+
+[mysqld.2]
+log-bin= replica-bin
+relay-log= replica-relay-bin
+loose-innodb_write_io_threads= 2
+loose-innodb_read_io_threads= 2
+
+# Do not auto-start replication - the test wires server_2 to PBS by hand.
+skip-replica-start
+
+[ENV]
+MASTER_MYPORT= @mysqld.1.port
+MASTER_MYSOCK= @mysqld.1.socket
+SLAVE_MYPORT= @mysqld.2.port
+SLAVE_MYSOCK= @mysqld.2.socket

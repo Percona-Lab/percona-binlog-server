@@ -1,0 +1,77 @@
+*** Resetting binary logs on the source.
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+
+*** Creating test data on server_1 (source) before PBS starts.
+CREATE DATABASE source_db;
+CREATE TABLE source_db.tbl(
+id INT UNSIGNED NOT NULL,
+value VARCHAR(32) NOT NULL,
+PRIMARY KEY(id)
+) ENGINE=InnoDB;
+INSERT INTO source_db.tbl VALUES (1, 'one'), (2, 'two'), (3, 'three');
+
+*** Capturing the current binary log coordinates - server_2 will be
+*** pointed at PBS starting from the first available binlog file so
+*** that it replays the whole history.
+
+*** Starting Binlog Server Utility in background in pull mode.
+
+*** Waiting for the replication source listener port ready to accept
+*** connections.
+
+*** Pointing server_2 (replica) at PBS and starting replication in
+*** position-based mode.
+CHANGE REPLICATION SOURCE TO
+SOURCE_HOST='127.0.0.1',
+SOURCE_PORT=BINSRV_PORT,
+SOURCE_USER='rpl',
+SOURCE_PASSWORD='password',
+SOURCE_LOG_FILE='FIRST_BINLOG_FILE',
+SOURCE_LOG_POS=4,
+SOURCE_AUTO_POSITION=0,
+SOURCE_CONNECT_RETRY=1,
+SOURCE_RETRY_COUNT=1;
+Warnings:
+Note	1759	Sending passwords in plain text without SSL/TLS is extremely insecure.
+Note	1760	Storing MySQL user name or password information in the connection metadata repository is not secure and is therefore not recommended. Please consider using the USER and PASSWORD connection options for START REPLICA; see the 'START REPLICA Syntax' in the MySQL Manual for more information.
+START REPLICA;
+
+*** Waiting for both replica threads to be running. If PBS rejects any
+*** of the handshake statements the replica sends, the I/O thread
+*** aborts and this wait times out with a non-empty Last_IO_Error.
+
+*** Second batch of transactions on server_1 - these must flow
+*** source -> PBS -> replica live, without an explicit 'fetch' step.
+INSERT INTO source_db.tbl VALUES (4, 'four'), (5, 'five'), (6, 'six');
+FLUSH BINARY LOGS;
+INSERT INTO source_db.tbl VALUES (7, 'seven'), (8, 'eight'), (9, 'nine');
+
+*** Waiting for server_2 to catch up to server_1's current binlog
+*** position (reached via PBS).
+
+*** Comparing source_db.tbl on server_1 and server_2.
+include/diff_tables.inc [default:source_db.tbl, replica:source_db.tbl]
+
+*** Dropping the test database on server_1 and letting the DROP flow
+*** through PBS to server_2 before we stop replication.
+DROP DATABASE source_db;
+
+*** Stopping replication on server_2 and cleaning up its config.
+STOP REPLICA;
+RESET REPLICA ALL;
+
+*** Sending SIGTERM signal to the Binlog Server Utility and waiting
+*** for the process to terminate.
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.
