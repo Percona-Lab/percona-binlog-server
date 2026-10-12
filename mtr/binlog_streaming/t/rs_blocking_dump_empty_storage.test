@@ -1,0 +1,203 @@
+--source ../include/have_binsrv.inc
+
+--source ../include/v80_v84_compatibility_defines.inc
+
+--source include/count_sessions.inc
+
+# ==== Purpose ====
+#
+# A blocking downstream replica (COM_BINLOG_DUMP without
+# BINLOG_DUMP_NON_BLOCK) that connects before PBS has pulled anything
+# from upstream must not be disconnected: PBS must keep the session
+# open and start delivering events once storage becomes non-empty.
+#
+# Before the PBS-91 fix PBS returned a hard error from
+# 'storage_core::fetch_event_block()' whenever storage had no binlog
+# records at all AND the client asked for a specific binlog name,
+# which caused 'handle_binlog_dump_command()' to log "failed to fetch
+# next event block" and 'co_return', tearing the socket down. Under
+# Valgrind on a busy CI runner the race against the collector thread
+# became easy to lose.
+#
+# This test reproduces the scenario end-to-end:
+#   1. Shut down the upstream MySQL server.
+#   2. Start PBS: its collector thread spins in a reconnect loop,
+#      'binlog_records_' stays empty.
+#   3. Start a blocking downstream mysqlbinlog session. It must not
+#      be disconnected.
+#   4. Start the upstream MySQL server again. PBS reconnects on its
+#      next iteration.
+#   5. Run a transaction on the source. It must flow through PBS
+#      and appear in the downstream mysqlbinlog dump.
+#
+# Because 'include/shutdown_mysqld.inc' leaves 'mysqltest' with no
+# server to talk to, the background PBS and mysqlbinlog processes
+# are spawned with inline '--perl' blocks (the standard
+# 'start_proc_in_background.inc' goes through 'read_file_to_var.inc'
+# which needs SQL). The PID files written by those Perl spawns are
+# read back with 'include/read_file_to_var.inc' once the server is
+# up again and are then handed to the normal 'terminate_proc.inc'
+# path for cleanup.
+
+--echo *** Resetting replication at the very beginning of the test.
+--disable_query_log
+eval $stmt_reset_binary_logs_and_gtids;
+--enable_query_log
+
+# identifying backend storage type ('file' or 's3')
+--source ../include/identify_storage_backend.inc
+
+--let $binsrv_connect_timeout = 3
+--let $binsrv_read_timeout = 3
+--let $binsrv_idle_time = 1
+--let $binsrv_verify_checksum = TRUE
+--let $binsrv_replication_mode = position
+--let $binsrv_checkpoint_interval = 1s
+--source ../include/set_up_binsrv_environment.inc
+
+--echo
+--echo *** Determining the first binary log name to request from PBS.
+--let $first_binlog = query_get_value($stmt_show_binary_log_status, File, 1)
+
+--echo
+--echo *** Shutting down the upstream MySQL server so PBS cannot pull
+--echo *** anything and 'binlog_records_' stays empty while the
+--echo *** downstream replica connects.
+--source include/shutdown_mysqld.inc
+
+--echo
+--echo *** Starting Binlog Server Utility in background in pull mode.
+--echo *** With the upstream down, PBS enters its reconnect loop and
+--echo *** storage stays empty for the whole 'empty' phase of this
+--echo *** test. The spawn is done with an inline Perl 'system' call
+--echo *** because 'start_proc_in_background.inc' would need SQL to
+--echo *** pick the PID back up and the server is down right now.
+--let $binsrv_pid_file = $MYSQL_TMP_DIR/binsrv.pid
+--let BINSRV_SPAWN_CMD = $BINSRV pull $binsrv_config_file_path > /dev/null & echo \$! > $binsrv_pid_file
+--perl
+  use strict;
+  use warnings;
+  system($ENV{'BINSRV_SPAWN_CMD'});
+EOF
+
+--echo
+--echo *** Waiting for the replication source listener port ready to accept
+--echo *** connections.
+--let $listening_port = $binsrv_replication_source_port
+--source ../include/wait_for_listening_port.inc
+
+--echo
+--echo *** Starting a downstream mysqlbinlog --read-from-remote-server
+--echo *** --stop-never session against PBS. --stop-never clears the
+--echo *** BINLOG_DUMP_NON_BLOCK flag on the COM_BINLOG_DUMP packet, so
+--echo *** PBS must block the session until the requested binlog shows
+--echo *** up in storage instead of disconnecting. Spawned with inline
+--echo *** Perl, same reason as PBS above.
+--let $downstream_dump = $MYSQL_TMP_DIR/rs_blocking_dump_empty_storage.sql
+--let $downstream_pid_file = $MYSQL_TMP_DIR/downstream.pid
+--let DOWNSTREAM_SPAWN_CMD = $MYSQL_BINLOG --read-from-remote-server --stop-never --host=127.0.0.1 --port=$binsrv_replication_source_port --user=$binsrv_auth_user --password=$binsrv_auth_password --default-auth=caching_sha2_password $first_binlog > $downstream_dump 2>/dev/null & echo \$! > $downstream_pid_file
+--perl
+  use strict;
+  use warnings;
+  system($ENV{'DOWNSTREAM_SPAWN_CMD'});
+EOF
+
+--echo
+--echo *** Waiting for PBS's log to record that the sender reached the
+--echo *** empty-storage polling path. This marker is only written when
+--echo *** 'populate_event_block()' takes the EOF branch for an empty
+--echo *** storage - pre-fix PBS returned 'false' and 'co_return'ed
+--echo *** before ever logging it, so timing out here would itself be
+--echo *** a regression of PBS-91.
+--let $grep_pattern = sender : fetched EOF
+--let $grep_file = $binsrv_log_path
+--let $wait_timeout = 60
+--source include/wait_for_pattern_in_file.inc
+
+--echo
+--echo *** Verifying the downstream mysqlbinlog session is still alive
+--echo *** while PBS has nothing in storage. We check via inline Perl
+--echo *** ('kill 0, pid' - no SQL path) because the server is still
+--echo *** down. Before the PBS-91 fix PBS would have closed the
+--echo *** socket as soon as the sender saw an empty storage with a
+--echo *** specific binlog name, and mysqlbinlog would have exited
+--echo *** within ~1 second.
+--let DOWNSTREAM_PID_FILE_FOR_CHECK = $downstream_pid_file
+--perl
+  use strict;
+  use warnings;
+  open my $fh, '<', $ENV{'DOWNSTREAM_PID_FILE_FOR_CHECK'}
+    or die "cannot open downstream PID file: $!";
+  my $pid = <$fh>;
+  close $fh;
+  chomp $pid;
+  if (!kill 0, $pid) {
+    die "mysqlbinlog session (pid=$pid) was disconnected while PBS "
+      . "storage was empty - regression of PBS-91";
+  }
+EOF
+
+--echo
+--echo *** Starting the upstream MySQL server again. PBS's collector
+--echo *** thread will notice on its next iteration (idle_time=1s),
+--echo *** switch to replication and start populating storage.
+--source include/start_mysqld.inc
+
+--echo
+--echo *** Reading back the PIDs of the background processes spawned
+--echo *** while the server was down so later 'terminate_proc.inc'
+--echo *** calls can shut them down cleanly.
+--disable_query_log
+--let $read_from_file = $binsrv_pid_file
+--source include/read_file_to_var.inc
+--let $binsrv_pid = $result
+--remove_file $binsrv_pid_file
+--let $read_from_file = $downstream_pid_file
+--source include/read_file_to_var.inc
+--let $downstream_pid = $result
+--remove_file $downstream_pid_file
+--enable_query_log
+
+--echo
+--echo *** Producing a batch of transactions on the upstream source.
+CREATE DATABASE test1;
+CREATE TABLE test1.t(id INT UNSIGNED NOT NULL PRIMARY KEY) ENGINE=InnoDB;
+INSERT INTO test1.t VALUES (1), (2), (3);
+
+--echo
+--echo *** Waiting for the batch to reach the downstream mysqlbinlog
+--echo *** session via PBS. This proves PBS stayed connected to the
+--echo *** replica across the empty-storage window and then started
+--echo *** delivering events once storage became non-empty.
+--let $grep_pattern = test1
+--let $grep_file = $downstream_dump
+--let $wait_timeout = 60
+--source include/wait_for_pattern_in_file.inc
+
+--echo
+--echo *** Sending SIGTERM to the downstream mysqlbinlog session and
+--echo *** waiting for it to terminate.
+--let $proc_pid = $downstream_pid
+--source ../include/terminate_proc.inc
+
+--echo
+--echo *** Dropping the test database.
+DROP DATABASE test1;
+
+--echo
+--echo *** Sending SIGTERM signal to the Binlog Server Utility and waiting
+--echo *** for the process to terminate.
+--let $proc_pid = $binsrv_pid
+--source ../include/terminate_proc.inc
+
+--remove_file $downstream_dump
+
+# cleaning up
+--source ../include/tear_down_binsrv_environment.inc
+
+# PBS reconnected to the source after start_mysqld.inc and ran a
+# normal Binlog Dump session, so we need the same cleanup as
+# 'rs_blocking_dump.test': kill the server-side Binlog Dump
+# connection and let 'count_sessions' confirm it is gone.
+--source ../include/kill_binlog_dump_connection.inc
+--source include/wait_until_count_sessions.inc
