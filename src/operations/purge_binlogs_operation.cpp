@@ -65,8 +65,8 @@ generic_operation<mode_type::purge_binlogs>::execute() const {
     // call reports it via a non-empty 'cleanup_warning_message' and
     // we surface that as a 'warning' status (instead of plain
     // 'success'), with the underlying error message attached, so the
-    // operator knows the storage will need attention before the next
-    // 'fetch' / 'pull' run.
+    // operator knows that the leftovers will be removed as garbage on
+    // the next startup.
     binsrv::models::search_response response;
     if (!cleanup_warning_message.empty()) {
       response = binsrv::models::search_response{

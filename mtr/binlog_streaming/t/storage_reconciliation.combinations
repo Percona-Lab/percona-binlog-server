@@ -1,0 +1,5 @@
+[plain]
+init-connect = SET @binsrv_encryption = 'off'
+
+[encrypted]
+init-connect = SET @binsrv_encryption = 'on'
