@@ -22,6 +22,8 @@
 #include "binsrv/replication_source_config_fwd.hpp"
 #include "binsrv/storage_fwd.hpp"
 
+#include "opensslpp/evp_pkey.hpp"
+
 namespace minimysql {
 
 class network_service {
@@ -42,6 +44,8 @@ public:
 private:
   binsrv::basic_logger_ptr logger_;
   binsrv::storage_ptr storage_;
+  // empty if <replication_source.auth_rsa_private_key> is not configured
+  opensslpp::evp_pkey auth_rsa_private_key_;
 
   boost::asio::io_context *context_;
   using acceptor_type =

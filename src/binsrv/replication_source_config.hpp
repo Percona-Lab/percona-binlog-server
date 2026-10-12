@@ -23,6 +23,7 @@
 
 #include "binsrv/authentication_config.hpp" // IWYU pragma: export
 
+#include "util/common_optional_types.hpp"
 #include "util/nv_tuple.hpp"
 
 namespace binsrv {
@@ -30,12 +31,13 @@ namespace binsrv {
 struct [[nodiscard]] replication_source_config
     : util::nv_tuple<
           // clang-format off
-          util::nv<"port"          , std::uint16_t>,
-          util::nv<"server_id"     , std::uint32_t>,
-          util::nv<"server_uuid"   , std::string>,
-          util::nv<"read_timeout"  , std::uint32_t>,
-          util::nv<"write_timeout" , std::uint32_t>,
-          util::nv<"authentication", authentication_config>
+          util::nv<"port"                , std::uint16_t>,
+          util::nv<"server_id"           , std::uint32_t>,
+          util::nv<"server_uuid"         , std::string>,
+          util::nv<"read_timeout"        , std::uint32_t>,
+          util::nv<"write_timeout"       , std::uint32_t>,
+          util::nv<"auth_rsa_private_key", util::optional_string>,
+          util::nv<"authentication"      , authentication_config>
           // clang-format on
           > {
   void validate() const;

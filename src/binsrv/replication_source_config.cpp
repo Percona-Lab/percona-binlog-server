@@ -73,6 +73,13 @@ void replication_source_config::validate() const {
         "error validating replication source config: "
         "write_timeout must be greater than 0");
   }
+  const auto &optional_auth_rsa_private_key{get<"auth_rsa_private_key">()};
+  if (optional_auth_rsa_private_key.has_value() &&
+      optional_auth_rsa_private_key->empty()) {
+    util::exception_location().raise<std::invalid_argument>(
+        "error validating replication source config: "
+        "auth_rsa_private_key must not be empty if specified");
+  }
   get<"authentication">().validate();
 }
 

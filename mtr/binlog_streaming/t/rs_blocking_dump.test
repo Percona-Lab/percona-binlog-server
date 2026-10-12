@@ -24,6 +24,7 @@ eval $stmt_reset_binary_logs_and_gtids;
 --let $binsrv_verify_checksum = TRUE
 --let $binsrv_replication_mode = position
 --let $binsrv_checkpoint_interval = 1s
+--source ../include/set_up_auth_rsa_keys.inc
 --source ../include/set_up_binsrv_environment.inc
 
 --echo
@@ -39,6 +40,7 @@ eval $stmt_reset_binary_logs_and_gtids;
 --echo
 --echo *** Waiting for the replication source listener port ready to accept
 --echo *** connections.
+--let $listening_host = $binsrv_connection_host
 --let $listening_port = $binsrv_replication_source_port
 --source ../include/wait_for_listening_port.inc
 
@@ -49,7 +51,7 @@ eval $stmt_reset_binary_logs_and_gtids;
 --echo *** must keep the connection open and deliver events as they become
 --echo *** available instead of disconnecting on EOF.
 --let $downstream1_dump = $MYSQL_TMP_DIR/rs_blocking_dump_1.sql
---let $proc_command_line = $MYSQL_BINLOG --read-from-remote-server --stop-never --host=127.0.0.1 --port=$binsrv_replication_source_port --user=$binsrv_auth_user --password=$binsrv_auth_password --default-auth=caching_sha2_password $first_binlog > $downstream1_dump 2>/dev/null
+--let $proc_command_line = $MYSQL_BINLOG --read-from-remote-server --stop-never --host=$binsrv_connection_host --port=$binsrv_replication_source_port --user=$binsrv_auth_user --password=$binsrv_auth_password --default-auth=caching_sha2_password --server-public-key-path=$binsrv_auth_rsa_public_key $first_binlog > $downstream1_dump 2>/dev/null
 --source ../include/start_proc_in_background.inc
 --let $downstream1_pid = $proc_pid
 
@@ -58,7 +60,7 @@ eval $stmt_reset_binary_logs_and_gtids;
 --echo *** that two concurrent blocking COM_BINLOG_DUMP sessions are
 --echo *** exercised at the same time.
 --let $downstream2_dump = $MYSQL_TMP_DIR/rs_blocking_dump_2.sql
---let $proc_command_line = $MYSQL_BINLOG --read-from-remote-server --stop-never --host=127.0.0.1 --port=$binsrv_replication_source_port --user=$binsrv_auth_user --password=$binsrv_auth_password --default-auth=caching_sha2_password $first_binlog > $downstream2_dump 2>/dev/null
+--let $proc_command_line = $MYSQL_BINLOG --read-from-remote-server --stop-never --host=$binsrv_connection_host --port=$binsrv_replication_source_port --user=$binsrv_auth_user --password=$binsrv_auth_password --default-auth=caching_sha2_password --server-public-key-path=$binsrv_auth_rsa_public_key $first_binlog > $downstream2_dump 2>/dev/null
 --source ../include/start_proc_in_background.inc
 --let $downstream2_pid = $proc_pid
 

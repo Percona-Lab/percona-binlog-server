@@ -17,6 +17,7 @@ eval $stmt_reset_binary_logs_and_gtids;
 --let $binsrv_verify_checksum = TRUE
 --let $binsrv_replication_mode = position
 --let $binsrv_checkpoint_size = 1
+--source ../include/set_up_auth_rsa_keys.inc
 --source ../include/set_up_binsrv_environment.inc
 
 --echo
@@ -118,6 +119,7 @@ while ($binlog_file_exists)
 --echo
 --echo *** Waiting for the replication source listener port ready to accept
 --echo *** connections.
+--let $listening_host = $binsrv_connection_host
 --let $listening_port = $binsrv_replication_source_port
 --source ../include/wait_for_listening_port.inc
 

@@ -29,6 +29,7 @@
 #   --let $binsrv_keyring_data_file_path = $MYSQL_TMP_DIR/keyring_data.json (optional)
 #   --let $binsrv_auth_user = rpl (optional, default: rpl)
 #   --let $binsrv_auth_password = password (optional, default: password)
+#   --let $binsrv_auth_rsa_private_key = /path/to/rsa_private_key.pem (optional)
 #   --source set_up_binsrv_environment.inc
 
 --echo
@@ -198,6 +199,10 @@ if ($binsrv_tls_version != "")
   eval SET @binsrv_config_json = JSON_INSERT(@binsrv_config_json, '$.connection.tls', JSON_OBJECT('version', '$binsrv_tls_version'));
 }
 
+if ($binsrv_auth_rsa_private_key != "")
+{
+  eval SET @binsrv_config_json = JSON_INSERT(@binsrv_config_json, '$.replication_source.auth_rsa_private_key', '$binsrv_auth_rsa_private_key');
+}
 
 if ($binsrv_keyring_data_file_path != "")
 {

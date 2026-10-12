@@ -49,6 +49,7 @@ INSERT INTO source_db.tbl VALUES (4, 'four'), (5, 'five'), (6, 'six');
 --echo
 --echo *** Waiting for the replication source listener port ready to accept
 --echo *** connections for the first time.
+--let $listening_host = $binsrv_connection_host
 --let $listening_port = $binsrv_replication_source_port
 --source ../include/wait_for_listening_port.inc
 
@@ -87,6 +88,7 @@ INSERT INTO source_db.tbl VALUES (10, 'ten'), (11, 'eleven'), (12, 'twelve');
 --echo
 --echo *** Waiting for the replication source listener port ready to accept
 --echo *** connections for the second time.
+--let $listening_host = $binsrv_connection_host
 --let $listening_port = $binsrv_replication_source_port
 --source ../include/wait_for_listening_port.inc
 

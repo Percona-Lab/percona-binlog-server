@@ -1,0 +1,71 @@
+*** Resetting replication at the very beginning of the test.
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+
+*** Starting Binlog Server Utility in background in pull mode.
+
+*** Waiting for the replication source listener port ready to accept
+*** connections.
+
+*** No public key: client picks the same plugin the server advertises
+*** (caching_sha2_password), the Binlog Server requests full
+*** authentication, but the client has neither a secure connection nor
+*** the server's RSA public key to encrypt the password, so it must
+*** give up and mysql must return non-zero exit code.
+
+*** Public key: same as above, but the client is given the server's RSA
+*** public key via --server-public-key-path, so it sends the password
+*** (XOR-ed with the scramble) encrypted with this key. A zero exit
+*** code from mysql confirms the session got as far as running the
+*** probe query.
+
+*** Public key, wrong password: the Binlog Server successfully decrypts
+*** the password, but it does not match the configured one, so access
+*** must be denied and mysql must return non-zero exit code.
+
+*** Auth method switch + public key: client forces mysql_native_password
+*** in its handshake so the Binlog Server has to send an
+*** AuthMethodSwitch, after which the client switches to
+*** caching_sha2_password and goes through the full authentication with
+*** the server's RSA public key. If the switch encoding, the follow-up
+*** parse, or the full authentication path is broken, mysql returns
+*** non-zero and MTR fails the --exec. The log grep that follows the
+*** shutdown is what actually proves the switch happened - this line
+*** only proves the session survived it.
+
+*** Requesting public key: client asks the Binlog Server for its RSA
+*** public key (--get-server-public-key) instead of using a local copy.
+*** This is not supported yet, so access must be denied and mysql must
+*** return non-zero exit code.
+
+*** Sending SIGTERM signal to the Binlog Server Utility and waiting for
+*** the process to terminate
+
+*** Confirming the switch actually happened by grepping the Binlog
+*** Server stdout log (now complete and flushed) for the marker
+*** emitted after generate_encoded_auth_method_switch() writes its
+*** frame.
+include/wait_for_pattern_in_file.inc [sent server auth method switch]
+
+*** Confirming the full authentication was requested (marker emitted
+*** after generate_encoded_full_auth() writes its frame).
+include/wait_for_pattern_in_file.inc [sent server full auth required]
+
+*** Confirming the full authentication actually succeeded at least
+*** once (for the sessions with the correct password and public key).
+include/wait_for_pattern_in_file.inc [client authentication succeeded]
+
+*** Confirming the public key request was detected and rejected.
+include/wait_for_pattern_in_file.inc [client requested server RSA public key]
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.

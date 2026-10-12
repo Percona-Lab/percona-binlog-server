@@ -20,6 +20,7 @@
 #include <string_view>
 
 #include "opensslpp/digest_context_fwd.hpp"
+#include "opensslpp/evp_pkey_fwd.hpp"
 
 #include "util/byte_span_fwd.hpp"
 
@@ -31,6 +32,17 @@ public:
 
   [[nodiscard]] static opensslpp::digest_storage
   scramble(util::const_byte_span password, util::const_byte_span salt);
+
+  // performs the server-side part of the caching_sha2_password "full
+  // authentication" over an insecure connection: 'encrypted_password' is
+  // expected to be the RSA (with OAEP padding) encrypted null-terminated
+  // password XOR-ed with 'nonce' (repeated cyclically), which the client
+  // sends in response to the "perform full authentication" packet;
+  // returns the plain text password (without the trailing null terminator)
+  [[nodiscard]] static std::string
+  decrypt_password(util::const_byte_span encrypted_password,
+                   util::const_byte_span nonce,
+                   const opensslpp::evp_pkey &private_key);
 };
 
 } // namespace minimysql
