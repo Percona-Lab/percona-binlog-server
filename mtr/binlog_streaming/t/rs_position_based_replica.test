@@ -81,13 +81,13 @@ INSERT INTO source_db.tbl VALUES (1, 'one'), (2, 'two'), (3, 'three');
 --connect (replica, 127.0.0.1, root,, test, $SLAVE_MYPORT)
 --connection replica
 
---replace_result $binsrv_replication_source_port BINSRV_PORT $first_binlog_file FIRST_BINLOG_FILE $binsrv_auth_rsa_public_key BINSRV_AUTH_RSA_PUBLIC_KEY
+--replace_result $binsrv_replication_source_port BINSRV_PORT $first_binlog_file FIRST_BINLOG_FILE
 eval CHANGE REPLICATION SOURCE TO
        SOURCE_HOST='127.0.0.1',
        SOURCE_PORT=$binsrv_replication_source_port,
        SOURCE_USER='$binsrv_auth_user',
        SOURCE_PASSWORD='$binsrv_auth_password',
-       SOURCE_PUBLIC_KEY_PATH='$binsrv_auth_rsa_public_key',
+       GET_SOURCE_PUBLIC_KEY=1,
        SOURCE_LOG_FILE='$first_binlog_file',
        SOURCE_LOG_POS=4,
        SOURCE_AUTO_POSITION=0,

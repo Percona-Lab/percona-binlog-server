@@ -113,6 +113,7 @@ connection_context::connection_context(
 
 [[nodiscard]] bool
 connection_context::check_client_fast_authentication() const {
+  // TODO: use CRYPTO_memcmp for the scramble comparison
   return get_client_username() == get_server_username() &&
          std::ranges::equal(get_client_auth_method_data(),
                             caching_sha2_password_authenticator::scramble(
@@ -135,6 +136,7 @@ connection_context::check_client_fast_authentication() const {
     return false;
   }
 
+  // TODO: use CRYPTO_memcmp for the password comparison
   return decrypted_password == get_server_password();
 }
 
@@ -266,15 +268,25 @@ void connection_context::parse_client_auth_method_switch(
 [[nodiscard]] network_buffer_type
 connection_context::generate_encoded_fast_auth() {
   // 0x03 means "fast auth success" in caching_sha2_password protocol
-  static constexpr char fast_auth_code{'\x03'};
+  static constexpr std::string_view fast_auth_code{"\x03"};
   return generate_encoded_generic_auth_internal(fast_auth_code);
 }
 
 [[nodiscard]] network_buffer_type
 connection_context::generate_encoded_full_auth() {
   // 0x04 means "full auth required" in caching_sha2_password protocol
-  static constexpr char full_auth_code{'\x04'};
+  static constexpr std::string_view full_auth_code{"\x04"};
   return generate_encoded_generic_auth_internal(full_auth_code);
+}
+
+[[nodiscard]] network_buffer_type
+connection_context::generate_encoded_public_key(
+    std::string_view public_key_pem) {
+  // in response to the client's "request public key" packet the server
+  // sends its RSA public key in PEM format as is (without any extra code
+  // byte and without the trailing null terminator) wrapped into a regular
+  // "auth method data" (0x01) packet
+  return generate_encoded_generic_auth_internal(public_key_pem);
 }
 
 void connection_context::parse_client_full_auth_response(
@@ -565,13 +577,14 @@ void connection_context::validate_and_update_sequence_number(
 }
 
 [[nodiscard]] network_buffer_type
-connection_context::generate_encoded_generic_auth_internal(char packet_code) {
+connection_context::generate_encoded_generic_auth_internal(
+    std::string_view auth_method_data) {
   std::string result_buffer{};
 
   using auth_method_data_frame = classic_protocol::frame::Frame<
       classic_protocol::message::server::AuthMethodData>;
   auto encode_res{classic_protocol::encode<auth_method_data_frame>(
-      {generate_sequence_number(), {std::string(1UZ, packet_code)}},
+      {generate_sequence_number(), {std::string{auth_method_data}}},
       get_shared_capabilities(), boost::asio::dynamic_buffer(result_buffer))};
 
   if (!encode_res) {

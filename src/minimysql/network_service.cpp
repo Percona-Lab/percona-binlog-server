@@ -354,6 +354,86 @@ check_if_in_auth_cache(const minimysql::connection_context & /*context*/) {
   return false;
 }
 
+// caching_sha2_password "full authentication" handling coroutine - sends
+// "perform full authentication" packet, receives the client's password
+// encrypted with the server's RSA public key (optionally sending this public
+// key to the client first if requested) and verifies it
+[[nodiscard]] boost::asio::awaitable<bool> perform_full_authentication(
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
+    binsrv::basic_logger &logger, boost::asio::ip::tcp::socket &socket,
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
+    const boost::asio::ip::tcp::endpoint &remote_endpoint,
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
+    minimysql::connection_context &context,
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
+    minimysql::network_buffer_type &data,
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
+    const binsrv::replication_source_config &cfg,
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
+    const opensslpp::evp_pkey &auth_rsa_private_key,
+    std::string_view auth_rsa_public_key_pem) {
+  const auto remote_endpoint_str{
+      boost::lexical_cast<std::string>(remote_endpoint)};
+
+  const std::chrono::seconds read_timeout{cfg.get<"read_timeout">()};
+  const std::chrono::seconds write_timeout{cfg.get<"write_timeout">()};
+
+  // full authentication: the client has to send the password itself and,
+  // as the connection is not encrypted, the password is expected to be
+  // encrypted with the server's RSA public key
+  const auto full_auth_required{context.generate_encoded_full_auth()};
+  print_generic(logger, remote_endpoint, context,
+                "auth method data (full auth)");
+  co_await minimysql::async_write_mysql_frame(socket, full_auth_required,
+                                              write_timeout);
+  logger.log_format(binsrv::log_severity::debug,
+                    "net    : sent server full auth required ({} bytes to {})",
+                    std::size(full_auth_required), remote_endpoint_str);
+
+  co_await minimysql::async_read_mysql_frame(socket, data, read_timeout);
+  logger.log_format(binsrv::log_severity::debug,
+                    "net    : received client full auth response "
+                    "({} bytes from {})",
+                    std::size(data), remote_endpoint_str);
+  context.parse_client_full_auth_response(data);
+
+  // just like MySQL Server, checking for the RSA key availability before
+  // checking whether the client requested the public key
+  if (auth_rsa_private_key.is_empty()) {
+    logger.log(binsrv::log_severity::warning,
+               "net    : cannot perform full authentication as "
+               "<replication_source.auth_rsa_private_key> is not configured");
+    co_return false;
+  }
+
+  if (context.check_client_requested_public_key()) {
+    // the client (e.g. 'mysql --get-server-public-key') does not have the
+    // server's RSA public key and asks for it - sending it in PEM format,
+    // after that the client is expected to respond with the encrypted
+    // password
+    // the public key is sent only once - if the client requests it again,
+    // this request will be treated as an encrypted password of invalid size
+    const auto public_key{
+        context.generate_encoded_public_key(auth_rsa_public_key_pem)};
+    print_generic(logger, remote_endpoint, context,
+                  "auth method data (public key)");
+    co_await minimysql::async_write_mysql_frame(socket, public_key,
+                                                write_timeout);
+    logger.log_format(binsrv::log_severity::debug,
+                      "net    : sent server RSA public key ({} bytes to {})",
+                      std::size(public_key), remote_endpoint_str);
+
+    co_await minimysql::async_read_mysql_frame(socket, data, read_timeout);
+    logger.log_format(binsrv::log_severity::debug,
+                      "net    : received client full auth response after "
+                      "public key ({} bytes from {})",
+                      std::size(data), remote_endpoint_str);
+    context.parse_client_full_auth_response(data);
+  }
+
+  co_return context.check_client_full_authentication(auth_rsa_private_key);
+}
+
 // MySQL session handling coroutine - writes server greeting, then receives and
 // parses client greeting
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
@@ -365,7 +445,8 @@ check_if_in_auth_cache(const minimysql::connection_context & /*context*/) {
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
     const binsrv::replication_source_config &cfg,
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
-    const opensslpp::evp_pkey &auth_rsa_private_key) {
+    const opensslpp::evp_pkey &auth_rsa_private_key,
+    std::string_view auth_rsa_public_key_pem) {
   boost::system::error_code session_ec;
   const auto remote_endpoint{socket.remote_endpoint(session_ec)};
   const auto remote_endpoint_str{
@@ -476,40 +557,9 @@ check_if_in_auth_cache(const minimysql::connection_context & /*context*/) {
             std::size(fast_auth_success), remote_endpoint_str);
       }
     } else {
-      // full authentication: the client has to send the password itself and,
-      // as the connection is not encrypted, the password is expected to be
-      // encrypted with the server's RSA public key
-      // TODO: support clients requesting the server's RSA public key
-      const auto full_auth_required{context.generate_encoded_full_auth()};
-      print_generic(*logger, remote_endpoint, context,
-                    "auth method data (full auth)");
-      co_await minimysql::async_write_mysql_frame(socket, full_auth_required,
-                                                  write_timeout);
-      logger->log_format(
-          binsrv::log_severity::debug,
-          "net    : sent server full auth required ({} bytes to {})",
-          std::size(full_auth_required), remote_endpoint_str);
-
-      co_await minimysql::async_read_mysql_frame(socket, data, read_timeout);
-      logger->log_format(binsrv::log_severity::debug,
-                         "net    : received client full auth response "
-                         "({} bytes from {})",
-                         std::size(data), remote_endpoint_str);
-      context.parse_client_full_auth_response(data);
-
-      if (context.check_client_requested_public_key()) {
-        logger->log(binsrv::log_severity::warning,
-                    "net    : client requested server RSA public key, which "
-                    "is not supported yet");
-      } else if (auth_rsa_private_key.is_empty()) {
-        logger->log(binsrv::log_severity::warning,
-                    "net    : cannot perform full authentication as "
-                    "<replication_source.auth_rsa_private_key> is not "
-                    "configured");
-      } else {
-        authenticated =
-            context.check_client_full_authentication(auth_rsa_private_key);
-      }
+      authenticated = co_await perform_full_authentication(
+          *logger, socket, remote_endpoint, context, data, cfg,
+          auth_rsa_private_key, auth_rsa_public_key_pem);
     }
 
     if (!authenticated) {
@@ -910,7 +960,8 @@ check_if_in_auth_cache(const minimysql::connection_context & /*context*/) {
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
     const binsrv::replication_source_config &cfg,
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
-    const opensslpp::evp_pkey &auth_rsa_private_key) {
+    const opensslpp::evp_pkey &auth_rsa_private_key,
+    std::string_view auth_rsa_public_key_pem) {
   const scope_tracer tracer(*logger, "listener");
 
   auto executor = acceptor.get_executor();
@@ -937,36 +988,13 @@ check_if_in_auth_cache(const minimysql::connection_context & /*context*/) {
       // NOLINTNEXTLINE(misc-include-cleaner)
       boost::asio::co_spawn(executor,
                             session(logger, storage, std::move(socket), cfg,
-                                    auth_rsa_private_key),
+                                    auth_rsa_private_key,
+                                    auth_rsa_public_key_pem),
                             boost::asio::detached);
     }
   } catch (...) {
     handle_exception(*logger, "listener");
   }
-}
-
-[[nodiscard]] opensslpp::evp_pkey
-load_auth_rsa_private_key(binsrv::basic_logger &logger,
-                          const binsrv::replication_source_config &cfg) {
-  const auto &optional_key_path{cfg.get<"auth_rsa_private_key">()};
-  if (!optional_key_path.has_value()) {
-    logger.log(binsrv::log_severity::info,
-               "net    : no authentication RSA private key configured, full "
-               "authentication will not be available");
-    return {};
-  }
-
-  static constexpr std::size_t max_pem_file_size{65536UZ};
-  const auto pem_content{
-      util::read_file_content("authentication RSA private key file",
-                              *optional_key_path, max_pem_file_size)};
-  auto key{opensslpp::evp_pkey::import_private_pem(
-      util::as_string_view(pem_content))};
-  logger.log_format(binsrv::log_severity::info,
-                    "net    : loaded {}-bit authentication RSA private key "
-                    "from {}",
-                    key.get_size_in_bits(), *optional_key_path);
-  return key;
 }
 
 } // anonymous namespace
@@ -976,19 +1004,53 @@ network_service::network_service(binsrv::basic_logger_ptr logger,
                                  binsrv::storage_ptr storage,
                                  const binsrv::replication_source_config &cfg)
     : logger_{std::move(logger)}, storage_{std::move(storage)},
-      auth_rsa_private_key_{load_auth_rsa_private_key(*logger_, cfg)},
-      context_{&context},
+      auth_rsa_private_key_{}, auth_rsa_public_key_pem_{}, context_{&context},
       acceptor_{std::make_unique<acceptor_type>(
           context, boost::asio::ip::tcp::endpoint{boost::asio::ip::tcp::v4(),
                                                   cfg.get<"port">()})} {
   assert(logger_);
+
+  load_auth_rsa_private_key(*logger_, cfg);
+
   // NOLINTNEXTLINE(misc-include-cleaner)
-  boost::asio::co_spawn(
-      *context_,
-      listener(logger_, storage_, *acceptor_, cfg, auth_rsa_private_key_),
-      boost::asio::detached);
+  boost::asio::co_spawn(*context_,
+                        listener(logger_, storage_, *acceptor_, cfg,
+                                 auth_rsa_private_key_,
+                                 auth_rsa_public_key_pem_),
+                        boost::asio::detached);
 }
 
 network_service::~network_service() = default;
+
+void network_service::load_auth_rsa_private_key(
+    binsrv::basic_logger &logger,
+    const binsrv::replication_source_config &cfg) {
+  const auto &optional_key_path{cfg.get<"auth_rsa_private_key">()};
+  if (!optional_key_path.has_value()) {
+    logger.log(
+        binsrv::log_severity::info,
+        "net    : no authentication RSA private key configured, full "
+        "authentication for non-SSL/TLS connections will not be available");
+    return;
+  }
+
+  static constexpr std::size_t max_pem_file_size{65536UZ};
+  const auto pem_content{
+      util::read_file_content("authentication RSA private key file",
+                              *optional_key_path, max_pem_file_size)};
+  auth_rsa_private_key_ = opensslpp::evp_pkey::import_private_pem(
+      util::as_string_view(pem_content));
+  logger.log_format(binsrv::log_severity::info,
+                    "net    : loaded {}-bit authentication RSA private key "
+                    "from {}",
+                    auth_rsa_private_key_.get_size_in_bits(),
+                    *optional_key_path);
+
+  // the public component is extracted from the private key only once and
+  // then sent (in PEM format) to every client that requests it during
+  // full authentication (e.g. 'mysql --get-server-public-key')
+  auth_rsa_public_key_pem_ = opensslpp::evp_pkey::export_public_pem(
+      auth_rsa_private_key_.derive_public_key());
+}
 
 } // namespace minimysql

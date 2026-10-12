@@ -86,7 +86,7 @@ eval $stmt_reset_binary_logs_and_gtids;
 --echo *** PBS must block the session until the requested binlog shows
 --echo *** up in storage instead of disconnecting.
 --let $downstream_dump = $MYSQL_TMP_DIR/rs_blocking_dump_empty_storage.sql
---let $proc_command_line = $MYSQL_BINLOG --read-from-remote-server --stop-never --host=$binsrv_connection_host --port=$binsrv_replication_source_port --user=$binsrv_auth_user --password=$binsrv_auth_password --default-auth=caching_sha2_password $first_binlog --server-public-key-path=$binsrv_auth_rsa_public_key > $downstream_dump 2>/dev/null
+--let $proc_command_line = $MYSQL_BINLOG --read-from-remote-server --stop-never --host=$binsrv_connection_host --port=$binsrv_replication_source_port --user=$binsrv_auth_user --password=$binsrv_auth_password --default-auth=caching_sha2_password $first_binlog --get-server-public-key > $downstream_dump 2>/dev/null
 --source ../include/start_proc_in_background.inc
 --let $downstream_pid = $proc_pid
 

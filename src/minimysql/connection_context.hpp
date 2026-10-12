@@ -148,6 +148,10 @@ public:
 
   [[nodiscard]] network_buffer_type generate_encoded_fast_auth();
   [[nodiscard]] network_buffer_type generate_encoded_full_auth();
+  // 'public_key_pem' is the server's RSA public key in PEM format sent in
+  // response to the client's "request public key" packet
+  [[nodiscard]] network_buffer_type
+  generate_encoded_public_key(std::string_view public_key_pem);
   void parse_client_full_auth_response(const network_buffer_type &payload);
 
   [[nodiscard]] network_buffer_type generate_encoded_ok();
@@ -216,6 +220,8 @@ private:
   static std::atomic_uint32_t next_connection_id_;
 
   std::string server_username_;
+  // TODO: rework authentication model to store double-hashed password here
+  //       instead of a plain-text one
   std::string server_password_;
 
   std::uint32_t connection_id_;
@@ -252,7 +258,7 @@ private:
   void validate_and_update_sequence_number(std::uint8_t sequence_number);
 
   [[nodiscard]] network_buffer_type
-  generate_encoded_generic_auth_internal(char packet_code);
+  generate_encoded_generic_auth_internal(std::string_view auth_method_data);
   void
   parse_client_auth_method_data_internal(const network_buffer_type &payload);
 
