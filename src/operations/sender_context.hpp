@@ -90,6 +90,22 @@ private:
 
   [[nodiscard]] util::optional_bool
   populate_event_block(util::const_byte_span &event);
+
+  enum class fetch_size_status : std::uint8_t {
+    ready,           // 'buffer' already holds the complete first event
+    need_more,       // another storage fetch is required
+    event_too_large, // the advertised event size is corrupt / malicious
+  };
+  void snapshot_block_tail_to_carry();
+  [[nodiscard]] fetch_size_status
+  compute_fetch_size_requirements(const util::dynamic_byte_buffer &buffer,
+                                  std::size_t &desired_size) const;
+  void finalize_fetch_eof(util::dynamic_byte_buffer &buffer,
+                          util::const_byte_span &event);
+  [[nodiscard]] bool handle_binlog_file_switch(
+      const binsrv::events::composite_binlog_name &saved_binlog_name,
+      const util::dynamic_byte_buffer &buffer);
+
   [[nodiscard]] bool handle_start_states(util::const_byte_span &event);
   [[nodiscard]] bool
   handle_generate_artificial_fde_state(util::const_byte_span &event);
