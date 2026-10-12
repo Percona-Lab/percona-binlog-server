@@ -272,7 +272,22 @@ private:
     return binlog_records_.empty();
   }
 
+  using storage_object_name_list = std::vector<std::string>;
+
   void remove_temporary_objects(storage_object_name_container &object_names);
+  [[nodiscard]] bool collect_interrupted_first_binlog_objects(
+      storage_object_name_container &object_names,
+      storage_object_name_list &garbage_object_names) const;
+  void collect_interrupted_rotation_objects(
+      storage_object_name_container &object_names,
+      storage_object_name_container &object_metadata_names,
+      storage_object_name_list &garbage_object_names) const;
+  void collect_interrupted_purge_objects(
+      storage_object_name_container &object_names,
+      storage_object_name_container &object_metadata_names,
+      storage_object_name_list &garbage_object_names) const;
+  void
+  remove_garbage_objects(const storage_object_name_list &garbage_object_names);
 
   void initialize_storage_encryption(
       const optional_encryption_config &encryption_config);
@@ -341,6 +356,8 @@ private:
   void validate_binlog_metadata(const binlog_record &record) const;
   void save_binlog_metadata(const binlog_record &record) const;
 
+  void recover_binlog_file_size(const binlog_record &record,
+                                std::uint64_t actual_size, bool is_last);
   void load_and_validate_binlog_metadata_set(
       const storage_object_name_container &object_names,
       const storage_object_name_container &object_metadata_names);

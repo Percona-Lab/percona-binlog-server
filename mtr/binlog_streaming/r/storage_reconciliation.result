@@ -1,0 +1,171 @@
+*** Resetting replication at the very beginning of the test.
+
+*** Generating two binary logs with some data in each of them.
+CREATE TABLE t1(id INT UNSIGNED NOT NULL AUTO_INCREMENT, PRIMARY KEY(id)) ENGINE=InnoDB;
+INSERT INTO t1 VALUES(DEFAULT);
+FLUSH BINARY LOGS;
+INSERT INTO t1 VALUES(DEFAULT);
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+
+*** Executing the Binlog Server utility to download all binlog data
+*** from the server.
+
+*** Saving a copy of the second binlog data and metadata files to be
+*** used for simulating garbage objects.
+
+*** 1. Binlog files left after an interrupted binlog rotation are
+***    removed; querying-only operations ignore them without
+***    modifying the storage.
+
+*** Simulating a binlog rotation interrupted after the new binlog
+*** metadata was written but before the binlog index was updated, and
+*** an interrupted binlog index update.
+
+*** Executing the Binlog Server utility in the 'list' mode and
+*** expecting it to ignore the garbage objects without modifying the
+*** storage.
+include/assert_grep.inc [List response is not affected]
+
+*** Executing the Binlog Server utility and expecting it to remove
+*** garbage objects.
+include/assert_grep.inc [Found orphaned binlog data file]
+include/assert_grep.inc [Found orphaned binlog metadata file]
+include/assert_grep.inc [Removed orphaned objects]
+include/assert_grep.inc [Removed temporary object]
+
+*** 2. The most recent binlog data file is truncated to the size from
+***    its metadata; querying-only operations ignore the size mismatch
+***    without modifying the storage.
+
+*** Appending extra bytes to the second binlog data file.
+
+*** Executing the Binlog Server utility in the 'list' mode and
+*** expecting it to ignore the size mismatch without modifying the
+*** storage.
+include/assert_grep.inc [List response is not affected]
+
+*** Executing the Binlog Server utility and expecting it to truncate
+*** the second binlog data file.
+include/assert_grep.inc [Truncated the second binlog data file]
+
+*** 3. The storage with a missing metadata file of a binlog listed in
+***    the binlog index, with a size mismatch in an older binlog file or
+***    with an object that was not created by the Binlog Server cannot
+***    be repaired, and garbage objects are not removed from it.
+
+*** Simulating an interrupted binlog rotation one more time.
+
+*** Removing the first binlog metadata file.
+
+*** Executing the Binlog Server utility and expecting it to fail.
+include/assert_grep.inc [Refused to open storage with missing binlog metadata]
+include/assert_grep.inc [Nothing removed from the storage with missing binlog metadata]
+
+*** Restoring the first binlog metadata file.
+
+*** Appending extra bytes to the first (not the most recent) binlog
+*** data file.
+
+*** Executing the Binlog Server utility and expecting it to fail.
+include/assert_grep.inc [Refused to open storage with size mismatch in an older binlog]
+include/assert_grep.inc [Nothing removed from the storage with size mismatch in an older binlog]
+
+*** Restoring the first binlog data file.
+
+*** Adding an object that was not created by the Binlog Server.
+
+*** Executing the Binlog Server utility and expecting it to fail.
+include/assert_grep.inc [Refused to open storage with a foreign object]
+include/assert_grep.inc [Nothing removed from the storage with a foreign object]
+
+*** Removing the foreign object and the garbage objects.
+
+*** 4. The storage with binlog files but without the binlog index cannot
+***    be repaired; querying-only operations just ignore it.
+
+*** Removing the binlog index.
+
+*** Executing the Binlog Server utility in the 'list' mode and
+*** expecting an empty response.
+include/assert_grep.inc [List response contains no binlog files]
+
+*** Executing the Binlog Server utility and expecting it to fail.
+include/assert_grep.inc [Refused to open storage without binlog index]
+include/assert_grep.inc [Nothing removed from the storage without binlog index]
+
+*** Restoring the binlog index.
+
+*** Flushing the second binary log and dropping the table.
+FLUSH BINARY LOGS;
+DROP TABLE t1;
+
+*** Executing the Binlog Server utility to receive the rest of the
+*** events.
+
+*** 5. The 'purge_binlogs' operation removes garbage objects left after
+***    an improper shutdown as well.
+
+*** Saving a copy of the first binlog data and metadata files to be
+*** used for simulating an interrupted binlog purge.
+
+*** Simulating an interrupted binlog rotation one more time (the third
+*** binlog file is already in the storage now).
+
+*** Executing the Binlog Server utility in the 'purge_binlogs' mode.
+include/assert_grep.inc [Purge response is not affected]
+
+*** 6. Binlog files left after an interrupted binlog purge are removed.
+
+*** Simulating a binlog purge interrupted after the binlog index was
+*** updated but before the purged binlog files were removed.
+
+*** Executing the Binlog Server utility and expecting it to remove
+*** garbage objects.
+include/assert_grep.inc [Found purged binlog data file]
+include/assert_grep.inc [Removed purged binlog files]
+
+*** 7. Querying-only operations do not crash even if the metadata of
+***    every binlog file listed in the binlog index is missing (PBS-79).
+
+*** Removing the metadata files of all remaining binlog files.
+
+*** Executing the Binlog Server utility in the 'list' mode and
+*** expecting it to exit cleanly with an empty response.
+include/assert_grep.inc [List response contains no binlog files]
+
+*** 8. Querying-only operations ignore, and streaming operations
+***    recover, a storage left after an interrupted creation of the
+***    first binlog file (no binlog index, at most one binlog's data
+***    and metadata).
+
+*** Removing the remaining binlog data files and the binlog index.
+
+*** Simulating an interrupted creation of the first binlog file after
+*** both its data and metadata were written.
+
+*** Executing the Binlog Server utility in the 'list' mode and
+*** expecting it to ignore the leftover objects without modifying the
+*** storage.
+include/assert_grep.inc [List response contains no binlog files]
+
+*** Removing the metadata file to simulate an interrupted creation of
+*** the first binlog file after only its data was written.
+
+*** Executing the Binlog Server utility and expecting it to recover by
+*** removing the leftover binlog data file.
+include/assert_grep.inc [Found orphaned first binlog data file]
+include/assert_grep.inc [No orphaned first binlog metadata file found]
+include/assert_grep.inc [Removed orphaned first binlog file]
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.

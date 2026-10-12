@@ -1,0 +1,550 @@
+#
+# Checks how the storage is reconciled when opened, using 'binlog.index' as
+# the source of truth for the set of binlog files and binlog metadata files
+# as the source of truth for binlog data file sizes:
+# - binlog files left after an interrupted binlog rotation (the one that
+#   follows the last binlog file from the binlog index) or after an
+#   interrupted binlog purge (the ones that precede the first binlog file
+#   from the binlog index) are garbage that is removed;
+# - any other object not referenced in the binlog index (including objects
+#   not created by the Binlog Server) makes the storage unrepairable;
+# - nothing is removed from a storage that cannot be repaired;
+# - querying-only operations never modify the storage and ignore any
+#   inconsistency they find, leaving their JSON response intact;
+# - the 'purge_binlogs' operation removes garbage objects;
+# - the storage that cannot be repaired automatically is not opened by a
+#   streaming operation ('fetch' / 'pull').
+# In the 'encrypted' combination all binlog files are encrypted, which also
+# exercises truncating an encrypted binlog data file and resuming its
+# encryption from an arbitrary (not block-aligned) offset.
+#
+--source ../include/have_binsrv.inc
+
+--source ../include/v80_v84_compatibility_defines.inc
+
+# in case of --repeat=N, we need to start from a fresh binary log to make
+# this test deterministic
+--echo *** Resetting replication at the very beginning of the test.
+--disable_query_log
+eval $stmt_reset_binary_logs_and_gtids;
+--enable_query_log
+
+--echo
+--echo *** Generating two binary logs with some data in each of them.
+--let $first_binlog = query_get_value($stmt_show_binary_log_status, File, 1)
+CREATE TABLE t1(id INT UNSIGNED NOT NULL AUTO_INCREMENT, PRIMARY KEY(id)) ENGINE=InnoDB;
+INSERT INTO t1 VALUES(DEFAULT);
+FLUSH BINARY LOGS;
+--let $second_binlog = query_get_value($stmt_show_binary_log_status, File, 1)
+INSERT INTO t1 VALUES(DEFAULT);
+
+--disable_query_log
+--let $third_binlog = `SELECT CONCAT(SUBSTRING('$second_binlog', 1, LENGTH('$second_binlog') - 6), LPAD(CAST(RIGHT('$second_binlog', 6) AS UNSIGNED) + 1, 6, '0'))`
+--let $fourth_binlog = `SELECT CONCAT(SUBSTRING('$second_binlog', 1, LENGTH('$second_binlog') - 6), LPAD(CAST(RIGHT('$second_binlog', 6) AS UNSIGNED) + 2, 6, '0'))`
+--enable_query_log
+
+# identifying backend storage type ('file' or 's3')
+--source ../include/identify_storage_backend.inc
+
+# identifying whether binlog files must be encrypted from the combination
+--let $extracted_init_connect_variable_name = binsrv_encryption
+--source ../include/extract_init_connect_variable_value.inc
+if ($extracted_init_connect_variable_value == on)
+{
+  # generating keyring data file silently ('generate_keyring_data_file.inc'
+  # cannot be used as it echoes, and the output of both combinations must be
+  # the same - confirmed by recording this test with it, which left a
+  # combination-only echo in the shared result file)
+  --disable_query_log
+  SET @keyring_keys_array = JSON_ARRAY(
+    JSON_OBJECT('id', 'alpha16', 'cipher', 'AES-128-ECB', 'data_hex', '000102030405060708090A0B0C0D0E0F')
+  );
+  --enable_query_log
+  --let $binsrv_keyring_data_file_path = $MYSQL_TMP_DIR/keyring_data.json
+  --let $write_var = `SELECT JSON_OBJECT('version', 1, 'keys', CAST(@keyring_keys_array AS JSON))`
+  --let $write_to_file = $binsrv_keyring_data_file_path
+  --let $include_silent = 1
+  --source include/write_var_to_file.inc
+  --let $include_silent =
+  --let $binsrv_encryption_kek_id = alpha16
+  --let $binsrv_encryption_cipher = AES-256-CTR
+}
+
+# creating data directory, configuration file, etc.
+--let $binsrv_connect_timeout = 20
+--let $binsrv_read_timeout = 60
+--let $binsrv_idle_time = 10
+--let $binsrv_verify_checksum = TRUE
+--let $binsrv_replication_mode = position
+--let $binsrv_checkpoint_size = 1
+--source ../include/set_up_binsrv_environment.inc
+
+--let $saved_data_file = $MYSQL_TMP_DIR/storage_reconciliation.data
+--let $saved_metadata_file = $MYSQL_TMP_DIR/storage_reconciliation.json
+--let $response_file = $MYSQL_TMP_DIR/storage_reconciliation.response
+
+--echo
+--echo *** Executing the Binlog Server utility to download all binlog data
+--echo *** from the server.
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+--echo
+--echo *** Saving a copy of the second binlog data and metadata files to be
+--echo *** used for simulating garbage objects.
+--let $storage_object = $binsrv_storage_path/$second_binlog
+--let $local_file = $saved_data_file
+--source ../include/download_storage_object.inc
+--let $storage_object = $binsrv_storage_path/$second_binlog.json
+--let $local_file = $saved_metadata_file
+--source ../include/download_storage_object.inc
+
+--echo
+--echo *** 1. Binlog files left after an interrupted binlog rotation are
+--echo ***    removed; querying-only operations ignore them without
+--echo ***    modifying the storage.
+--echo
+--echo *** Simulating a binlog rotation interrupted after the new binlog
+--echo *** metadata was written but before the binlog index was updated, and
+--echo *** an interrupted binlog index update.
+--let $local_file = $saved_data_file
+--let $storage_object = $binsrv_storage_path/$third_binlog
+--source ../include/upload_storage_object.inc
+--let $local_file = $saved_metadata_file
+--let $storage_object = $binsrv_storage_path/$third_binlog.json
+--source ../include/upload_storage_object.inc
+--let $storage_object = $binsrv_storage_path/binlog.index.tmp
+--source ../include/upload_storage_object.inc
+
+--echo
+--echo *** Executing the Binlog Server utility in the 'list' mode and
+--echo *** expecting it to ignore the garbage objects without modifying the
+--echo *** storage.
+--exec $BINSRV list $binsrv_config_file_path > $response_file 2> /dev/null
+--let $assert_file = $response_file
+--let $assert_count = 0
+--let $assert_text = List response is not affected
+--let $assert_select = improper shutdown
+--source include/assert_grep.inc
+--remove_file $response_file
+
+--echo
+--echo *** Executing the Binlog Server utility and expecting it to remove
+--echo *** garbage objects.
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+--let $assert_file = $binsrv_log_path
+--let $assert_count = 1
+--let $assert_text = Found orphaned binlog data file
+--let $assert_select = found binlog data file '$third_binlog' left after an interrupted binlog rotation
+--source include/assert_grep.inc
+--let $assert_text = Found orphaned binlog metadata file
+--let $assert_select = found binlog metadata file '$third_binlog.json' left after an interrupted binlog rotation
+--source include/assert_grep.inc
+--let $assert_text = Removed orphaned objects
+--let $assert_select = removed 2 storage object\(s\) left after improper shutdown
+--source include/assert_grep.inc
+--let $assert_text = Removed temporary object
+--let $assert_select = removed 1 temporary storage object\(s\) left after improper shutdown
+--source include/assert_grep.inc
+
+--let $storage_object = $binsrv_storage_path/$third_binlog
+--source ../include/assert_storage_object_absent.inc
+--let $storage_object = $binsrv_storage_path/$third_binlog.json
+--source ../include/assert_storage_object_absent.inc
+--let $storage_object = $binsrv_storage_path/binlog.index.tmp
+--source ../include/assert_storage_object_absent.inc
+
+
+--echo
+--echo *** 2. The most recent binlog data file is truncated to the size from
+--echo ***    its metadata; querying-only operations ignore the size mismatch
+--echo ***    without modifying the storage.
+--echo
+--echo *** Appending extra bytes to the second binlog data file.
+--let $storage_object = $binsrv_storage_path/$second_binlog
+--let $local_file = $MYSQL_TMP_DIR/storage_reconciliation.local
+--source ../include/download_storage_object.inc
+--exec echo "extra bytes" >> $local_file
+--source ../include/upload_storage_object.inc
+
+--echo
+--echo *** Executing the Binlog Server utility in the 'list' mode and
+--echo *** expecting it to ignore the size mismatch without modifying the
+--echo *** storage.
+--exec $BINSRV list $binsrv_config_file_path > $response_file 2> /dev/null
+--let $assert_file = $response_file
+--let $assert_count = 0
+--let $assert_text = List response is not affected
+--let $assert_select = improper shutdown
+--source include/assert_grep.inc
+--remove_file $response_file
+
+# confirming the oversized data file was not truncated by the 'list' call
+# above by comparing it against the local copy appended to earlier
+--source ../include/diff_with_storage_object.inc
+--remove_file $local_file
+
+--echo
+--echo *** Executing the Binlog Server utility and expecting it to truncate
+--echo *** the second binlog data file.
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+--let $assert_file = $binsrv_log_path
+--let $assert_count = 1
+--let $assert_text = Truncated the second binlog data file
+--let $assert_select = recovered binlog file '$second_binlog' by truncating it to the size from the metadata
+--source include/assert_grep.inc
+
+
+--echo
+--echo *** 3. The storage with a missing metadata file of a binlog listed in
+--echo ***    the binlog index, with a size mismatch in an older binlog file or
+--echo ***    with an object that was not created by the Binlog Server cannot
+--echo ***    be repaired, and garbage objects are not removed from it.
+--echo
+--echo *** Simulating an interrupted binlog rotation one more time.
+--let $local_file = $saved_data_file
+--let $storage_object = $binsrv_storage_path/$third_binlog
+--source ../include/upload_storage_object.inc
+--let $local_file = $saved_metadata_file
+--let $storage_object = $binsrv_storage_path/$third_binlog.json
+--source ../include/upload_storage_object.inc
+
+--echo
+--echo *** Removing the first binlog metadata file.
+--let $storage_object = $binsrv_storage_path/$first_binlog.json
+--let $local_file = $MYSQL_TMP_DIR/storage_reconciliation.local
+--source ../include/download_storage_object.inc
+--source ../include/remove_storage_object.inc
+
+--echo
+--echo *** Executing the Binlog Server utility and expecting it to fail.
+--error 1
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+--let $assert_file = $binsrv_log_path
+--let $assert_count = 1
+--let $assert_text = Refused to open storage with missing binlog metadata
+--let $assert_select = missing metadata for a binlog listed in the binlog index
+--source include/assert_grep.inc
+--let $assert_count = 0
+--let $assert_text = Nothing removed from the storage with missing binlog metadata
+--let $assert_select = removed [0-9]+ storage object
+--source include/assert_grep.inc
+# downloading (and immediately discarding) the garbage object only to
+# confirm nothing was removed from the unrepairable storage
+--let $local_file = $MYSQL_TMP_DIR/storage_reconciliation.check
+--let $storage_object = $binsrv_storage_path/$third_binlog
+--source ../include/download_storage_object.inc
+--remove_file $local_file
+--let $storage_object = $binsrv_storage_path/$first_binlog.json
+--let $local_file = $MYSQL_TMP_DIR/storage_reconciliation.local
+
+--echo
+--echo *** Restoring the first binlog metadata file.
+--source ../include/upload_storage_object.inc
+--remove_file $local_file
+
+--echo
+--echo *** Appending extra bytes to the first (not the most recent) binlog
+--echo *** data file.
+--let $storage_object = $binsrv_storage_path/$first_binlog
+--let $local_file = $MYSQL_TMP_DIR/storage_reconciliation.local
+--source ../include/download_storage_object.inc
+--let $saved_first_binlog_file = $MYSQL_TMP_DIR/storage_reconciliation.first
+--copy_file $local_file $saved_first_binlog_file
+--exec echo "extra bytes" >> $local_file
+--source ../include/upload_storage_object.inc
+--remove_file $local_file
+
+--echo
+--echo *** Executing the Binlog Server utility and expecting it to fail.
+--error 1
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+--let $assert_file = $binsrv_log_path
+--let $assert_count = 1
+--let $assert_text = Refused to open storage with size mismatch in an older binlog
+--let $assert_select = size from the binlog metadata does not match the actual binlog size
+--source include/assert_grep.inc
+--let $assert_count = 0
+--let $assert_text = Nothing removed from the storage with size mismatch in an older binlog
+--let $assert_select = removed [0-9]+ storage object
+--source include/assert_grep.inc
+
+--echo
+--echo *** Restoring the first binlog data file.
+--let $local_file = $saved_first_binlog_file
+--source ../include/upload_storage_object.inc
+--remove_file $saved_first_binlog_file
+
+--echo
+--echo *** Adding an object that was not created by the Binlog Server.
+--let $local_file = $saved_metadata_file
+--let $storage_object = $binsrv_storage_path/notes.txt
+--source ../include/upload_storage_object.inc
+
+--echo
+--echo *** Executing the Binlog Server utility and expecting it to fail.
+--error 1
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+--let $assert_file = $binsrv_log_path
+--let $assert_count = 1
+--let $assert_text = Refused to open storage with a foreign object
+--let $assert_select = storage contains an object that is not referenced in the binlog index
+--source include/assert_grep.inc
+--let $assert_count = 0
+--let $assert_text = Nothing removed from the storage with a foreign object
+--let $assert_select = removed [0-9]+ storage object
+--source include/assert_grep.inc
+# downloading (and immediately discarding) the foreign object and the
+# garbage object only to confirm nothing was removed from the unrepairable
+# storage
+--let $local_file = $MYSQL_TMP_DIR/storage_reconciliation.check
+--source ../include/download_storage_object.inc
+--remove_file $local_file
+--let $storage_object = $binsrv_storage_path/$third_binlog
+--source ../include/download_storage_object.inc
+--remove_file $local_file
+
+--echo
+--echo *** Removing the foreign object and the garbage objects.
+--let $storage_object = $binsrv_storage_path/notes.txt
+--source ../include/remove_storage_object.inc
+--let $storage_object = $binsrv_storage_path/$third_binlog
+--source ../include/remove_storage_object.inc
+--let $storage_object = $binsrv_storage_path/$third_binlog.json
+--source ../include/remove_storage_object.inc
+
+
+--echo
+--echo *** 4. The storage with binlog files but without the binlog index cannot
+--echo ***    be repaired; querying-only operations just ignore it.
+--echo
+--echo *** Removing the binlog index.
+--let $storage_object = $binsrv_storage_path/binlog.index
+--let $local_file = $MYSQL_TMP_DIR/storage_reconciliation.local
+--source ../include/download_storage_object.inc
+--source ../include/remove_storage_object.inc
+
+--echo
+--echo *** Executing the Binlog Server utility in the 'list' mode and
+--echo *** expecting an empty response.
+--exec $BINSRV list $binsrv_config_file_path > $response_file 2> /dev/null
+--let $assert_file = $response_file
+--let $assert_count = 0
+--let $assert_text = List response contains no binlog files
+--let $assert_select = "name"
+--source include/assert_grep.inc
+--remove_file $response_file
+
+--echo
+--echo *** Executing the Binlog Server utility and expecting it to fail.
+--error 1
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+--let $assert_file = $binsrv_log_path
+--let $assert_count = 1
+--let $assert_text = Refused to open storage without binlog index
+--let $assert_select = storage is not empty but does not contain binlog index
+--source include/assert_grep.inc
+--let $assert_count = 0
+--let $assert_text = Nothing removed from the storage without binlog index
+--let $assert_select = removed [0-9]+ storage object
+--source include/assert_grep.inc
+
+--echo
+--echo *** Restoring the binlog index.
+--source ../include/upload_storage_object.inc
+--remove_file $local_file
+
+
+--echo
+--echo *** Flushing the second binary log and dropping the table.
+FLUSH BINARY LOGS;
+DROP TABLE t1;
+
+--echo
+--echo *** Executing the Binlog Server utility to receive the rest of the
+--echo *** events.
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+
+--echo
+--echo *** 5. The 'purge_binlogs' operation removes garbage objects left after
+--echo ***    an improper shutdown as well.
+--echo
+--echo *** Saving a copy of the first binlog data and metadata files to be
+--echo *** used for simulating an interrupted binlog purge.
+--let $saved_first_binlog_file = $MYSQL_TMP_DIR/storage_reconciliation.first
+--let $saved_first_metadata_file = $MYSQL_TMP_DIR/storage_reconciliation.first.json
+--let $storage_object = $binsrv_storage_path/$first_binlog
+--let $local_file = $saved_first_binlog_file
+--source ../include/download_storage_object.inc
+--let $storage_object = $binsrv_storage_path/$first_binlog.json
+--let $local_file = $saved_first_metadata_file
+--source ../include/download_storage_object.inc
+
+--echo
+--echo *** Simulating an interrupted binlog rotation one more time (the third
+--echo *** binlog file is already in the storage now).
+--let $local_file = $saved_data_file
+--let $storage_object = $binsrv_storage_path/$fourth_binlog
+--source ../include/upload_storage_object.inc
+--let $local_file = $saved_metadata_file
+--let $storage_object = $binsrv_storage_path/$fourth_binlog.json
+--source ../include/upload_storage_object.inc
+
+--echo
+--echo *** Executing the Binlog Server utility in the 'purge_binlogs' mode.
+--exec $BINSRV purge_binlogs $binsrv_config_file_path $first_binlog > $response_file 2> /dev/null
+
+--let $assert_file = $response_file
+--let $assert_count = 0
+--let $assert_text = Purge response is not affected
+--let $assert_select = improper shutdown
+--source include/assert_grep.inc
+--remove_file $response_file
+
+--let $storage_object = $binsrv_storage_path/$fourth_binlog
+--source ../include/assert_storage_object_absent.inc
+--let $storage_object = $binsrv_storage_path/$fourth_binlog.json
+--source ../include/assert_storage_object_absent.inc
+--let $storage_object = $binsrv_storage_path/$first_binlog
+--source ../include/assert_storage_object_absent.inc
+
+
+--echo
+--echo *** 6. Binlog files left after an interrupted binlog purge are removed.
+--echo
+--echo *** Simulating a binlog purge interrupted after the binlog index was
+--echo *** updated but before the purged binlog files were removed.
+--let $local_file = $saved_first_binlog_file
+--let $storage_object = $binsrv_storage_path/$first_binlog
+--source ../include/upload_storage_object.inc
+--let $local_file = $saved_first_metadata_file
+--let $storage_object = $binsrv_storage_path/$first_binlog.json
+--source ../include/upload_storage_object.inc
+--remove_file $saved_first_binlog_file
+--remove_file $saved_first_metadata_file
+
+--echo
+--echo *** Executing the Binlog Server utility and expecting it to remove
+--echo *** garbage objects.
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+--let $assert_file = $binsrv_log_path
+--let $assert_count = 1
+--let $assert_text = Found purged binlog data file
+--let $assert_select = found binlog data file '$first_binlog' left after an interrupted binlog purge
+--source include/assert_grep.inc
+--let $assert_text = Removed purged binlog files
+--let $assert_select = removed 2 storage object\(s\) left after improper shutdown
+--source include/assert_grep.inc
+
+--let $storage_object = $binsrv_storage_path/$first_binlog
+--source ../include/assert_storage_object_absent.inc
+--let $storage_object = $binsrv_storage_path/$first_binlog.json
+--source ../include/assert_storage_object_absent.inc
+
+
+--echo
+--echo *** 7. Querying-only operations do not crash even if the metadata of
+--echo ***    every binlog file listed in the binlog index is missing (PBS-79).
+--echo
+--echo *** Removing the metadata files of all remaining binlog files.
+--let $storage_object = $binsrv_storage_path/$second_binlog.json
+--source ../include/remove_storage_object.inc
+--let $storage_object = $binsrv_storage_path/$third_binlog.json
+--source ../include/remove_storage_object.inc
+
+--echo
+--echo *** Executing the Binlog Server utility in the 'list' mode and
+--echo *** expecting it to exit cleanly with an empty response.
+--exec $BINSRV list $binsrv_config_file_path > $response_file 2> /dev/null
+--let $assert_file = $response_file
+--let $assert_count = 0
+--let $assert_text = List response contains no binlog files
+--let $assert_select = "name"
+--source include/assert_grep.inc
+--remove_file $response_file
+
+
+--echo
+--echo *** 8. Querying-only operations ignore, and streaming operations
+--echo ***    recover, a storage left after an interrupted creation of the
+--echo ***    first binlog file (no binlog index, at most one binlog's data
+--echo ***    and metadata).
+--echo
+--echo *** Removing the remaining binlog data files and the binlog index.
+--let $storage_object = $binsrv_storage_path/$second_binlog
+--source ../include/remove_storage_object.inc
+--let $storage_object = $binsrv_storage_path/$third_binlog
+--source ../include/remove_storage_object.inc
+--let $storage_object = $binsrv_storage_path/binlog.index
+--source ../include/remove_storage_object.inc
+
+--disable_query_log
+--let $fifth_binlog = `SELECT CONCAT(SUBSTRING('$second_binlog', 1, LENGTH('$second_binlog') - 6), LPAD(CAST(RIGHT('$second_binlog', 6) AS UNSIGNED) + 3, 6, '0'))`
+--enable_query_log
+
+--echo
+--echo *** Simulating an interrupted creation of the first binlog file after
+--echo *** both its data and metadata were written.
+--let $local_file = $saved_data_file
+--let $storage_object = $binsrv_storage_path/$fifth_binlog
+--source ../include/upload_storage_object.inc
+--let $local_file = $saved_metadata_file
+--let $storage_object = $binsrv_storage_path/$fifth_binlog.json
+--source ../include/upload_storage_object.inc
+
+--echo
+--echo *** Executing the Binlog Server utility in the 'list' mode and
+--echo *** expecting it to ignore the leftover objects without modifying the
+--echo *** storage.
+--exec $BINSRV list $binsrv_config_file_path > $response_file 2> /dev/null
+--let $assert_file = $response_file
+--let $assert_count = 0
+--let $assert_text = List response contains no binlog files
+--let $assert_select = "name"
+--source include/assert_grep.inc
+--remove_file $response_file
+
+--echo
+--echo *** Removing the metadata file to simulate an interrupted creation of
+--echo *** the first binlog file after only its data was written.
+--let $storage_object = $binsrv_storage_path/$fifth_binlog.json
+--source ../include/remove_storage_object.inc
+
+--echo
+--echo *** Executing the Binlog Server utility and expecting it to recover by
+--echo *** removing the leftover binlog data file.
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+--let $assert_file = $binsrv_log_path
+--let $assert_count = 1
+--let $assert_text = Found orphaned first binlog data file
+--let $assert_select = found binlog data file '$fifth_binlog' left after an interrupted creation of the first binlog file
+--source include/assert_grep.inc
+--let $assert_count = 0
+--let $assert_text = No orphaned first binlog metadata file found
+--let $assert_select = found binlog metadata file '$fifth_binlog.json' left after an interrupted creation of the first binlog file
+--source include/assert_grep.inc
+--let $assert_count = 1
+--let $assert_text = Removed orphaned first binlog file
+--let $assert_select = removed 1 storage object\(s\) left after improper shutdown
+--source include/assert_grep.inc
+
+--let $storage_object = $binsrv_storage_path/$fifth_binlog
+--source ../include/assert_storage_object_absent.inc
+
+# cleaning up
+--remove_file $saved_data_file
+--remove_file $saved_metadata_file
+--source ../include/tear_down_binsrv_environment.inc
+if ($binsrv_keyring_data_file_path != "")
+{
+  # not using 'delete_keyring_data_file.inc' - same combination-parity
+  # reason as above
+  --remove_file $binsrv_keyring_data_file_path
+  --disable_query_log
+  SET @keyring_keys_array = NULL;
+  --enable_query_log
+  --let $binsrv_keyring_data_file_path =
+  --let $binsrv_encryption_kek_id =
+  --let $binsrv_encryption_cipher =
+}
