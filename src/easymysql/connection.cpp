@@ -214,6 +214,15 @@ connection::connection() noexcept = default;
 void connection::set_binlog_checksum(bool verify_checksum) {
   // WL#2540: Replication event checksums
   // https://dev.mysql.com/worklog/task/?id=2540
+  //
+  // Both 'CRC32' and 'NONE' declare this client as checksum-aware; the
+  // source only refuses to dump when the variable is left unset (or set
+  // to a value other than these two labels) while the stored events
+  // carry a CRC32 trailer. Neither value forces the source to attach or
+  // strip trailers on real events - those bytes flow on the wire exactly
+  // as stored on disk. PBS always declares, so this call's purpose is
+  // just to clear that refusal; the actual verification happens locally
+  // on the inbound side, gated by verify_checksum in reader_context.
   const std::string checksum_algorithm_label{verify_checksum ? "CRC32"
                                                              : "NONE"};
   const auto set_binlog_checksum_query{

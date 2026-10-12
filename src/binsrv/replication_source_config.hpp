@@ -19,6 +19,7 @@
 #include "binsrv/replication_source_config_fwd.hpp" // IWYU pragma: export
 
 #include <cstdint>
+#include <string>
 
 #include "binsrv/authentication_config.hpp" // IWYU pragma: export
 
@@ -30,6 +31,8 @@ struct [[nodiscard]] replication_source_config
     : util::nv_tuple<
           // clang-format off
           util::nv<"port"          , std::uint16_t>,
+          util::nv<"server_id"     , std::uint32_t>,
+          util::nv<"server_uuid"   , std::string>,
           util::nv<"read_timeout"  , std::uint32_t>,
           util::nv<"write_timeout" , std::uint32_t>,
           util::nv<"authentication", authentication_config>

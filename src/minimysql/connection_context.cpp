@@ -422,6 +422,19 @@ void connection_context::parse_client_command(
     break;
   }
   case classic_protocol::Codec<
+      classic_protocol::message::client::RegisterReplica>::cmd_byte(): {
+    // Frame fields (server_id, hostname, port, user) are discarded here;
+    // see the register_replica case in minimysql::network_service for the
+    // rationale and the TODO for a future connected-replicas view.
+    auto frame = decode_client_command_frame<
+        classic_protocol::message::client::RegisterReplica>(
+        payload, get_shared_capabilities());
+    validate_and_update_sequence_number(frame.seq_id());
+
+    client_command_ = client_command_type::register_replica;
+    break;
+  }
+  case classic_protocol::Codec<
       classic_protocol::message::client::BinlogDump>::cmd_byte(): {
     auto frame = decode_client_command_frame<
         classic_protocol::message::client::BinlogDump>(
@@ -647,6 +660,11 @@ connection_context::get_datatype_properties<std::uint64_t>() noexcept;
 template const connection_context::datatype_properties_type &
 connection_context::get_datatype_properties<
     std::optional<std::uint64_t>>() noexcept;
+template const connection_context::datatype_properties_type &
+connection_context::get_datatype_properties<std::int64_t>() noexcept;
+template const connection_context::datatype_properties_type &
+connection_context::get_datatype_properties<
+    std::optional<std::int64_t>>() noexcept;
 
 void connection_context::encode_resultset_column_definition_internal(
     network_buffer_container &result_buffers, std::string_view db_name,
