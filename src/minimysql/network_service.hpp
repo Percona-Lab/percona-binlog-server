@@ -16,13 +16,20 @@
 #ifndef MINIMYSQL_NETWORK_SERVICE_HPP
 #define MINIMYSQL_NETWORK_SERVICE_HPP
 
+#include <memory>
 #include <string>
+#include <string_view>
+
+#include <boost/asio/awaitable.hpp>
 
 #include <boost/asio/ts/netfwd.hpp>
 
 #include "binsrv/basic_logger_fwd.hpp"
 #include "binsrv/replication_source_config_fwd.hpp"
 #include "binsrv/storage_fwd.hpp"
+
+#include "minimysql/connection_context_fwd.hpp"
+#include "minimysql/network_io_operations_fwd.hpp"
 
 #include "opensslpp/evp_pkey.hpp"
 
@@ -33,7 +40,7 @@ public:
   static constexpr auto expected_packet_size{4096UZ};
 
   network_service(binsrv::basic_logger_ptr logger,
-                  boost::asio::io_context &context, binsrv::storage_ptr storage,
+                  boost::asio::io_context &io_ctx, binsrv::storage_ptr storage,
                   const binsrv::replication_source_config &cfg);
 
   network_service(const network_service &) = delete;
@@ -45,21 +52,70 @@ public:
 
 private:
   binsrv::basic_logger_ptr logger_;
+  boost::asio::io_context *io_ctx_;
   binsrv::storage_ptr storage_;
+  const binsrv::replication_source_config *config_;
+
   // empty if <replication_source.auth_rsa_private_key> is not configured
   opensslpp::evp_pkey auth_rsa_private_key_;
   // public component of 'auth_rsa_private_key_' in PEM format sent to the
   // clients that request it during full authentication (empty if no key)
   std::string auth_rsa_public_key_pem_;
 
-  boost::asio::io_context *context_;
   using acceptor_type =
       boost::asio::basic_socket_acceptor<boost::asio::ip::tcp>;
   using acceptor_ptr = std::unique_ptr<acceptor_type>;
   acceptor_ptr acceptor_;
 
-  void load_auth_rsa_private_key(binsrv::basic_logger &logger,
-                                 const binsrv::replication_source_config &cfg);
+  [[nodiscard]] boost::asio::io_context &get_io_ctx() const noexcept {
+    return *io_ctx_;
+  }
+  [[nodiscard]] const binsrv::replication_source_config &
+  get_config() const noexcept {
+    return *config_;
+  }
+
+  void print_server_greeting(std::string_view remote_endpoint,
+                             const connection_context &context);
+  void print_client_greeting(std::string_view remote_endpoint,
+                             const connection_context &context);
+  void print_client_auth_method_switch(std::string_view remote_endpoint,
+                                       const connection_context &context);
+  void print_generic(std::string_view remote_endpoint,
+                     const connection_context &context, std::string_view label);
+  void print_error(std::string_view remote_endpoint,
+                   const connection_context &context, std::string_view label);
+  void print_client_command(std::string_view remote_endpoint,
+                            const connection_context &context);
+  void handle_exception(std::string_view context);
+
+  [[nodiscard]] static bool
+  check_if_in_auth_cache(const connection_context &context);
+
+  // for the 'socket' we use only the types available in the 'netfwd.hpp'
+  [[nodiscard]] boost::asio::awaitable<void> handle_binlog_dump_command(
+      boost::asio::basic_stream_socket<boost::asio::ip::tcp> &socket,
+      connection_context &context, bool session_source_binlog_checksum);
+
+  [[nodiscard]] boost::asio::awaitable<bool> perform_fast_authentication(
+      boost::asio::basic_stream_socket<boost::asio::ip::tcp> &socket,
+      connection_context &context);
+  [[nodiscard]] boost::asio::awaitable<void> perform_public_key_dispatch(
+      boost::asio::basic_stream_socket<boost::asio::ip::tcp> &socket,
+      connection_context &context);
+  [[nodiscard]] boost::asio::awaitable<bool> perform_full_authentication(
+      boost::asio::basic_stream_socket<boost::asio::ip::tcp> &socket,
+      connection_context &context);
+  [[nodiscard]] boost::asio::awaitable<bool> perform_connection_packet_exchange(
+      boost::asio::basic_stream_socket<boost::asio::ip::tcp> &socket,
+      connection_context &context);
+
+  [[nodiscard]] boost::asio::awaitable<void>
+  session(boost::asio::basic_stream_socket<boost::asio::ip::tcp> socket);
+  [[nodiscard]] boost::asio::awaitable<void> listener();
+  void load_auth_rsa_private_key();
+  [[nodiscard]] static std::string extract_remote_endpoint_str(
+      const boost::asio::basic_stream_socket<boost::asio::ip::tcp> &socket);
 };
 
 } // namespace minimysql

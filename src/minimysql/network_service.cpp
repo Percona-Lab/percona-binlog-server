@@ -113,41 +113,38 @@ private:
   std::string name_;
 };
 
-void print_server_greeting(
-    binsrv::basic_logger &logger,
-    const boost::asio::ip::tcp::endpoint &remote_endpoint,
-    const minimysql::connection_context &context) {
-  logger.log_format(binsrv::log_severity::info,
-                    "net    : generated server greeting for {}",
-                    boost::lexical_cast<std::string>(remote_endpoint));
-  logger.log_format(
-      binsrv::log_severity::debug,
-      "net    : frame sequence_number {:d}\n"
-      "  protocol_version: {}\n"
-      "  server_version  : {}\n"
-      "  connection_id   : {}\n"
-      "  collation       : {}\n"
-      "  status flags    : {}\n"
-      "  auth_method     : {}\n"
-      "  auth_method_data: {} byte(s)",
-      context.get_last_sequence_number(),
-      minimysql::connection_context::default_server_protocol_version,
-      minimysql::connection_context::default_server_version,
-      context.get_connection_id(),
-      minimysql::connection_context::default_server_collation,
-      minimysql::connection_context::default_server_status_flags,
-      context.get_server_auth_method(),
-      std::size(context.get_server_auth_method_data()));
+} // anonymous namespace
+
+void network_service::print_server_greeting(std::string_view remote_endpoint,
+                                            const connection_context &context) {
+  logger_->log_format(binsrv::log_severity::info,
+                      "net    : generated server greeting for {}",
+                      remote_endpoint);
+  logger_->log_format(binsrv::log_severity::debug,
+                      "net    : frame sequence_number {:d}\n"
+                      "  protocol_version: {}\n"
+                      "  server_version  : {}\n"
+                      "  connection_id   : {}\n"
+                      "  collation       : {}\n"
+                      "  status flags    : {}\n"
+                      "  auth_method     : {}\n"
+                      "  auth_method_data: {} byte(s)",
+                      context.get_last_sequence_number(),
+                      connection_context::default_server_protocol_version,
+                      connection_context::default_server_version,
+                      context.get_connection_id(),
+                      connection_context::default_server_collation,
+                      connection_context::default_server_status_flags,
+                      context.get_server_auth_method(),
+                      std::size(context.get_server_auth_method_data()));
 }
 
-void print_client_greeting(
-    binsrv::basic_logger &logger,
-    const boost::asio::ip::tcp::endpoint &remote_endpoint,
-    const minimysql::connection_context &context) {
-  logger.log_format(binsrv::log_severity::info,
-                    "net    : parsed client greeting from {}",
-                    boost::lexical_cast<std::string>(remote_endpoint));
-  logger.log_format(
+void network_service::print_client_greeting(std::string_view remote_endpoint,
+                                            const connection_context &context) {
+  logger_->log_format(binsrv::log_severity::info,
+                      "net    : parsed client greeting from {}",
+                      remote_endpoint);
+  logger_->log_format(
       binsrv::log_severity::debug,
       "net    : frame sequence_number {:d}\n"
       "  auth_method     : {}\n"
@@ -162,61 +159,54 @@ void print_client_greeting(
       context.get_client_collation(), context.get_client_max_packet_size());
 }
 
-void print_client_auth_method_switch(
-    binsrv::basic_logger &logger,
-    const boost::asio::ip::tcp::endpoint &remote_endpoint,
-    const minimysql::connection_context &context) {
-  logger.log_format(binsrv::log_severity::info,
-                    "net    : parsed client auth method switch from {}",
-                    boost::lexical_cast<std::string>(remote_endpoint));
-  logger.log_format(binsrv::log_severity::debug,
-                    "net    : frame sequence_number {:d}\n"
-                    "  auth_method: {}\n"
-                    "  auth_method_data: {} byte(s)",
-                    context.get_last_sequence_number(),
-                    context.get_client_auth_method(),
-                    std::size(context.get_client_auth_method_data()));
+void network_service::print_client_auth_method_switch(
+    std::string_view remote_endpoint, const connection_context &context) {
+  logger_->log_format(binsrv::log_severity::info,
+                      "net    : parsed client auth method switch from {}",
+                      remote_endpoint);
+  logger_->log_format(binsrv::log_severity::debug,
+                      "net    : frame sequence_number {:d}\n"
+                      "  auth_method: {}\n"
+                      "  auth_method_data: {} byte(s)",
+                      context.get_last_sequence_number(),
+                      context.get_client_auth_method(),
+                      std::size(context.get_client_auth_method_data()));
 }
 
-void print_generic(binsrv::basic_logger &logger,
-                   const boost::asio::ip::tcp::endpoint &remote_endpoint,
-                   const minimysql::connection_context &context,
-                   std::string_view label) {
-  logger.log_format(binsrv::log_severity::info,
-                    "net    : generated {} packet for {}", label,
-                    boost::lexical_cast<std::string>(remote_endpoint));
-  logger.log_format(binsrv::log_severity::debug,
-                    "net    : frame sequence_number {:d}",
-                    context.get_last_sequence_number());
+void network_service::print_generic(std::string_view remote_endpoint,
+                                    const connection_context &context,
+                                    std::string_view label) {
+  logger_->log_format(binsrv::log_severity::info,
+                      "net    : generated {} packet for {}", label,
+                      remote_endpoint);
+  logger_->log_format(binsrv::log_severity::debug,
+                      "net    : frame sequence_number {:d}",
+                      context.get_last_sequence_number());
 }
 
-void print_error(binsrv::basic_logger &logger,
-                 const boost::asio::ip::tcp::endpoint &remote_endpoint,
-                 const minimysql::connection_context &context,
-                 std::string_view label) {
-  logger.log_format(binsrv::log_severity::info,
-                    "net    : generated error packet ({}) for {}", label,
-                    boost::lexical_cast<std::string>(remote_endpoint));
-  logger.log_format(binsrv::log_severity::debug,
-                    "net    : frame sequence_number {:d}",
-                    context.get_last_sequence_number());
+void network_service::print_error(std::string_view remote_endpoint,
+                                  const connection_context &context,
+                                  std::string_view label) {
+  logger_->log_format(binsrv::log_severity::info,
+                      "net    : generated error packet ({}) for {}", label,
+                      remote_endpoint);
+  logger_->log_format(binsrv::log_severity::debug,
+                      "net    : frame sequence_number {:d}",
+                      context.get_last_sequence_number());
 }
 
-void print_client_command(binsrv::basic_logger &logger,
-                          const boost::asio::ip::tcp::endpoint &remote_endpoint,
-                          const minimysql::connection_context &context) {
-  logger.log_format(binsrv::log_severity::info,
-                    "net    : parsed client command from {}",
-                    boost::lexical_cast<std::string>(remote_endpoint));
+void network_service::print_client_command(std::string_view remote_endpoint,
+                                           const connection_context &context) {
+  logger_->log_format(binsrv::log_severity::info,
+                      "net    : parsed client command from {}",
+                      remote_endpoint);
 
   std::string command_details;
-  if (context.get_client_mysql_command() ==
-      minimysql::client_command_type::query) {
+  if (context.get_client_mysql_command() == client_command_type::query) {
     command_details =
         std::format("\n  statement       : {}", context.get_client_statement());
   }
-  if (context.get_client_mysql_command() ==
-      minimysql::client_command_type::binlog_dump) {
+  if (context.get_client_mysql_command() == client_command_type::binlog_dump) {
     command_details = std::format(
         "\n  binlog blocking mode : {}"
         "\n  binlog server id     : {}"
@@ -227,17 +217,17 @@ void print_client_command(binsrv::basic_logger &logger,
         context.get_binlog_server_id(), context.get_binlog_filename(),
         context.get_binlog_position());
   }
-  logger.log_format(binsrv::log_severity::debug,
-                    "net    : frame sequence_number {:d}\n"
-                    "  code            : {}{}",
-                    context.get_last_sequence_number(),
-                    boost::describe::enum_to_string(
-                        context.get_client_mysql_command(), "unknown"),
-                    command_details);
+  logger_->log_format(binsrv::log_severity::debug,
+                      "net    : frame sequence_number {:d}\n"
+                      "  code            : {}{}",
+                      context.get_last_sequence_number(),
+                      boost::describe::enum_to_string(
+                          context.get_client_mysql_command(), "unknown"),
+                      command_details);
 }
 
 // a helper function to log exceptions with context information
-void handle_exception(binsrv::basic_logger &logger, std::string_view context) {
+void network_service::handle_exception(std::string_view context) {
   try {
     throw;
   } catch (const boost::system::system_error &e) {
@@ -247,19 +237,19 @@ void handle_exception(binsrv::basic_logger &logger, std::string_view context) {
         boost::asio::error::get_system_category()) {
       switch (exception_error_code.value()) {
       case boost::asio::error::timed_out:
-        logger.log_format(binsrv::log_severity::info, "net    : {}: {}",
-                          context, e.what());
+        logger_->log_format(binsrv::log_severity::info, "net    : {}: {}",
+                            context, e.what());
         logged_specific_error = true;
         break;
       case boost::asio::error::operation_aborted:
-        logger.log_format(binsrv::log_severity::info,
-                          "net    : {}: operation aborted", context);
+        logger_->log_format(binsrv::log_severity::info,
+                            "net    : {}: operation aborted", context);
         logged_specific_error = true;
         break;
       case boost::asio::error::eof:
       case boost::asio::error::connection_reset:
-        logger.log_format(binsrv::log_severity::info,
-                          "net    : {}: connection closed by peer", context);
+        logger_->log_format(binsrv::log_severity::info,
+                            "net    : {}: connection closed by peer", context);
         logged_specific_error = true;
         break;
       default:
@@ -269,36 +259,44 @@ void handle_exception(binsrv::basic_logger &logger, std::string_view context) {
     }
 
     if (!logged_specific_error) {
-      logger.log_format(binsrv::log_severity::error,
-                        "net    : system error caught in {}: {}\n  {}", context,
-                        boost::lexical_cast<std::string>(exception_error_code),
-                        e.what());
+      logger_->log_format(
+          binsrv::log_severity::error,
+          "net    : system error caught in {}: {}\n  {}", context,
+          boost::lexical_cast<std::string>(exception_error_code), e.what());
     }
   } catch (const std::exception &e) {
-    logger.log_format(binsrv::log_severity::error,
-                      "net    : exception caught in {}: {}", context, e.what());
+    logger_->log_format(binsrv::log_severity::error,
+                        "net    : exception caught in {}: {}", context,
+                        e.what());
   } catch (...) {
-    logger.log_format(binsrv::log_severity::error,
-                      "net    : unknown exception caught in {}", context);
+    logger_->log_format(binsrv::log_severity::error,
+                        "net    : unknown exception caught in {}", context);
   }
 }
 
-[[nodiscard]] boost::asio::awaitable<void> handle_binlog_dump_command(
-    // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
-    const binsrv::basic_logger_ptr &logger,
-    // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
-    const binsrv::storage_ptr &storage,
+[[nodiscard]] bool network_service::check_if_in_auth_cache(
+    const connection_context & /*context*/) {
+  // TODO: implement a real caching_sha2_password authentication cache (MySQL
+  // Server remembers users who have successfully passed full authentication
+  // and lets them use the faster scramble-based authentication afterwards)
+  return false;
+}
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmismatched-new-delete"
+
+[[nodiscard]] boost::asio::awaitable<void>
+network_service::handle_binlog_dump_command(
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
     boost::asio::ip::tcp::socket &socket,
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
-    minimysql::connection_context &context,
-    // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
-    const boost::asio::ip::tcp::endpoint &remote_endpoint,
-    // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
-    const std::string &remote_endpoint_str, std::chrono::seconds write_timeout,
-    bool session_source_binlog_checksum) {
+    connection_context &context, bool session_source_binlog_checksum) {
   static constexpr auto block_size{1048576UZ};
   static constexpr auto blocking_poll_interval{std::chrono::milliseconds{500}};
+
+  const auto remote_endpoint_str{extract_remote_endpoint_str(socket)};
+
+  const std::chrono::seconds write_timeout{get_config().get<"write_timeout">()};
 
   const bool blocking{!context.check_binlog_non_blocking_dump()};
 
@@ -306,16 +304,16 @@ void handle_exception(binsrv::basic_logger &logger, std::string_view context) {
   const auto position{context.get_binlog_position()};
 
   operations::sender_context sender_ctx{
-      logger,      storage,  block_size,
+      logger_,     storage_, block_size,
       binlog_name, position, session_source_binlog_checksum};
   boost::asio::steady_timer idle_timer{
       co_await boost::asio::this_coro::executor};
   util::const_byte_span event_data{};
   for (;;) {
     if (!sender_ctx.get_event(event_data)) {
-      logger->log_format(binsrv::log_severity::error,
-                         "net    : failed to fetch next event block for {}",
-                         remote_endpoint_str);
+      logger_->log_format(binsrv::log_severity::error,
+                          "net    : failed to fetch next event block for {}",
+                          remote_endpoint_str);
       co_return;
     }
     if (event_data.empty()) {
@@ -327,272 +325,284 @@ void handle_exception(binsrv::basic_logger &logger, std::string_view context) {
       continue;
     }
     const auto event_frame{context.generate_encoded_binlog_event(event_data)};
-    print_generic(*logger, remote_endpoint, context, "binlog event");
-    co_await minimysql::async_write_mysql_frame(socket, event_frame,
-                                                write_timeout);
-    logger->log_format(binsrv::log_severity::debug,
-                       "net    : sent server binlog event ({} bytes to {})",
-                       std::size(event_frame), remote_endpoint_str);
+    print_generic(remote_endpoint_str, context, "binlog event");
+    co_await async_write_mysql_frame(socket, event_frame, write_timeout);
+    logger_->log_format(binsrv::log_severity::debug,
+                        "net    : sent server binlog event ({} bytes to {})",
+                        std::size(event_frame), remote_endpoint_str);
   }
 
   const auto eof = context.generate_encoded_eof();
-  print_generic(*logger, remote_endpoint, context, "binlog eof");
-  co_await minimysql::async_write_mysql_frame(socket, eof, write_timeout);
-  logger->log_format(binsrv::log_severity::debug,
-                     "net    : sent server eof ({} bytes to {})",
-                     std::size(eof), remote_endpoint_str);
+  print_generic(remote_endpoint_str, context, "binlog eof");
+  co_await async_write_mysql_frame(socket, eof, write_timeout);
+  logger_->log_format(binsrv::log_severity::debug,
+                      "net    : sent server eof ({} bytes to {})",
+                      std::size(eof), remote_endpoint_str);
 }
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wmismatched-new-delete"
+[[nodiscard]] boost::asio::awaitable<bool>
+network_service::perform_fast_authentication(
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
+    boost::asio::ip::tcp::socket &socket,
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
+    connection_context &context) {
+  network_buffer_type data;
+  data.reserve(network_service::expected_packet_size);
 
-// TODO: implement a real caching_sha2_password authentication cache (MySQL
-// Server remembers users who have successfully passed full authentication
-// and lets them use the faster scramble-based authentication afterwards)
-[[nodiscard]] bool
-check_if_in_auth_cache(const minimysql::connection_context & /*context*/) {
-  return false;
+  const auto remote_endpoint_str{extract_remote_endpoint_str(socket)};
+
+  const std::chrono::seconds write_timeout{get_config().get<"write_timeout">()};
+
+  // fast authentication: the scramble received in the client greeting
+  // (or in the auth method switch response) is verified directly
+  if (!context.check_client_fast_authentication()) {
+    co_return false;
+  }
+  // sending fast auth success
+  const auto fast_auth_success{context.generate_encoded_fast_auth()};
+  print_generic(remote_endpoint_str, context, "auth method data (fast auth)");
+  co_await async_write_mysql_frame(socket, fast_auth_success, write_timeout);
+  logger_->log_format(binsrv::log_severity::debug,
+                      "net    : sent server fast auth success ({} bytes to {})",
+                      std::size(fast_auth_success), remote_endpoint_str);
+
+  co_return true;
+}
+
+[[nodiscard]] boost::asio::awaitable<void>
+network_service::perform_public_key_dispatch(
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
+    boost::asio::ip::tcp::socket &socket,
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
+    connection_context &context) {
+  network_buffer_type data;
+  data.reserve(network_service::expected_packet_size);
+
+  const auto remote_endpoint_str{extract_remote_endpoint_str(socket)};
+
+  const std::chrono::seconds read_timeout{get_config().get<"read_timeout">()};
+  const std::chrono::seconds write_timeout{get_config().get<"write_timeout">()};
+
+  // the client (e.g. 'mysql --get-server-public-key') does not have the
+  // server's RSA public key and asks for it - sending it in PEM format,
+  // after that the client is expected to respond with the encrypted
+  // password
+  // the public key is sent only once - if the client requests it again,
+  // this request will be treated as an encrypted password of invalid size
+  const auto public_key{
+      context.generate_encoded_public_key(auth_rsa_public_key_pem_)};
+  print_generic(remote_endpoint_str, context, "auth method data (public key)");
+  co_await async_write_mysql_frame(socket, public_key, write_timeout);
+  logger_->log_format(binsrv::log_severity::debug,
+                      "net    : sent server RSA public key ({} bytes to {})",
+                      std::size(public_key), remote_endpoint_str);
+
+  co_await async_read_mysql_frame(socket, data, read_timeout);
+  logger_->log_format(binsrv::log_severity::debug,
+                      "net    : received client full auth response after "
+                      "public key ({} bytes from {})",
+                      std::size(data), remote_endpoint_str);
+  context.parse_client_full_auth_response(data);
 }
 
 // caching_sha2_password "full authentication" handling coroutine - sends
 // "perform full authentication" packet, receives the client's password
 // encrypted with the server's RSA public key (optionally sending this public
 // key to the client first if requested) and verifies it
-[[nodiscard]] boost::asio::awaitable<bool> perform_full_authentication(
+[[nodiscard]] boost::asio::awaitable<bool>
+network_service::perform_full_authentication(
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
-    binsrv::basic_logger &logger, boost::asio::ip::tcp::socket &socket,
+    boost::asio::ip::tcp::socket &socket,
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
-    const boost::asio::ip::tcp::endpoint &remote_endpoint,
-    // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
-    minimysql::connection_context &context,
-    // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
-    minimysql::network_buffer_type &data,
-    // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
-    const binsrv::replication_source_config &cfg,
-    // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
-    const opensslpp::evp_pkey &auth_rsa_private_key,
-    std::string_view auth_rsa_public_key_pem) {
-  const auto remote_endpoint_str{
-      boost::lexical_cast<std::string>(remote_endpoint)};
+    connection_context &context) {
+  network_buffer_type data;
+  data.reserve(network_service::expected_packet_size);
 
-  const std::chrono::seconds read_timeout{cfg.get<"read_timeout">()};
-  const std::chrono::seconds write_timeout{cfg.get<"write_timeout">()};
+  const auto remote_endpoint_str{extract_remote_endpoint_str(socket)};
+
+  const std::chrono::seconds read_timeout{get_config().get<"read_timeout">()};
+  const std::chrono::seconds write_timeout{get_config().get<"write_timeout">()};
 
   // full authentication: the client has to send the password itself and,
   // as the connection is not encrypted, the password is expected to be
   // encrypted with the server's RSA public key
   const auto full_auth_required{context.generate_encoded_full_auth()};
-  print_generic(logger, remote_endpoint, context,
-                "auth method data (full auth)");
-  co_await minimysql::async_write_mysql_frame(socket, full_auth_required,
-                                              write_timeout);
-  logger.log_format(binsrv::log_severity::debug,
-                    "net    : sent server full auth required ({} bytes to {})",
-                    std::size(full_auth_required), remote_endpoint_str);
+  print_generic(remote_endpoint_str, context, "auth method data (full auth)");
+  co_await async_write_mysql_frame(socket, full_auth_required, write_timeout);
+  logger_->log_format(
+      binsrv::log_severity::debug,
+      "net    : sent server full auth required ({} bytes to {})",
+      std::size(full_auth_required), remote_endpoint_str);
 
-  co_await minimysql::async_read_mysql_frame(socket, data, read_timeout);
-  logger.log_format(binsrv::log_severity::debug,
-                    "net    : received client full auth response "
-                    "({} bytes from {})",
-                    std::size(data), remote_endpoint_str);
+  co_await async_read_mysql_frame(socket, data, read_timeout);
+  logger_->log_format(binsrv::log_severity::debug,
+                      "net    : received client full auth response "
+                      "({} bytes from {})",
+                      std::size(data), remote_endpoint_str);
   context.parse_client_full_auth_response(data);
 
   // just like MySQL Server, checking for the RSA key availability before
   // checking whether the client requested the public key
-  if (auth_rsa_private_key.is_empty()) {
-    logger.log(binsrv::log_severity::warning,
-               "net    : cannot perform full authentication as "
-               "<replication_source.auth_rsa_private_key> is not configured");
+  if (auth_rsa_private_key_.is_empty()) {
+    logger_->log(binsrv::log_severity::warning,
+                 "net    : cannot perform full authentication as "
+                 "<replication_source.auth_rsa_private_key> is not configured");
     co_return false;
   }
 
   if (context.check_client_requested_public_key()) {
-    // the client (e.g. 'mysql --get-server-public-key') does not have the
-    // server's RSA public key and asks for it - sending it in PEM format,
-    // after that the client is expected to respond with the encrypted
-    // password
-    // the public key is sent only once - if the client requests it again,
-    // this request will be treated as an encrypted password of invalid size
-    const auto public_key{
-        context.generate_encoded_public_key(auth_rsa_public_key_pem)};
-    print_generic(logger, remote_endpoint, context,
-                  "auth method data (public key)");
-    co_await minimysql::async_write_mysql_frame(socket, public_key,
-                                                write_timeout);
-    logger.log_format(binsrv::log_severity::debug,
-                      "net    : sent server RSA public key ({} bytes to {})",
-                      std::size(public_key), remote_endpoint_str);
-
-    co_await minimysql::async_read_mysql_frame(socket, data, read_timeout);
-    logger.log_format(binsrv::log_severity::debug,
-                      "net    : received client full auth response after "
-                      "public key ({} bytes from {})",
-                      std::size(data), remote_endpoint_str);
-    context.parse_client_full_auth_response(data);
+    co_await perform_public_key_dispatch(socket, context);
   }
 
-  co_return context.check_client_full_authentication(auth_rsa_private_key);
+  co_return context.check_client_full_authentication(auth_rsa_private_key_);
+}
+
+[[nodiscard]] boost::asio::awaitable<bool>
+network_service::perform_connection_packet_exchange(
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
+    boost::asio::ip::tcp::socket &socket,
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
+    connection_context &context) {
+  network_buffer_type data;
+  data.reserve(network_service::expected_packet_size);
+
+  const auto remote_endpoint_str{extract_remote_endpoint_str(socket)};
+
+  const std::chrono::seconds read_timeout{get_config().get<"read_timeout">()};
+  const std::chrono::seconds write_timeout{get_config().get<"write_timeout">()};
+
+  // creating and sending server greeting packet:
+  //   protocol_version: 10
+  //   server_version: "9.7.0-pbs",
+  //   connection_id: <counter> (maintained by connection_context, starts with
+  //   1 and is incremented for each new connection) auth_method_data: 20
+  //   random bytes generated by connection_context server_capabilities:
+  //   collation: 0 (not set explicitly, client will assume the default one,
+  //   most probably 255 utf8mb4_0900_ai_ci) status_flags: 0 auth_method:
+  //   "caching_sha2_password"
+
+  const auto server_greeting{context.generate_encoded_server_greeting()};
+  print_server_greeting(remote_endpoint_str, context);
+  co_await async_write_mysql_frame(socket, server_greeting, write_timeout);
+  logger_->log_format(binsrv::log_severity::debug,
+                      "net    : sent server greeting ({} bytes to {})",
+                      std::size(server_greeting), remote_endpoint_str);
+
+  // receiving and parsing client greeting packet:
+  //   capabilities
+  //   max_packet_size
+  //   collation
+  //   username
+  //   auth_method_data
+  //   schema
+  //   auth_method_name
+  //   attributes
+
+  co_await async_read_mysql_frame(socket, data, read_timeout);
+  logger_->log_format(binsrv::log_severity::debug,
+                      "net    : received client greeting ({} bytes from {})",
+                      std::size(data), remote_endpoint_str);
+  context.parse_client_greeting(data);
+  print_client_greeting(remote_endpoint_str, context);
+
+  if (!context.check_shared_plugin_auth_supported()) {
+    logger_->log(binsrv::log_severity::warning,
+                 "net    : client does not support plugin authentication");
+    const auto access_denied{context.generate_encoded_access_denied()};
+    print_error(remote_endpoint_str, context, "plugin auth required");
+    co_await async_write_mysql_frame(socket, access_denied, write_timeout);
+    logger_->log_format(binsrv::log_severity::debug,
+                        "net    : sent server access denied ({} bytes to {})",
+                        std::size(access_denied), remote_endpoint_str);
+    co_return false;
+  }
+
+  if (context.get_client_auth_method() != context.get_server_auth_method()) {
+    logger_->log_format(binsrv::log_severity::info,
+                        "net    : client requested {} authentication that does "
+                        "not match the one "
+                        "associated with the user account ({})",
+                        context.get_client_auth_method(),
+                        context.get_server_auth_method());
+
+    const auto auth_method_switch{
+        context.generate_encoded_auth_method_switch()};
+    print_generic(remote_endpoint_str, context, "auth method switch");
+    co_await async_write_mysql_frame(socket, auth_method_switch, write_timeout);
+    logger_->log_format(
+        binsrv::log_severity::debug,
+        "net    : sent server auth method switch ({} bytes to {})",
+        std::size(auth_method_switch), remote_endpoint_str);
+
+    co_await async_read_mysql_frame(socket, data, read_timeout);
+    logger_->log_format(binsrv::log_severity::debug,
+                        "net    : received client auth method switch response "
+                        "({} bytes from {})",
+                        std::size(data), remote_endpoint_str);
+    context.parse_client_auth_method_switch(data);
+    print_client_auth_method_switch(remote_endpoint_str, context);
+  }
+  bool authenticated{false};
+  if (check_if_in_auth_cache(context)) {
+    authenticated = co_await perform_fast_authentication(socket, context);
+  } else {
+    authenticated = co_await perform_full_authentication(socket, context);
+  }
+
+  if (!authenticated) {
+    logger_->log_format(binsrv::log_severity::warning,
+                        "net    : client authentication failed for {}",
+                        context.get_client_username());
+    const auto access_denied{context.generate_encoded_access_denied()};
+    print_error(remote_endpoint_str, context, "auth failure");
+    co_await async_write_mysql_frame(socket, access_denied, write_timeout);
+    logger_->log_format(binsrv::log_severity::debug,
+                        "net    : sent server access denied ({} bytes to {})",
+                        std::size(access_denied), remote_endpoint_str);
+    co_return false;
+  }
+
+  logger_->log_format(binsrv::log_severity::info,
+                      "net    : client authentication succeeded for {}",
+                      context.get_client_username());
+
+  // sending server ok after successful authentication
+  const auto auth_ok{context.generate_encoded_ok()};
+  print_generic(remote_endpoint_str, context, "ok (auth)");
+  co_await async_write_mysql_frame(socket, auth_ok, write_timeout);
+  logger_->log_format(
+      binsrv::log_severity::debug,
+      "net    : sent server ok after authentication ({} bytes to {})",
+      std::size(auth_ok), remote_endpoint_str);
+  co_return true;
 }
 
 // MySQL session handling coroutine - writes server greeting, then receives and
 // parses client greeting
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
-[[nodiscard]] boost::asio::awaitable<void> session(
-    // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
-    const binsrv::basic_logger_ptr &logger,
-    // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
-    const binsrv::storage_ptr &storage, boost::asio::ip::tcp::socket socket,
-    // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
-    const binsrv::replication_source_config &cfg,
-    // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
-    const opensslpp::evp_pkey &auth_rsa_private_key,
-    std::string_view auth_rsa_public_key_pem) {
-  boost::system::error_code session_ec;
-  const auto remote_endpoint{socket.remote_endpoint(session_ec)};
-  const auto remote_endpoint_str{
-      boost::lexical_cast<std::string>(remote_endpoint)};
+[[nodiscard]] boost::asio::awaitable<void>
+network_service::session(boost::asio::ip::tcp::socket socket) {
+  const auto remote_endpoint_str{extract_remote_endpoint_str(socket)};
 
-  const scope_tracer tracer(*logger, "session " + remote_endpoint_str);
+  const scope_tracer tracer(*logger_, "session " + remote_endpoint_str);
 
-  const std::chrono::seconds read_timeout{cfg.get<"read_timeout">()};
-  const std::chrono::seconds write_timeout{cfg.get<"write_timeout">()};
+  const std::chrono::seconds read_timeout{get_config().get<"read_timeout">()};
+  const std::chrono::seconds write_timeout{get_config().get<"write_timeout">()};
 
   try {
-    minimysql::network_buffer_type data;
+    network_buffer_type data;
     data.reserve(network_service::expected_packet_size);
 
-    minimysql::connection_context context{
-        cfg.get<"authentication">().get<"user">(),
-        cfg.get<"authentication">().get<"password">()};
+    connection_context context{
+        get_config().get<"authentication">().get<"user">(),
+        get_config().get<"authentication">().get<"password">()};
 
-    // creating and sending server greeting packet:
-    //   protocol_version: 10
-    //   server_version: "9.7.0-pbs",
-    //   connection_id: <counter> (maintained by connection_context, starts with
-    //   1 and is incremented for each new connection) auth_method_data: 20
-    //   random bytes generated by connection_context server_capabilities:
-    //   collation: 0 (not set explicitly, client will assume the default one,
-    //   most probably 255 utf8mb4_0900_ai_ci) status_flags: 0 auth_method:
-    //   "caching_sha2_password"
-
-    const auto server_greeting{context.generate_encoded_server_greeting()};
-    print_server_greeting(*logger, remote_endpoint, context);
-    co_await minimysql::async_write_mysql_frame(socket, server_greeting,
-                                                write_timeout);
-    logger->log_format(binsrv::log_severity::debug,
-                       "net    : sent server greeting ({} bytes to {})",
-                       std::size(server_greeting), remote_endpoint_str);
-
-    // receiving and parsing client greeting packet:
-    //   capabilities
-    //   max_packet_size
-    //   collation
-    //   username
-    //   auth_method_data
-    //   schema
-    //   auth_method_name
-    //   attributes
-
-    co_await minimysql::async_read_mysql_frame(socket, data, read_timeout);
-    logger->log_format(binsrv::log_severity::debug,
-                       "net    : received client greeting ({} bytes from {})",
-                       std::size(data), remote_endpoint_str);
-    context.parse_client_greeting(data);
-    print_client_greeting(*logger, remote_endpoint, context);
-
-    if (!context.check_shared_plugin_auth_supported()) {
-      logger->log(binsrv::log_severity::warning,
-                  "net    : client does not support plugin authentication");
-      const auto access_denied{context.generate_encoded_access_denied()};
-      print_error(*logger, remote_endpoint, context, "plugin auth required");
-      co_await minimysql::async_write_mysql_frame(socket, access_denied,
-                                                  write_timeout);
-      logger->log_format(binsrv::log_severity::debug,
-                         "net    : sent server access denied ({} bytes to {})",
-                         std::size(access_denied), remote_endpoint_str);
+    if (!co_await perform_connection_packet_exchange(socket, context)) {
       co_return;
     }
-
-    if (context.get_client_auth_method() != context.get_server_auth_method()) {
-      logger->log_format(
-          binsrv::log_severity::info,
-          "net    : client requested {} authentication that does "
-          "not match the one "
-          "associated with the user account ({})",
-          context.get_client_auth_method(), context.get_server_auth_method());
-
-      const auto auth_method_switch{
-          context.generate_encoded_auth_method_switch()};
-      print_generic(*logger, remote_endpoint, context, "auth method switch");
-      co_await minimysql::async_write_mysql_frame(socket, auth_method_switch,
-                                                  write_timeout);
-      logger->log_format(
-          binsrv::log_severity::debug,
-          "net    : sent server auth method switch ({} bytes to {})",
-          std::size(auth_method_switch), remote_endpoint_str);
-
-      co_await minimysql::async_read_mysql_frame(socket, data, read_timeout);
-      logger->log_format(binsrv::log_severity::debug,
-                         "net    : received client auth method switch response "
-                         "({} bytes from {})",
-                         std::size(data), remote_endpoint_str);
-      context.parse_client_auth_method_switch(data);
-      print_client_auth_method_switch(*logger, remote_endpoint, context);
-    }
-    bool authenticated{false};
-    if (check_if_in_auth_cache(context)) {
-      // fast authentication: the scramble received in the client greeting
-      // (or in the auth method switch response) is verified directly
-      authenticated = context.check_client_fast_authentication();
-      if (authenticated) {
-        // sending fast auth success
-        const auto fast_auth_success{context.generate_encoded_fast_auth()};
-        print_generic(*logger, remote_endpoint, context,
-                      "auth method data (fast auth)");
-        co_await minimysql::async_write_mysql_frame(socket, fast_auth_success,
-                                                    write_timeout);
-        logger->log_format(
-            binsrv::log_severity::debug,
-            "net    : sent server fast auth success ({} bytes to {})",
-            std::size(fast_auth_success), remote_endpoint_str);
-      }
-    } else {
-      authenticated = co_await perform_full_authentication(
-          *logger, socket, remote_endpoint, context, data, cfg,
-          auth_rsa_private_key, auth_rsa_public_key_pem);
-    }
-
-    if (!authenticated) {
-      logger->log_format(binsrv::log_severity::warning,
-                         "net    : client authentication failed for {}",
-                         context.get_client_username());
-      const auto access_denied{context.generate_encoded_access_denied()};
-      print_error(*logger, remote_endpoint, context, "auth failure");
-      co_await minimysql::async_write_mysql_frame(socket, access_denied,
-                                                  write_timeout);
-      logger->log_format(binsrv::log_severity::debug,
-                         "net    : sent server access denied ({} bytes to {})",
-                         std::size(access_denied), remote_endpoint_str);
-      co_return;
-    }
-
-    logger->log_format(binsrv::log_severity::info,
-                       "net    : client authentication succeeded for {}",
-                       context.get_client_username());
-
-    // sending server ok after successful authentication
-    const auto auth_ok{context.generate_encoded_ok()};
-    print_generic(*logger, remote_endpoint, context, "ok (auth)");
-    co_await minimysql::async_write_mysql_frame(socket, auth_ok, write_timeout);
-    logger->log_format(
-        binsrv::log_severity::debug,
-        "net    : sent server ok after authentication ({} bytes to {})",
-        std::size(auth_ok), remote_endpoint_str);
 
     // defining known queries container
     using query_handler_type =
-        std::function<minimysql::network_buffer_container(
-            minimysql::connection_context & context)>;
+        std::function<network_buffer_container(connection_context & context)>;
     using query_container = std::unordered_map<std::string, query_handler_type>;
     using prefix_query_container =
         std::vector<std::pair<std::string, query_handler_type>>;
@@ -604,20 +614,20 @@ check_if_in_auth_cache(const minimysql::connection_context & /*context*/) {
     util::optional_string session_source_binlog_checksum_name{};
 
     const auto set_checksum_on_query_handler =
-        [&session_source_binlog_checksum, &session_source_binlog_checksum_name](
-            minimysql::connection_context &ctx) {
+        [&session_source_binlog_checksum,
+         &session_source_binlog_checksum_name](connection_context &ctx) {
           session_source_binlog_checksum = true;
           session_source_binlog_checksum_name = "CRC32";
-          minimysql::network_buffer_container resultset;
+          network_buffer_container resultset;
           resultset.emplace_back(ctx.generate_encoded_ok());
           return resultset;
         };
     const auto set_checksum_off_query_handler =
-        [&session_source_binlog_checksum, &session_source_binlog_checksum_name](
-            minimysql::connection_context &ctx) {
+        [&session_source_binlog_checksum,
+         &session_source_binlog_checksum_name](connection_context &ctx) {
           session_source_binlog_checksum = false;
           session_source_binlog_checksum_name = "NONE";
-          minimysql::network_buffer_container resultset;
+          network_buffer_container resultset;
           resultset.emplace_back(ctx.generate_encoded_ok());
           return resultset;
         };
@@ -636,14 +646,14 @@ check_if_in_auth_cache(const minimysql::connection_context & /*context*/) {
     // SET @replica_uuid must switch to a handler that parses the value and
     // stores it on the session. See the per-entry notes in
     // 'known_prefix_queries' below.
-    const auto noop_ok_handler = [](minimysql::connection_context &ctx) {
-      minimysql::network_buffer_container resultset;
+    const auto noop_ok_handler = [](connection_context &ctx) {
+      network_buffer_container resultset;
       resultset.emplace_back(ctx.generate_encoded_ok());
       return resultset;
     };
     query_container known_queries{
         {"select * from tbl",
-         [](minimysql::connection_context &ctx) {
+         [](connection_context &ctx) {
            using row_type =
                std::tuple<std::uint64_t, std::optional<std::uint64_t>,
                           std::string, std::optional<std::string>>;
@@ -651,30 +661,29 @@ check_if_in_auth_cache(const minimysql::connection_context & /*context*/) {
            const row_collection_type rows{{1, 100, "Alice", "Cooper"},
                                           {2, {}, "Bob", {}}};
            const std::array column_names{
-               minimysql::column_name_pair{"id", "id"},
-               minimysql::column_name_pair{"optional_id", "optional_id"},
-               minimysql::column_name_pair{"name", "name"},
-               minimysql::column_name_pair{"optional_name", "optional_name"}};
+               column_name_pair{"id", "id"},
+               column_name_pair{"optional_id", "optional_id"},
+               column_name_pair{"name", "name"},
+               column_name_pair{"optional_name", "optional_name"}};
            return ctx.encode_resultset(rows, column_names);
          }},
         {"select @@version_comment limit 1",
-         [](minimysql::connection_context &ctx) {
+         [](connection_context &ctx) {
            using version_comment_record = std::tuple<std::string>;
            using version_comment_record_collection =
                std::vector<version_comment_record>;
            const version_comment_record_collection records{
                {"Percona Binlog Server - GPL"}};
            const std::array column_names{
-               minimysql::column_name_pair{"@@version_comment", ""}};
+               column_name_pair{"@@version_comment", ""}};
            return ctx.encode_resultset(records, column_names);
          }},
         {"SELECT VERSION()",
-         [](minimysql::connection_context &ctx) {
+         [](connection_context &ctx) {
            using version_record = std::tuple<std::string>;
            using version_record_collection = std::vector<version_record>;
            const version_record_collection records{{"9.7.0"}};
-           const std::array column_names{
-               minimysql::column_name_pair{"VERSION()", ""}};
+           const std::array column_names{column_name_pair{"VERSION()", ""}};
            return ctx.encode_resultset(records, column_names);
          }},
         {"SET @source_binlog_checksum = 'NONE', @master_binlog_checksum = "
@@ -702,7 +711,7 @@ check_if_in_auth_cache(const minimysql::connection_context & /*context*/) {
         // 'now' is sufficient; the replica only logs a warning if the clocks
         // differ by too much.
         {"SELECT UNIX_TIMESTAMP()",
-         [](minimysql::connection_context &ctx) {
+         [](connection_context &ctx) {
            // Signed to match MySQL/PS: Item_func_unix_timestamp::resolve_type
            // calls set_data_type_longlong() and never touches unsigned_flag,
            // so the column ships as BIGINT SIGNED.
@@ -714,7 +723,7 @@ check_if_in_auth_cache(const minimysql::connection_context & /*context*/) {
            const std::vector<row_type> rows{
                {static_cast<std::int64_t>(now_seconds)}};
            const std::array column_names{
-               minimysql::column_name_pair{"UNIX_TIMESTAMP()", ""}};
+               column_name_pair{"UNIX_TIMESTAMP()", ""}};
            return ctx.encode_resultset(rows, column_names);
          }},
         // Replica handshake: server_id advertised to downstream replicas. The
@@ -724,11 +733,12 @@ check_if_in_auth_cache(const minimysql::connection_context & /*context*/) {
         // the upstream replication.server_id so operators can present
         // different identities on the two sides of PBS.
         {"SELECT @@GLOBAL.SERVER_ID",
-         [&cfg](minimysql::connection_context &ctx) {
+         [&server_id =
+              get_config().get<"server_id">()](connection_context &ctx) {
            using row_type = std::tuple<std::uint64_t>;
-           const std::vector<row_type> rows{{cfg.get<"server_id">()}};
+           const std::vector<row_type> rows{{server_id}};
            const std::array column_names{
-               minimysql::column_name_pair{"@@GLOBAL.SERVER_ID", ""}};
+               column_name_pair{"@@GLOBAL.SERVER_ID", ""}};
            return ctx.encode_resultset(rows, column_names);
          }},
         // Replica handshake: server_uuid advertised to downstream replicas.
@@ -736,34 +746,33 @@ check_if_in_auth_cache(const minimysql::connection_context & /*context*/) {
         // replica's own UUID. Taken from replication_source.server_uuid in
         // main_config (canonical 8-4-4-4-12 hex form; validated at load).
         {"SELECT @@GLOBAL.SERVER_UUID",
-         [&cfg](minimysql::connection_context &ctx) {
+         [&server_uuid =
+              get_config().get<"server_uuid">()](connection_context &ctx) {
            using row_type = std::tuple<std::string>;
-           const std::vector<row_type> rows{{cfg.get<"server_uuid">()}};
+           const std::vector<row_type> rows{{server_uuid}};
            const std::array column_names{
-               minimysql::column_name_pair{"@@GLOBAL.SERVER_UUID", ""}};
+               column_name_pair{"@@GLOBAL.SERVER_UUID", ""}};
            return ctx.encode_resultset(rows, column_names);
          }},
         // Replica handshake: both variants of 'read back the checksum
         // algorithm agreed with the source'. Returns whatever the session
         // SET @...binlog_checksum left behind, or NULL if never set.
         {"SELECT @source_binlog_checksum",
-         [&session_source_binlog_checksum_name](
-             minimysql::connection_context &ctx) {
+         [&session_source_binlog_checksum_name](connection_context &ctx) {
            using row_type = std::tuple<std::optional<std::string>>;
            const std::vector<row_type> rows{
                {session_source_binlog_checksum_name}};
            const std::array column_names{
-               minimysql::column_name_pair{"@source_binlog_checksum", ""}};
+               column_name_pair{"@source_binlog_checksum", ""}};
            return ctx.encode_resultset(rows, column_names);
          }},
         {"SELECT @master_binlog_checksum",
-         [&session_source_binlog_checksum_name](
-             minimysql::connection_context &ctx) {
+         [&session_source_binlog_checksum_name](connection_context &ctx) {
            using row_type = std::tuple<std::optional<std::string>>;
            const std::vector<row_type> rows{
                {session_source_binlog_checksum_name}};
            const std::array column_names{
-               minimysql::column_name_pair{"@master_binlog_checksum", ""}};
+               column_name_pair{"@master_binlog_checksum", ""}};
            return ctx.encode_resultset(rows, column_names);
          }},
         // Replica handshake: GTID mode advertised to downstream replicas.
@@ -772,14 +781,13 @@ check_if_in_auth_cache(const minimysql::connection_context & /*context*/) {
         // captured), not from the upstream config - a position-mode storage
         // must advertise OFF regardless of how upstream pull is configured.
         {"SELECT @@GLOBAL.GTID_MODE",
-         [&storage](minimysql::connection_context &ctx) {
+         [mode = storage_->get_replication_mode()](connection_context &ctx) {
            using row_type = std::tuple<std::string>;
-           const bool gtid_mode_on{storage->get_replication_mode() ==
-                                   binsrv::replication_mode_type::gtid};
+           const bool gtid_mode_on{mode == binsrv::replication_mode_type::gtid};
            const std::vector<row_type> rows{
                {gtid_mode_on ? std::string{"ON"} : std::string{"OFF"}}};
            const std::array column_names{
-               minimysql::column_name_pair{"@@GLOBAL.GTID_MODE", ""}};
+               column_name_pair{"@@GLOBAL.GTID_MODE", ""}};
            return ctx.encode_resultset(rows, column_names);
          }}};
 
@@ -820,12 +828,12 @@ check_if_in_auth_cache(const minimysql::connection_context & /*context*/) {
     bool terminated{false};
     while (!terminated) {
       context.enter_command_loop_iteration();
-      co_await minimysql::async_read_mysql_frame(socket, data, read_timeout);
-      logger->log_format(binsrv::log_severity::debug,
-                         "net    : received client command ({} bytes from {})",
-                         std::size(data), remote_endpoint_str);
+      co_await async_read_mysql_frame(socket, data, read_timeout);
+      logger_->log_format(binsrv::log_severity::debug,
+                          "net    : received client command ({} bytes from {})",
+                          std::size(data), remote_endpoint_str);
       context.parse_client_command(data);
-      print_client_command(*logger, remote_endpoint, context);
+      print_client_command(remote_endpoint_str, context);
 
       switch (context.get_client_mysql_command()) {
       case minimysql::client_command_type::query: {
@@ -845,30 +853,29 @@ check_if_in_auth_cache(const minimysql::connection_context & /*context*/) {
         }
         if (selected_handler != nullptr) {
           const auto resultset{(*selected_handler)(context)};
-          print_generic(*logger, remote_endpoint, context, "resultset");
+          print_generic(remote_endpoint_str, context, "resultset");
           co_await minimysql::async_write_mysql_frames(socket, resultset,
                                                        write_timeout);
-          logger->log_format(binsrv::log_severity::debug,
-                             "net    : sent server resultset ({} frames to {})",
-                             std::size(resultset), remote_endpoint_str);
+          logger_->log_format(
+              binsrv::log_severity::debug,
+              "net    : sent server resultset ({} frames to {})",
+              std::size(resultset), remote_endpoint_str);
         } else {
           // return 'syntax error' for every other query
           const auto syntax_error = context.generate_encoded_syntax_error();
-          print_error(*logger, remote_endpoint, context, "syntax error");
-          co_await minimysql::async_write_mysql_frame(socket, syntax_error,
-                                                      write_timeout);
-          logger->log_format(
+          print_error(remote_endpoint_str, context, "syntax error");
+          co_await async_write_mysql_frame(socket, syntax_error, write_timeout);
+          logger_->log_format(
               binsrv::log_severity::debug,
               "net    : sent server syntax error ({} bytes to {})",
               std::size(syntax_error), remote_endpoint_str);
         }
       } break;
-      case minimysql::client_command_type::ping: {
+      case client_command_type::ping: {
         const auto ok_after_ping{context.generate_encoded_ok()};
-        print_generic(*logger, remote_endpoint, context, "ok (ping success)");
-        co_await minimysql::async_write_mysql_frame(socket, ok_after_ping,
-                                                    write_timeout);
-        logger->log_format(
+        print_generic(remote_endpoint_str, context, "ok (ping success)");
+        co_await async_write_mysql_frame(socket, ok_after_ping, write_timeout);
+        logger_->log_format(
             binsrv::log_severity::debug,
             "net    : sent server ok after ping ({} bytes to {})",
             std::size(ok_after_ping), remote_endpoint_str);
@@ -886,11 +893,10 @@ check_if_in_auth_cache(const minimysql::connection_context & /*context*/) {
         // the frame payload, stores them on the session, and registers the
         // session in a process-wide table.
         const auto ok_after_register_replica{context.generate_encoded_ok()};
-        print_generic(*logger, remote_endpoint, context,
-                      "ok (register replica)");
+        print_generic(remote_endpoint_str, context, "ok (register replica)");
         co_await minimysql::async_write_mysql_frame(
             socket, ok_after_register_replica, write_timeout);
-        logger->log_format(
+        logger_->log_format(
             binsrv::log_severity::debug,
             "net    : sent server ok after register replica ({} bytes to {})",
             std::size(ok_after_register_replica), remote_endpoint_str);
@@ -908,23 +914,22 @@ check_if_in_auth_cache(const minimysql::connection_context & /*context*/) {
               "COM_BINLOG_DUMP; PBS refuses to serve replicas that are not "
               "checksum-aware.",
               "HY000")};
-          print_error(*logger, remote_endpoint, context,
+          print_error(remote_endpoint_str, context,
                       "missing @source_binlog_checksum declaration");
           co_await minimysql::async_write_mysql_frame(socket, rejection_packet,
                                                       write_timeout);
-          logger->log_format(binsrv::log_severity::debug,
-                             "net    : sent server error (missing "
-                             "@source_binlog_checksum) ({} bytes to {})",
-                             std::size(rejection_packet), remote_endpoint_str);
+          logger_->log_format(binsrv::log_severity::debug,
+                              "net    : sent server error (missing "
+                              "@source_binlog_checksum) ({} bytes to {})",
+                              std::size(rejection_packet), remote_endpoint_str);
           terminated = true;
           break;
         }
-        co_await handle_binlog_dump_command(
-            logger, storage, socket, context, remote_endpoint,
-            remote_endpoint_str, write_timeout, session_source_binlog_checksum);
+        co_await handle_binlog_dump_command(socket, context,
+                                            session_source_binlog_checksum);
         terminated = true;
       } break;
-      case minimysql::client_command_type::quit: {
+      case client_command_type::quit: {
         // TODO: read EOF from the socket to make sure the client has closed the
         // connection instead of just closing it from our side
         terminated = true;
@@ -932,10 +937,10 @@ check_if_in_auth_cache(const minimysql::connection_context & /*context*/) {
       default: {
         const auto unknown_command_error =
             context.generate_encoded_unknown_command();
-        print_error(*logger, remote_endpoint, context, "unknown command");
-        co_await minimysql::async_write_mysql_frame(
-            socket, unknown_command_error, write_timeout);
-        logger->log_format(
+        print_error(remote_endpoint_str, context, "unknown command");
+        co_await async_write_mysql_frame(socket, unknown_command_error,
+                                         write_timeout);
+        logger_->log_format(
             binsrv::log_severity::debug,
             "net    : sent server unknown command ({} bytes to {})",
             std::size(unknown_command_error), remote_endpoint_str);
@@ -943,91 +948,70 @@ check_if_in_auth_cache(const minimysql::connection_context & /*context*/) {
       }
     }
   } catch (...) {
-    handle_exception(*logger, "session " + remote_endpoint_str);
+    handle_exception("session " + remote_endpoint_str);
   }
 }
 #pragma GCC diagnostic pop
 
 // listener coroutine - accepts incoming connections and spawns a session
 // coroutine for each accepted connection
-[[nodiscard]] boost::asio::awaitable<void> listener(
-    // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
-    const binsrv::basic_logger_ptr &logger,
-    // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
-    const binsrv::storage_ptr &storage,
-    // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
-    boost::asio::ip::tcp::acceptor &acceptor,
-    // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
-    const binsrv::replication_source_config &cfg,
-    // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
-    const opensslpp::evp_pkey &auth_rsa_private_key,
-    std::string_view auth_rsa_public_key_pem) {
-  const scope_tracer tracer(*logger, "listener");
+boost::asio::awaitable<void> network_service::listener() {
+  const scope_tracer tracer(*logger_, "listener");
 
-  auto executor = acceptor.get_executor();
+  auto executor = acceptor_->get_executor();
 
   try {
     for (;;) {
       boost::system::error_code listener_ec;
-      boost::asio::ip::tcp::socket socket = co_await acceptor.async_accept(
+      boost::asio::ip::tcp::socket socket = co_await acceptor_->async_accept(
           boost::asio::redirect_error(boost::asio::use_awaitable, listener_ec));
       if (listener_ec) {
         if (listener_ec != boost::asio::error::operation_aborted &&
             listener_ec != boost::asio::error::bad_descriptor) {
           throw boost::system::system_error{listener_ec};
         }
-        logger->log(binsrv::log_severity::info, "net    : listener stopped");
+        logger_->log(binsrv::log_severity::info, "net    : listener stopped");
         break;
       }
 
-      const auto remote_endpoint{socket.remote_endpoint(listener_ec)};
-      logger->log_format(binsrv::log_severity::info,
-                         "net    : accepted connection from {}",
-                         boost::lexical_cast<std::string>(remote_endpoint));
+      const auto remote_endpoint_str{extract_remote_endpoint_str(socket)};
+      logger_->log_format(binsrv::log_severity::info,
+                          "net    : accepted connection from {}",
+                          remote_endpoint_str);
 
       // NOLINTNEXTLINE(misc-include-cleaner)
-      boost::asio::co_spawn(executor,
-                            session(logger, storage, std::move(socket), cfg,
-                                    auth_rsa_private_key,
-                                    auth_rsa_public_key_pem),
+      boost::asio::co_spawn(executor, session(std::move(socket)),
                             boost::asio::detached);
     }
   } catch (...) {
-    handle_exception(*logger, "listener");
+    handle_exception("listener");
   }
 }
 
-} // anonymous namespace
-
 network_service::network_service(binsrv::basic_logger_ptr logger,
-                                 boost::asio::io_context &context,
+                                 boost::asio::io_context &io_ctx,
                                  binsrv::storage_ptr storage,
                                  const binsrv::replication_source_config &cfg)
-    : logger_{std::move(logger)}, storage_{std::move(storage)},
-      auth_rsa_private_key_{}, auth_rsa_public_key_pem_{}, context_{&context},
+    : logger_{std::move(logger)}, io_ctx_{&io_ctx},
+      storage_{std::move(storage)}, config_{&cfg}, auth_rsa_private_key_{},
+      auth_rsa_public_key_pem_{},
       acceptor_{std::make_unique<acceptor_type>(
-          context, boost::asio::ip::tcp::endpoint{boost::asio::ip::tcp::v4(),
-                                                  cfg.get<"port">()})} {
+          io_ctx, boost::asio::ip::tcp::endpoint{boost::asio::ip::tcp::v4(),
+                                                 cfg.get<"port">()})} {
   assert(logger_);
 
-  load_auth_rsa_private_key(*logger_, cfg);
+  load_auth_rsa_private_key();
 
   // NOLINTNEXTLINE(misc-include-cleaner)
-  boost::asio::co_spawn(*context_,
-                        listener(logger_, storage_, *acceptor_, cfg,
-                                 auth_rsa_private_key_,
-                                 auth_rsa_public_key_pem_),
-                        boost::asio::detached);
+  boost::asio::co_spawn(get_io_ctx(), listener(), boost::asio::detached);
 }
 
 network_service::~network_service() = default;
 
-void network_service::load_auth_rsa_private_key(
-    binsrv::basic_logger &logger,
-    const binsrv::replication_source_config &cfg) {
-  const auto &optional_key_path{cfg.get<"auth_rsa_private_key">()};
+void network_service::load_auth_rsa_private_key() {
+  const auto &optional_key_path{get_config().get<"auth_rsa_private_key">()};
   if (!optional_key_path.has_value()) {
-    logger.log(
+    logger_->log(
         binsrv::log_severity::info,
         "net    : no authentication RSA private key configured, full "
         "authentication for non-SSL/TLS connections will not be available");
@@ -1040,17 +1024,24 @@ void network_service::load_auth_rsa_private_key(
                               *optional_key_path, max_pem_file_size)};
   auth_rsa_private_key_ = opensslpp::evp_pkey::import_private_pem(
       util::as_string_view(pem_content));
-  logger.log_format(binsrv::log_severity::info,
-                    "net    : loaded {}-bit authentication RSA private key "
-                    "from {}",
-                    auth_rsa_private_key_.get_size_in_bits(),
-                    *optional_key_path);
+  logger_->log_format(binsrv::log_severity::info,
+                      "net    : loaded {}-bit authentication RSA private key "
+                      "from {}",
+                      auth_rsa_private_key_.get_size_in_bits(),
+                      *optional_key_path);
 
   // the public component is extracted from the private key only once and
   // then sent (in PEM format) to every client that requests it during
   // full authentication (e.g. 'mysql --get-server-public-key')
   auth_rsa_public_key_pem_ = opensslpp::evp_pkey::export_public_pem(
       auth_rsa_private_key_.derive_public_key());
+}
+
+[[nodiscard]] std::string network_service::extract_remote_endpoint_str(
+    const boost::asio::ip::tcp::socket &socket) {
+  boost::system::error_code socket_ec;
+  const auto remote_endpoint{socket.remote_endpoint(socket_ec)};
+  return boost::lexical_cast<std::string>(remote_endpoint);
 }
 
 } // namespace minimysql
