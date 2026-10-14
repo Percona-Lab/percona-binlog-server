@@ -67,6 +67,7 @@
 
 #include "util/byte_span.hpp"
 #include "util/dynamic_byte_buffer_fwd.hpp"
+#include "util/exception_location_helpers.hpp"
 
 namespace minimysql {
 
@@ -82,7 +83,8 @@ decode_client_command_frame(const network_buffer_type &payload,
   auto decode_result{
       classic_protocol::decode<frame_type>(buffer, shared_capabilities)};
   if (!decode_result) {
-    throw boost::system::system_error{decode_result.error()};
+    util::exception_location().raise<boost::system::system_error>(
+        decode_result.error());
   }
 
   return decode_result.value().second;
@@ -201,7 +203,8 @@ connection_context::generate_encoded_server_greeting() {
       boost::asio::dynamic_buffer(result_buffer))};
 
   if (!encode_result) {
-    throw boost::system::system_error{encode_result.error()};
+    util::exception_location().raise<boost::system::system_error>(
+        encode_result.error());
   }
   return result_buffer;
 }
@@ -214,7 +217,8 @@ void connection_context::parse_client_greeting(
   auto decode_result{classic_protocol::decode<client_greeting_frame>(
       buffer, get_server_capabilities())};
   if (!decode_result) {
-    throw boost::system::system_error{decode_result.error()};
+    util::exception_location().raise<boost::system::system_error>(
+        decode_result.error());
   }
 
   validate_and_update_sequence_number(decode_result.value().second.seq_id());
@@ -252,7 +256,8 @@ connection_context::generate_encoded_auth_method_switch() {
       get_shared_capabilities(), boost::asio::dynamic_buffer(result_buffer))};
 
   if (!encode_result) {
-    throw boost::system::system_error{encode_result.error()};
+    util::exception_location().raise<boost::system::system_error>(
+        encode_result.error());
   }
   return result_buffer;
 }
@@ -308,7 +313,8 @@ void connection_context::parse_client_full_auth_response(
       boost::asio::dynamic_buffer(result_buffer))};
 
   if (!encode_result) {
-    throw boost::system::system_error{encode_result.error()};
+    util::exception_location().raise<boost::system::system_error>(
+        encode_result.error());
   }
   return result_buffer;
 }
@@ -325,7 +331,8 @@ void connection_context::parse_client_full_auth_response(
       boost::asio::dynamic_buffer(result_buffer))};
 
   if (!encode_result) {
-    throw boost::system::system_error{encode_result.error()};
+    util::exception_location().raise<boost::system::system_error>(
+        encode_result.error());
   }
   return result_buffer;
 }
@@ -348,7 +355,8 @@ void connection_context::parse_client_full_auth_response(
       boost::asio::dynamic_buffer(result_buffer))};
 
   if (!encode_result) {
-    throw boost::system::system_error{encode_result.error()};
+    util::exception_location().raise<boost::system::system_error>(
+        encode_result.error());
   }
   return result_buffer;
 }
@@ -387,7 +395,8 @@ connection_context::generate_encoded_binlog_event(
       get_shared_capabilities(), boost::asio::dynamic_buffer(result_buffer))};
 
   if (!encode_result) {
-    throw boost::system::system_error{encode_result.error()};
+    util::exception_location().raise<boost::system::system_error>(
+        encode_result.error());
   }
   result_buffer +=
       '\0'; // the first byte in the payload must be '\0' to indicate OK
@@ -398,8 +407,8 @@ connection_context::generate_encoded_binlog_event(
 void connection_context::parse_client_command(
     const network_buffer_type &payload) {
   if (std::size(payload) <= get_frame_header_length()) {
-    throw boost::system::system_error{
-        make_error_code(std::errc::protocol_error)};
+    util::exception_location().raise<boost::system::system_error>(
+        make_error_code(std::errc::protocol_error));
   }
 
   const auto command_byte_index{get_frame_header_length()};
@@ -570,8 +579,8 @@ connection_context::generate_server_auth_method_data() {
 void connection_context::validate_and_update_sequence_number(
     std::uint8_t sequence_number) {
   if (sequence_number != sequence_number_) {
-    throw boost::system::system_error{
-        make_error_code(std::errc::protocol_error)};
+    util::exception_location().raise<boost::system::system_error>(
+        make_error_code(std::errc::protocol_error));
   }
   ++sequence_number_;
 }
@@ -588,7 +597,8 @@ connection_context::generate_encoded_generic_auth_internal(
       get_shared_capabilities(), boost::asio::dynamic_buffer(result_buffer))};
 
   if (!encode_res) {
-    throw boost::system::system_error{encode_res.error()};
+    util::exception_location().raise<boost::system::system_error>(
+        encode_res.error());
   }
   return result_buffer;
 }
@@ -601,7 +611,8 @@ void connection_context::parse_client_auth_method_data_internal(
   auto decode_result{classic_protocol::decode<auth_method_data_frame>(
       buffer, get_shared_capabilities())};
   if (!decode_result) {
-    throw boost::system::system_error{decode_result.error()};
+    util::exception_location().raise<boost::system::system_error>(
+        decode_result.error());
   }
 
   validate_and_update_sequence_number(decode_result.value().second.seq_id());
@@ -621,7 +632,8 @@ void connection_context::encode_resultset_number_of_columns_internal(
       {generate_sequence_number(), column_count}, get_shared_capabilities(),
       boost::asio::dynamic_buffer(result_buffers.emplace_back()))};
   if (!encode_result) {
-    throw boost::system::system_error{encode_result.error()};
+    util::exception_location().raise<boost::system::system_error>(
+        encode_result.error());
   }
 }
 
@@ -747,7 +759,8 @@ void connection_context::encode_resultset_column_definition_internal(
       get_shared_capabilities(),
       boost::asio::dynamic_buffer(result_buffers.emplace_back()))};
   if (!encode_result) {
-    throw boost::system::system_error{encode_result.error()};
+    util::exception_location().raise<boost::system::system_error>(
+        encode_result.error());
   }
 }
 
@@ -758,7 +771,8 @@ void connection_context::encode_resultset_intermediate_eof_internal(
       {generate_sequence_number(), {}}, get_shared_capabilities(),
       boost::asio::dynamic_buffer(result_buffers.emplace_back()))};
   if (!encode_result) {
-    throw boost::system::system_error{encode_result.error()};
+    util::exception_location().raise<boost::system::system_error>(
+        encode_result.error());
   }
 }
 
@@ -774,7 +788,8 @@ void connection_context::encode_resultset_textualized_row_internal(
       {generate_sequence_number(), {row_values}}, get_shared_capabilities(),
       boost::asio::dynamic_buffer(result_buffers.emplace_back()))};
   if (!encode_result) {
-    throw boost::system::system_error{encode_result.error()};
+    util::exception_location().raise<boost::system::system_error>(
+        encode_result.error());
   }
 }
 
@@ -790,7 +805,8 @@ void connection_context::encode_resultset_eof_internal(
       {generate_sequence_number(), eof_packet}, get_shared_capabilities(),
       boost::asio::dynamic_buffer(result_buffers.emplace_back()))};
   if (!encode_result) {
-    throw boost::system::system_error{encode_result.error()};
+    util::exception_location().raise<boost::system::system_error>(
+        encode_result.error());
   }
 }
 
@@ -804,7 +820,8 @@ parse_frame_header(const network_buffer_type &payload) {
   auto decode_result{
       classic_protocol::decode<classic_protocol::frame::Header>(buffer, {})};
   if (!decode_result) {
-    throw boost::system::system_error{decode_result.error()};
+    util::exception_location().raise<boost::system::system_error>(
+        decode_result.error());
   }
 
   return decode_result.value().second.payload_size();
