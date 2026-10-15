@@ -19,6 +19,7 @@
 #include <array>
 #include <cassert>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <exception>
 #include <format>
@@ -73,10 +74,13 @@
 #include "minimysql/connection_context.hpp"
 #include "minimysql/network_io_operations.hpp"
 
+#include "opensslpp/evp_pkey.hpp"
+
 #include "operations/sender_context.hpp"
 
 #include "util/byte_span.hpp"
 #include "util/common_optional_types.hpp"
+#include "util/file_operations_helpers.hpp"
 
 namespace minimysql {
 
@@ -342,15 +346,26 @@ void handle_exception(binsrv::basic_logger &logger, std::string_view context) {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmismatched-new-delete"
 
+// TODO: implement a real caching_sha2_password authentication cache (MySQL
+// Server remembers users who have successfully passed full authentication
+// and lets them use the faster scramble-based authentication afterwards)
+[[nodiscard]] bool
+check_if_in_auth_cache(const minimysql::connection_context & /*context*/) {
+  return false;
+}
+
 // MySQL session handling coroutine - writes server greeting, then receives and
 // parses client greeting
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 [[nodiscard]] boost::asio::awaitable<void> session(
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
     const binsrv::basic_logger_ptr &logger,
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
     const binsrv::storage_ptr &storage, boost::asio::ip::tcp::socket socket,
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
-    const binsrv::replication_source_config &cfg) {
+    const binsrv::replication_source_config &cfg,
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
+    const opensslpp::evp_pkey &auth_rsa_private_key) {
   boost::system::error_code session_ec;
   const auto remote_endpoint{socket.remote_endpoint(session_ec)};
   const auto remote_endpoint_str{
@@ -443,7 +458,61 @@ void handle_exception(binsrv::basic_logger &logger, std::string_view context) {
       context.parse_client_auth_method_switch(data);
       print_client_auth_method_switch(*logger, remote_endpoint, context);
     }
-    if (!context.check_client_authentication()) {
+    bool authenticated{false};
+    if (check_if_in_auth_cache(context)) {
+      // fast authentication: the scramble received in the client greeting
+      // (or in the auth method switch response) is verified directly
+      authenticated = context.check_client_fast_authentication();
+      if (authenticated) {
+        // sending fast auth success
+        const auto fast_auth_success{context.generate_encoded_fast_auth()};
+        print_generic(*logger, remote_endpoint, context,
+                      "auth method data (fast auth)");
+        co_await minimysql::async_write_mysql_frame(socket, fast_auth_success,
+                                                    write_timeout);
+        logger->log_format(
+            binsrv::log_severity::debug,
+            "net    : sent server fast auth success ({} bytes to {})",
+            std::size(fast_auth_success), remote_endpoint_str);
+      }
+    } else {
+      // full authentication: the client has to send the password itself and,
+      // as the connection is not encrypted, the password is expected to be
+      // encrypted with the server's RSA public key
+      // TODO: support clients requesting the server's RSA public key
+      const auto full_auth_required{context.generate_encoded_full_auth()};
+      print_generic(*logger, remote_endpoint, context,
+                    "auth method data (full auth)");
+      co_await minimysql::async_write_mysql_frame(socket, full_auth_required,
+                                                  write_timeout);
+      logger->log_format(
+          binsrv::log_severity::debug,
+          "net    : sent server full auth required ({} bytes to {})",
+          std::size(full_auth_required), remote_endpoint_str);
+
+      co_await minimysql::async_read_mysql_frame(socket, data, read_timeout);
+      logger->log_format(binsrv::log_severity::debug,
+                         "net    : received client full auth response "
+                         "({} bytes from {})",
+                         std::size(data), remote_endpoint_str);
+      context.parse_client_full_auth_response(data);
+
+      if (context.check_client_requested_public_key()) {
+        logger->log(binsrv::log_severity::warning,
+                    "net    : client requested server RSA public key, which "
+                    "is not supported yet");
+      } else if (auth_rsa_private_key.is_empty()) {
+        logger->log(binsrv::log_severity::warning,
+                    "net    : cannot perform full authentication as "
+                    "<replication_source.auth_rsa_private_key> is not "
+                    "configured");
+      } else {
+        authenticated =
+            context.check_client_full_authentication(auth_rsa_private_key);
+      }
+    }
+
+    if (!authenticated) {
       logger->log_format(binsrv::log_severity::warning,
                          "net    : client authentication failed for {}",
                          context.get_client_username());
@@ -460,17 +529,6 @@ void handle_exception(binsrv::basic_logger &logger, std::string_view context) {
     logger->log_format(binsrv::log_severity::info,
                        "net    : client authentication succeeded for {}",
                        context.get_client_username());
-
-    // sending fast auth success
-    const auto fast_auth_success{context.generate_encoded_fast_auth()};
-    print_generic(*logger, remote_endpoint, context,
-                  "auth method data (fast auth)");
-    co_await minimysql::async_write_mysql_frame(socket, fast_auth_success,
-                                                write_timeout);
-    logger->log_format(
-        binsrv::log_severity::debug,
-        "net    : sent server fast auth success ({} bytes to {})",
-        std::size(fast_auth_success), remote_endpoint_str);
 
     // sending server ok after successful authentication
     const auto auth_ok{context.generate_encoded_ok()};
@@ -850,7 +908,9 @@ void handle_exception(binsrv::basic_logger &logger, std::string_view context) {
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
     boost::asio::ip::tcp::acceptor &acceptor,
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
-    const binsrv::replication_source_config &cfg) {
+    const binsrv::replication_source_config &cfg,
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
+    const opensslpp::evp_pkey &auth_rsa_private_key) {
   const scope_tracer tracer(*logger, "listener");
 
   auto executor = acceptor.get_executor();
@@ -876,12 +936,37 @@ void handle_exception(binsrv::basic_logger &logger, std::string_view context) {
 
       // NOLINTNEXTLINE(misc-include-cleaner)
       boost::asio::co_spawn(executor,
-                            session(logger, storage, std::move(socket), cfg),
+                            session(logger, storage, std::move(socket), cfg,
+                                    auth_rsa_private_key),
                             boost::asio::detached);
     }
   } catch (...) {
     handle_exception(*logger, "listener");
   }
+}
+
+[[nodiscard]] opensslpp::evp_pkey
+load_auth_rsa_private_key(binsrv::basic_logger &logger,
+                          const binsrv::replication_source_config &cfg) {
+  const auto &optional_key_path{cfg.get<"auth_rsa_private_key">()};
+  if (!optional_key_path.has_value()) {
+    logger.log(binsrv::log_severity::info,
+               "net    : no authentication RSA private key configured, full "
+               "authentication will not be available");
+    return {};
+  }
+
+  static constexpr std::size_t max_pem_file_size{65536UZ};
+  const auto pem_content{
+      util::read_file_content("authentication RSA private key file",
+                              *optional_key_path, max_pem_file_size)};
+  auto key{opensslpp::evp_pkey::import_private_pem(
+      util::as_string_view(pem_content))};
+  logger.log_format(binsrv::log_severity::info,
+                    "net    : loaded {}-bit authentication RSA private key "
+                    "from {}",
+                    key.get_size_in_bits(), *optional_key_path);
+  return key;
 }
 
 } // anonymous namespace
@@ -891,14 +976,17 @@ network_service::network_service(binsrv::basic_logger_ptr logger,
                                  binsrv::storage_ptr storage,
                                  const binsrv::replication_source_config &cfg)
     : logger_{std::move(logger)}, storage_{std::move(storage)},
+      auth_rsa_private_key_{load_auth_rsa_private_key(*logger_, cfg)},
       context_{&context},
       acceptor_{std::make_unique<acceptor_type>(
           context, boost::asio::ip::tcp::endpoint{boost::asio::ip::tcp::v4(),
                                                   cfg.get<"port">()})} {
   assert(logger_);
   // NOLINTNEXTLINE(misc-include-cleaner)
-  boost::asio::co_spawn(*context_, listener(logger_, storage_, *acceptor_, cfg),
-                        boost::asio::detached);
+  boost::asio::co_spawn(
+      *context_,
+      listener(logger_, storage_, *acceptor_, cfg, auth_rsa_private_key_),
+      boost::asio::detached);
 }
 
 network_service::~network_service() = default;

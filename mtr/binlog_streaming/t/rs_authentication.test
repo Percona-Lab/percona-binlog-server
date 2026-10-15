@@ -1,0 +1,134 @@
+--source ../include/have_binsrv.inc
+
+--source ../include/v80_v84_compatibility_defines.inc
+
+--source include/count_sessions.inc
+
+# in case of --repeat=N, we need to start from a fresh binary log to make
+# this test deterministic
+--echo *** Resetting replication at the very beginning of the test.
+--disable_query_log
+eval $stmt_reset_binary_logs_and_gtids;
+--enable_query_log
+
+# identifying backend storage type ('file' or 's3')
+--source ../include/identify_storage_backend.inc
+
+# creating data directory, configuration file, etc.
+--let $binsrv_connect_timeout = 10
+--let $binsrv_read_timeout = 10
+--let $binsrv_idle_time = 1
+--let $binsrv_verify_checksum = TRUE
+--let $binsrv_replication_mode = position
+--source ../include/set_up_auth_rsa_keys.inc
+--source ../include/set_up_binsrv_environment.inc
+
+--echo
+--echo *** Starting Binlog Server Utility in background in pull mode.
+--let $proc_command_line = $BINSRV pull $binsrv_config_file_path > /dev/null
+--source ../include/start_proc_in_background.inc
+
+# SELECT VERSION() is one of the queries the Binlog Server's command loop
+# recognises. We do not care what row comes back - we discard the client's
+# stdout below and rely solely on the mysql client's exit code as the
+# pass/fail signal so the test stays stable when the Binlog Server's
+# hard-coded version string changes.
+--let $probe_query = SELECT VERSION()
+
+--echo
+--echo *** Waiting for the replication source listener port ready to accept
+--echo *** connections.
+--let $listening_host = $binsrv_connection_host
+--let $listening_port = $binsrv_replication_source_port
+--source ../include/wait_for_listening_port.inc
+
+# see set_up_auth_rsa_keys.inc for why the server's RSA public key is needed
+--let $mysql_client_base = $MYSQL --host=$binsrv_connection_host --port=$binsrv_replication_source_port --user=$binsrv_auth_user
+
+--echo
+--echo *** No public key: client picks the same plugin the server advertises
+--echo *** (caching_sha2_password), the Binlog Server requests full
+--echo *** authentication, but the client has neither a secure connection nor
+--echo *** the server's RSA public key to encrypt the password, so it must
+--echo *** give up and mysql must return non-zero exit code.
+--error 1
+--exec $mysql_client_base --password=$binsrv_auth_password --default-auth=caching_sha2_password -e "$probe_query" >/dev/null 2>&1
+
+--echo
+--echo *** Public key: same as above, but the client is given the server's RSA
+--echo *** public key via --server-public-key-path, so it sends the password
+--echo *** (XOR-ed with the scramble) encrypted with this key. A zero exit
+--echo *** code from mysql confirms the session got as far as running the
+--echo *** probe query.
+--exec $mysql_client_base --password=$binsrv_auth_password --default-auth=caching_sha2_password --server-public-key-path=$binsrv_auth_rsa_public_key -e "$probe_query" >/dev/null 2>&1
+
+--echo
+--echo *** Public key, wrong password: the Binlog Server successfully decrypts
+--echo *** the password, but it does not match the configured one, so access
+--echo *** must be denied and mysql must return non-zero exit code.
+--error 1
+--exec $mysql_client_base --password=wrong_$binsrv_auth_password --default-auth=caching_sha2_password --server-public-key-path=$binsrv_auth_rsa_public_key -e "$probe_query" >/dev/null 2>&1
+
+--echo
+--echo *** Auth method switch + public key: client forces mysql_native_password
+--echo *** in its handshake so the Binlog Server has to send an
+--echo *** AuthMethodSwitch, after which the client switches to
+--echo *** caching_sha2_password and goes through the full authentication with
+--echo *** the server's RSA public key. If the switch encoding, the follow-up
+--echo *** parse, or the full authentication path is broken, mysql returns
+--echo *** non-zero and MTR fails the --exec. The log grep that follows the
+--echo *** shutdown is what actually proves the switch happened - this line
+--echo *** only proves the session survived it.
+--exec $mysql_client_base --password=$binsrv_auth_password --default-auth=mysql_native_password --server-public-key-path=$binsrv_auth_rsa_public_key -e "$probe_query" >/dev/null 2>&1
+
+--echo
+--echo *** Requesting public key: client asks the Binlog Server for its RSA
+--echo *** public key (--get-server-public-key) instead of using a local copy.
+--echo *** This is not supported yet, so access must be denied and mysql must
+--echo *** return non-zero exit code.
+--error 1
+--exec $mysql_client_base --password=$binsrv_auth_password --default-auth=caching_sha2_password --get-server-public-key -e "$probe_query" >/dev/null 2>&1
+
+--echo
+--echo *** Sending SIGTERM signal to the Binlog Server Utility and waiting for
+--echo *** the process to terminate
+--source ../include/terminate_proc.inc
+
+--echo
+--echo *** Confirming the switch actually happened by grepping the Binlog
+--echo *** Server stdout log (now complete and flushed) for the marker
+--echo *** emitted after generate_encoded_auth_method_switch() writes its
+--echo *** frame.
+--let $grep_file = $binsrv_log_path
+--let $grep_pattern = sent server auth method switch
+--let $wait_timeout = 60
+--source include/wait_for_pattern_in_file.inc
+
+--echo
+--echo *** Confirming the full authentication was requested (marker emitted
+--echo *** after generate_encoded_full_auth() writes its frame).
+--let $grep_pattern = sent server full auth required
+--source include/wait_for_pattern_in_file.inc
+
+--echo
+--echo *** Confirming the full authentication actually succeeded at least
+--echo *** once (for the sessions with the correct password and public key).
+--let $grep_pattern = client authentication succeeded
+--source include/wait_for_pattern_in_file.inc
+
+--echo
+--echo *** Confirming the public key request was detected and rejected.
+--let $grep_pattern = client requested server RSA public key
+--source include/wait_for_pattern_in_file.inc
+
+# cleaning up
+--source ../include/tear_down_binsrv_environment.inc
+
+# As the Binlog Server Utility interrupts the connection upon timeout, here we
+# need to close it on the MySQL server side as well in order to make sure that
+# MTR 'check-test' before and after the test produces the same output.
+--source ../include/kill_binlog_dump_connection.inc
+
+# Also, we use 'count_sessions' include files to make sure that 'Binlog Dump'
+# connection is indeed closed.
+--source include/wait_until_count_sessions.inc

@@ -43,6 +43,7 @@ eval $stmt_reset_binary_logs_and_gtids;
 --let $binsrv_verify_checksum = TRUE
 --let $binsrv_replication_mode = position
 --let $binsrv_checkpoint_interval = 1s
+--source ../include/set_up_auth_rsa_keys.inc
 --source ../include/set_up_binsrv_environment.inc
 
 --echo
@@ -70,6 +71,7 @@ INSERT INTO source_db.tbl VALUES (1, 'one'), (2, 'two'), (3, 'three');
 --echo
 --echo *** Waiting for the replication source listener port ready to accept
 --echo *** connections.
+--let $listening_host = $binsrv_connection_host
 --let $listening_port = $binsrv_replication_source_port
 --source ../include/wait_for_listening_port.inc
 
@@ -79,12 +81,13 @@ INSERT INTO source_db.tbl VALUES (1, 'one'), (2, 'two'), (3, 'three');
 --connect (replica, 127.0.0.1, root,, test, $SLAVE_MYPORT)
 --connection replica
 
---replace_result $binsrv_replication_source_port BINSRV_PORT $first_binlog_file FIRST_BINLOG_FILE
+--replace_result $binsrv_replication_source_port BINSRV_PORT $first_binlog_file FIRST_BINLOG_FILE $binsrv_auth_rsa_public_key BINSRV_AUTH_RSA_PUBLIC_KEY
 eval CHANGE REPLICATION SOURCE TO
        SOURCE_HOST='127.0.0.1',
        SOURCE_PORT=$binsrv_replication_source_port,
        SOURCE_USER='$binsrv_auth_user',
        SOURCE_PASSWORD='$binsrv_auth_password',
+       SOURCE_PUBLIC_KEY_PATH='$binsrv_auth_rsa_public_key',
        SOURCE_LOG_FILE='$first_binlog_file',
        SOURCE_LOG_POS=4,
        SOURCE_AUTO_POSITION=0,

@@ -17,8 +17,10 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <exception>
 #include <limits>
 #include <optional>
 #include <ranges>
@@ -61,6 +63,7 @@
 #include "minimysql/network_io_operations_fwd.hpp"
 
 #include "opensslpp/crypto_rng.hpp"
+#include "opensslpp/evp_pkey.hpp"
 
 #include "util/byte_span.hpp"
 #include "util/dynamic_byte_buffer_fwd.hpp"
@@ -108,12 +111,39 @@ connection_context::connection_context(
                 "classic_protocol::capabilities::value_type");
 }
 
-[[nodiscard]] bool connection_context::check_client_authentication() const {
+[[nodiscard]] bool
+connection_context::check_client_fast_authentication() const {
   return get_client_username() == get_server_username() &&
          std::ranges::equal(get_client_auth_method_data(),
                             caching_sha2_password_authenticator::scramble(
                                 util::as_const_byte_span(get_server_password()),
                                 get_server_auth_method_data()));
+}
+
+[[nodiscard]] bool connection_context::check_client_full_authentication(
+    const opensslpp::evp_pkey &private_key) const {
+  assert(!private_key.is_empty());
+  if (get_client_username() != get_server_username()) {
+    return false;
+  }
+  std::string decrypted_password;
+  try {
+    decrypted_password = caching_sha2_password_authenticator::decrypt_password(
+        get_client_auth_method_data(), get_server_auth_method_data(),
+        private_key);
+  } catch (const std::exception &) {
+    return false;
+  }
+
+  return decrypted_password == get_server_password();
+}
+
+[[nodiscard]] bool
+connection_context::check_client_requested_public_key() const noexcept {
+  // 0x02 means "request public key" in caching_sha2_password protocol
+  static constexpr std::byte request_public_key_code{0x02U};
+  const auto &data{get_client_auth_method_data()};
+  return std::size(data) == 1UZ && data.front() == request_public_key_code;
 }
 
 [[nodiscard]] bool
@@ -227,22 +257,10 @@ connection_context::generate_encoded_auth_method_switch() {
 
 void connection_context::parse_client_auth_method_switch(
     const network_buffer_type &payload) {
-  auto buffer{boost::asio::buffer(payload)};
-  using auth_method_data_frame = classic_protocol::frame::Frame<
-      classic_protocol::message::client::AuthMethodData>;
-  auto decode_result{classic_protocol::decode<auth_method_data_frame>(
-      buffer, get_shared_capabilities())};
-  if (!decode_result) {
-    throw boost::system::system_error{decode_result.error()};
-  }
-
-  validate_and_update_sequence_number(decode_result.value().second.seq_id());
+  parse_client_auth_method_data_internal(payload);
 
   // after the auth method switch the client uses the server's auth method
   client_auth_method_ = server_auth_method_;
-  client_auth_method_data_ =
-      std::ranges::to<util::dynamic_byte_buffer>(util::as_const_byte_span(
-          decode_result.value().second.payload().auth_method_data()));
 }
 
 [[nodiscard]] network_buffer_type
@@ -257,6 +275,13 @@ connection_context::generate_encoded_full_auth() {
   // 0x04 means "full auth required" in caching_sha2_password protocol
   static constexpr char full_auth_code{'\x04'};
   return generate_encoded_generic_auth_internal(full_auth_code);
+}
+
+void connection_context::parse_client_full_auth_response(
+    const network_buffer_type &payload) {
+  // the response is either the RSA-encrypted password or a single-byte
+  // "request public key" packet - both are stored as client auth method data
+  parse_client_auth_method_data_internal(payload);
 }
 
 [[nodiscard]] network_buffer_type connection_context::generate_encoded_ok() {
@@ -553,6 +578,24 @@ connection_context::generate_encoded_generic_auth_internal(char packet_code) {
     throw boost::system::system_error{encode_res.error()};
   }
   return result_buffer;
+}
+
+void connection_context::parse_client_auth_method_data_internal(
+    const network_buffer_type &payload) {
+  auto buffer{boost::asio::buffer(payload)};
+  using auth_method_data_frame = classic_protocol::frame::Frame<
+      classic_protocol::message::client::AuthMethodData>;
+  auto decode_result{classic_protocol::decode<auth_method_data_frame>(
+      buffer, get_shared_capabilities())};
+  if (!decode_result) {
+    throw boost::system::system_error{decode_result.error()};
+  }
+
+  validate_and_update_sequence_number(decode_result.value().second.seq_id());
+
+  client_auth_method_data_ =
+      std::ranges::to<util::dynamic_byte_buffer>(util::as_const_byte_span(
+          decode_result.value().second.payload().auth_method_data()));
 }
 
 void connection_context::encode_resultset_number_of_columns_internal(

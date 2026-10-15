@@ -4,10 +4,13 @@
 #
 # ==== Usage ====
 #
+# --let $listening_host = 127.0.0.1
 # --let $listening_port = 3306
 # --source ../include/wait_for_listening_port.inc
 #
 # Parameters:
+#   $listening_host
+#     Host on which the service is expected to listen.
 #   $listening_port
 #     Network port to wait for.
 #
@@ -22,7 +25,7 @@
 while ($iteration < $max_wait)
 {
   --error 0, 1
-  --exec bash -c "echo > /dev/tcp/127.0.0.1/$listening_port" 2>/dev/null
+  --exec bash -c "echo > /dev/tcp/$listening_host/$listening_port" 2>/dev/null
   --let $port_status = $__error
   if ($port_status == 0)
   {
