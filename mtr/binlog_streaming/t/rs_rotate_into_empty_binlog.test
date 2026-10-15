@@ -1,0 +1,168 @@
+# Regression test: artificial ROTATE into a freshly rotated, still-empty
+# binlog.
+#
+# When the replication source reaches the end of binlog N and rolls into the
+# next binlog N+1 that has been created but still holds only the 4-byte magic
+# (no events flushed yet), it must still emit the artificial ROTATE naming N+1
+# at position 4 before N+1's events, exactly as it does when N+1 already has
+# events. Before the fix, 'sender_context::populate_event_block()' took the EOF
+# path for the empty N+1 fetch before detecting the file switch, so the switch
+# (and with it the artificial ROTATE) was lost and N+1's events streamed as a
+# continuation of N.
+#
+# Reproducing the bug end to end requires two conditions to hold at the same
+# time:
+#
+#   (a) Storage file N must end with a STOP event, NOT a ROTATE. A ROTATE
+#       terminator already names N+1, so the downstream learns the new name
+#       from it and the missing artificial ROTATE goes unnoticed. A graceful
+#       source restart writes a STOP as the last event of the current binlog
+#       (same mechanism as kill_and_restart.test), which leaves N+1 unnamed in
+#       N's stream.
+#
+#   (b) Storage file N+1 must hold exactly the 4-byte magic when the blocking
+#       downstream catches up at N's EOF. PBS writes N+1's magic eagerly and
+#       directly to the backend when it opens the file, but N+1's
+#       FORMAT_DESCRIPTION is buffered and never flushed without a transaction
+#       boundary - so N+1 stays at 4 bytes until the first transaction commits
+#       in it. We exploit exactly that window.
+#
+# The test parks a blocking mysqlbinlog session at the N->N+1 boundary while
+# N+1 is still magic-only, then writes a transaction into N+1 and asserts that
+# an (artificial) ROTATE naming N+1 reaches the downstream before N+1's events.
+# Without the fix that ROTATE is never sent and the final wait times out.
+
+--source ../include/have_binsrv.inc
+
+--source ../include/v80_v84_compatibility_defines.inc
+
+--source include/count_sessions.inc
+
+# in case of --repeat=N, start from a fresh binary log so the test is
+# deterministic.
+--echo *** Resetting replication at the very beginning of the test.
+--disable_query_log
+eval $stmt_reset_binary_logs_and_gtids;
+--enable_query_log
+
+# identifying backend storage type ('file' or 's3')
+--source ../include/identify_storage_backend.inc
+
+# A 1-second checkpoint interval flushes the phase-2 transaction to storage
+# quickly once it is committed. 'binsrv_idle_time' keeps PBS re-connecting
+# promptly after a read timeout.
+--let $binsrv_connect_timeout = 3
+--let $binsrv_read_timeout = 3
+--let $binsrv_idle_time = 1
+--let $binsrv_verify_checksum = TRUE
+--let $binsrv_replication_mode = position
+--let $binsrv_checkpoint_interval = 1s
+# NOTE: no rewrite mode - PBS mirrors the source's binlog file names, so the
+# downstream can request them directly and local rotations follow the source.
+--source ../include/set_up_auth_rsa_keys.inc
+--source ../include/set_up_binsrv_environment.inc
+
+--echo
+--echo *** Determining the first binary log name (binlog N).
+--let $first_binlog = query_get_value($stmt_show_binary_log_status, File, 1)
+
+--echo
+--echo *** Phase 1: writing events into binlog N on the source.
+CREATE DATABASE test1;
+CREATE TABLE test1.t(id INT UNSIGNED NOT NULL PRIMARY KEY) ENGINE=InnoDB;
+INSERT INTO test1.t VALUES (1), (2), (3);
+
+--echo
+--echo *** Gracefully restarting the source. This writes a STOP event as the
+--echo *** last event of binlog N (not a ROTATE) and opens binlog N+1, which
+--echo *** on the source starts with only its FORMAT_DESCRIPTION /
+--echo *** PREVIOUS_GTIDS header.
+--source include/restart_mysqld.inc
+
+--echo
+--echo *** Determining the second binary log name after restart (binlog N+1).
+--let $second_binlog = query_get_value($stmt_show_binary_log_status, File, 1)
+
+--echo
+--echo *** Starting Binlog Server Utility in background in pull mode. On a
+--echo *** fresh storage it collects binlog N (finalized at its STOP event)
+--echo *** and opens binlog N+1 writing only the 4-byte magic; N+1's
+--echo *** FORMAT_DESCRIPTION stays buffered (no transaction boundary), so N+1
+--echo *** remains exactly 4 bytes on storage.
+--let $proc_command_line = $BINSRV pull $binsrv_config_file_path > /dev/null
+--source ../include/start_proc_in_background.inc
+--let $binsrv_pid = $proc_pid
+
+--echo
+--echo *** Waiting for the replication source listener port ready to accept
+--echo *** connections.
+--let $listening_host = $binsrv_connection_host
+--let $listening_port = $binsrv_replication_source_port
+--source ../include/wait_for_listening_port.inc
+
+--echo
+--echo *** Starting a downstream mysqlbinlog --read-from-remote-server
+--echo *** --stop-never session requesting binlog N. --stop-never keeps the
+--echo *** connection open so PBS delivers events as they appear instead of
+--echo *** disconnecting on EOF.
+--let $downstream_dump = $MYSQL_TMP_DIR/rs_rotate_into_empty_binlog.sql
+--let $proc_command_line = $MYSQL_BINLOG --read-from-remote-server --stop-never --host=$binsrv_connection_host --port=$binsrv_replication_source_port --user=$binsrv_auth_user --password=$binsrv_auth_password --default-auth=caching_sha2_password --get-server-public-key $first_binlog > $downstream_dump 2>/dev/null
+--source ../include/start_proc_in_background.inc
+--let $downstream_pid = $proc_pid
+
+--echo
+--echo *** Waiting for PBS to report that the sender reached EOF. By this point
+--echo *** the downstream has consumed all of binlog N (through its STOP event)
+--echo *** and the sender is parked at the N -> N+1 boundary with N+1 still
+--echo *** holding only the magic - the exact window this test targets.
+--let $grep_pattern = sender : fetched EOF
+--let $grep_file = $binsrv_log_path
+--let $wait_timeout = 60
+--source include/wait_for_pattern_in_file.inc
+
+--echo
+--echo *** Phase 2: a single transaction into binlog N+1 on the source. This
+--echo *** is the first transaction boundary in N+1, so PBS now flushes N+1
+--echo *** (its FORMAT_DESCRIPTION and these events) to storage and the parked
+--echo *** downstream rolls into it.
+INSERT INTO test1.t VALUES (4), (5), (6);
+
+--echo
+--echo *** The downstream stream must now carry an (artificial) ROTATE naming
+--echo *** binlog N+1 ahead of N+1's events. Without the fix this ROTATE
+--echo *** is never emitted (N+1's events stream as a continuation of N) and
+--echo *** this wait times out, failing the test.
+--let $grep_pattern = Rotate to $second_binlog
+--let $grep_file = $downstream_dump
+--let $wait_timeout = 60
+--source include/wait_for_pattern_in_file.inc
+
+--echo
+--echo *** Sending SIGTERM to the downstream mysqlbinlog session and waiting
+--echo *** for it to terminate.
+--let $proc_pid = $downstream_pid
+--source ../include/terminate_proc.inc
+
+--echo
+--echo *** Dropping the test database.
+DROP DATABASE test1;
+
+--echo
+--echo *** Sending SIGTERM signal to the Binlog Server Utility and waiting
+--echo *** for the process to terminate.
+--let $proc_pid = $binsrv_pid
+--source ../include/terminate_proc.inc
+
+--remove_file $downstream_dump
+
+# cleaning up
+--source ../include/tear_down_binsrv_environment.inc
+
+# As the Binlog Server Utility interrupts the connection upon timeout, here we
+# need to close it on the MySQL server side as well in order to make sure that
+# MTR 'check-test' before and after the test produces the same output.
+--source ../include/kill_binlog_dump_connection.inc
+
+# Also, we use 'count_sessions' include files to make sure that 'Binlog Dump'
+# connection is indeed closed.
+--source include/wait_until_count_sessions.inc

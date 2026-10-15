@@ -403,13 +403,17 @@ void sender_context::finalize_fetch_eof(util::dynamic_byte_buffer &buffer,
 bool sender_context::handle_binlog_file_switch(
     const binsrv::events::composite_binlog_name &saved_binlog_name,
     const util::dynamic_byte_buffer &buffer) {
+  if (binlog_name_ == saved_binlog_name) {
+    // No switch: the name did not change. This also covers the case of a
+    // fetch that returned no bytes without resolving an empty name yet
+    // (empty storage / an empty first binlog file polled by a blocking
+    // client), which must not be reported as a resolution below.
+    return true;
+  }
   if (saved_binlog_name.is_empty()) {
     logger_->log_format(binsrv::log_severity::info,
                         "sender : empty binlog name resolved to {}",
                         binlog_name_.str());
-    return true;
-  }
-  if (binlog_name_ == saved_binlog_name) {
     return true;
   }
   // 'fetch_event_block()' switches to the next binlog file only when
@@ -484,12 +488,17 @@ sender_context::populate_event_block(util::const_byte_span &event) {
     if (!storage_->fetch_event_block(binlog_name_, range_, fetched_bytes)) {
       return false;
     }
+    // Detect a binlog file switch before the EOF check below. A fetch at the
+    // end of a file advances 'binlog_name_' to the next one even when that
+    // file still holds only the magic and so returns no bytes; handling EOF
+    // first would strand the switch - and the artificial ROTATE it triggers -
+    // because the name has already moved on.
+    if (!handle_binlog_file_switch(saved_binlog_name, buffer)) {
+      return false;
+    }
     if (std::empty(fetched_bytes)) {
       finalize_fetch_eof(buffer, event);
       return true;
-    }
-    if (!handle_binlog_file_switch(saved_binlog_name, buffer)) {
-      return false;
     }
     logger_->log_format(binsrv::log_severity::info,
                         "sender : fetched event block of size {}, {}:{}",

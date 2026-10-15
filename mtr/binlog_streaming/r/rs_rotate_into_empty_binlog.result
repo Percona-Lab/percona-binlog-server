@@ -1,0 +1,71 @@
+*** Resetting replication at the very beginning of the test.
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+
+*** Determining the first binary log name (binlog N).
+
+*** Phase 1: writing events into binlog N on the source.
+CREATE DATABASE test1;
+CREATE TABLE test1.t(id INT UNSIGNED NOT NULL PRIMARY KEY) ENGINE=InnoDB;
+INSERT INTO test1.t VALUES (1), (2), (3);
+
+*** Gracefully restarting the source. This writes a STOP event as the
+*** last event of binlog N (not a ROTATE) and opens binlog N+1, which
+*** on the source starts with only its FORMAT_DESCRIPTION /
+*** PREVIOUS_GTIDS header.
+# restart
+
+*** Determining the second binary log name after restart (binlog N+1).
+
+*** Starting Binlog Server Utility in background in pull mode. On a
+*** fresh storage it collects binlog N (finalized at its STOP event)
+*** and opens binlog N+1 writing only the 4-byte magic; N+1's
+*** FORMAT_DESCRIPTION stays buffered (no transaction boundary), so N+1
+*** remains exactly 4 bytes on storage.
+
+*** Waiting for the replication source listener port ready to accept
+*** connections.
+
+*** Starting a downstream mysqlbinlog --read-from-remote-server
+*** --stop-never session requesting binlog N. --stop-never keeps the
+*** connection open so PBS delivers events as they appear instead of
+*** disconnecting on EOF.
+
+*** Waiting for PBS to report that the sender reached EOF. By this point
+*** the downstream has consumed all of binlog N (through its STOP event)
+*** and the sender is parked at the N -> N+1 boundary with N+1 still
+*** holding only the magic - the exact window this test targets.
+include/wait_for_pattern_in_file.inc [sender : fetched EOF]
+
+*** Phase 2: a single transaction into binlog N+1 on the source. This
+*** is the first transaction boundary in N+1, so PBS now flushes N+1
+*** (its FORMAT_DESCRIPTION and these events) to storage and the parked
+*** downstream rolls into it.
+INSERT INTO test1.t VALUES (4), (5), (6);
+
+*** The downstream stream must now carry an (artificial) ROTATE naming
+*** binlog N+1 ahead of N+1's events. Without the fix this ROTATE
+*** is never emitted (N+1's events stream as a continuation of N) and
+*** this wait times out, failing the test.
+include/wait_for_pattern_in_file.inc [Rotate to binlog.000002]
+
+*** Sending SIGTERM to the downstream mysqlbinlog session and waiting
+*** for it to terminate.
+
+*** Dropping the test database.
+DROP DATABASE test1;
+
+*** Sending SIGTERM signal to the Binlog Server Utility and waiting
+*** for the process to terminate.
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.
