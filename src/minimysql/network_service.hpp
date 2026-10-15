@@ -16,6 +16,8 @@
 #ifndef MINIMYSQL_NETWORK_SERVICE_HPP
 #define MINIMYSQL_NETWORK_SERVICE_HPP
 
+#include <string>
+
 #include <boost/asio/ts/netfwd.hpp>
 
 #include "binsrv/basic_logger_fwd.hpp"
@@ -46,12 +48,18 @@ private:
   binsrv::storage_ptr storage_;
   // empty if <replication_source.auth_rsa_private_key> is not configured
   opensslpp::evp_pkey auth_rsa_private_key_;
+  // public component of 'auth_rsa_private_key_' in PEM format sent to the
+  // clients that request it during full authentication (empty if no key)
+  std::string auth_rsa_public_key_pem_;
 
   boost::asio::io_context *context_;
   using acceptor_type =
       boost::asio::basic_socket_acceptor<boost::asio::ip::tcp>;
   using acceptor_ptr = std::unique_ptr<acceptor_type>;
   acceptor_ptr acceptor_;
+
+  void load_auth_rsa_private_key(binsrv::basic_logger &logger,
+                                 const binsrv::replication_source_config &cfg);
 };
 
 } // namespace minimysql

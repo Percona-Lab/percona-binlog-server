@@ -27,9 +27,6 @@
 #   $binsrv_replication_source_port
 #   $binsrv_auth_user
 #   $binsrv_auth_password
-#
-# Expected inputs set by set_up_auth_rsa_keys.inc:
-#   $binsrv_auth_rsa_public_key
 
 --echo
 --echo *** Comparing event sequences from the PBS and MySQL Server starting
@@ -38,7 +35,7 @@
 exec $MYSQL_BINLOG
   --read-from-remote-server --host=$binsrv_connection_host --port=$binsrv_replication_source_port
   --user=$binsrv_auth_user --password=$binsrv_auth_password --default-auth=caching_sha2_password
-  --server-public-key-path=$binsrv_auth_rsa_public_key
+  --get-server-public-key
   --start-position=$checkpoint_binlog_position --to-last-log "$checkpoint_binlog_name" > $checkpoint_roundtrip_dump 2>/dev/null;
 --let $checkpoint_roundtrip_dump_filtered = $checkpoint_roundtrip_dump.filtered
 --exec cat $checkpoint_roundtrip_dump | grep -E "^#[[:digit:]]+" > $checkpoint_roundtrip_dump_filtered
