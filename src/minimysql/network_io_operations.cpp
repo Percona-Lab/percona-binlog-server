@@ -44,6 +44,8 @@
 
 #include "minimysql/connection_context_fwd.hpp"
 
+#include "util/exception_location_helpers.hpp"
+
 namespace minimysql {
 
 // as this coroutine is always used with co_await, it is absolutely safe to
@@ -73,8 +75,8 @@ boost::asio::awaitable<void> async_read_mysql_frame(
 
   // if timer finished first, we consider it a timeout error
   if (timed_read_result.index() != 0UZ) {
-    throw boost::system::system_error{boost::asio::error::timed_out,
-                                      "frame header read timeout"};
+    util::exception_location().raise<boost::system::system_error>(
+        boost::asio::error::timed_out, "frame header read timeout");
   }
 
   // extracting the result of async_read for header
@@ -84,8 +86,8 @@ boost::asio::awaitable<void> async_read_mysql_frame(
   // was an error
   const auto header_read_error_code{std::get<0UZ>(header_read_result)};
   if (header_read_error_code) {
-    throw boost::system::system_error{header_read_error_code,
-                                      "frame header read error"};
+    util::exception_location().raise<boost::system::system_error>(
+        header_read_error_code, "frame header read error");
   }
 
   assert(std::size(local_payload) == get_frame_header_length());
@@ -95,9 +97,9 @@ boost::asio::awaitable<void> async_read_mysql_frame(
   // our maximum allowed size
   auto payload_size{parse_frame_header(local_payload)};
   if (payload_size >= max_payload_size) {
-    throw boost::system::system_error{
+    util::exception_location().raise<boost::system::system_error>(
         boost::asio::error::message_size,
-        "frame payload size too large to receive"};
+        "frame payload size too large to receive");
   }
 
   // it is ok to reuse the same timer for reading the payload - calling
@@ -112,8 +114,8 @@ boost::asio::awaitable<void> async_read_mysql_frame(
 
   // if timer finished first, we consider it a timeout error
   if (timed_read_result.index() != 0UZ) {
-    throw boost::system::system_error{boost::asio::error::timed_out,
-                                      "frame payload read timeout"};
+    util::exception_location().raise<boost::system::system_error>(
+        boost::asio::error::timed_out, "frame payload read timeout");
   }
 
   // extracting the result of async_read for payload
@@ -122,8 +124,8 @@ boost::asio::awaitable<void> async_read_mysql_frame(
   // was an error
   const auto payload_read_error_code{std::get<0UZ>(payload_read_result)};
   if (payload_read_error_code) {
-    throw boost::system::system_error{payload_read_error_code,
-                                      "frame payload read error"};
+    util::exception_location().raise<boost::system::system_error>(
+        payload_read_error_code, "frame payload read error");
   }
   assert(std::size(local_payload) == get_frame_header_length() + payload_size);
   assert(std::get<1UZ>(payload_read_result) == payload_size);
@@ -142,8 +144,9 @@ boost::asio::awaitable<void> async_write_mysql_frame(
     const network_buffer_type &payload,
     std::chrono::steady_clock::duration timeout) {
   if (std::size(payload) >= max_payload_size) {
-    throw boost::system::system_error{boost::asio::error::message_size,
-                                      "frame payload size too large to send"};
+    util::exception_location().raise<boost::system::system_error>(
+        boost::asio::error::message_size,
+        "frame payload size too large to send");
   }
 
   using namespace boost::asio::experimental::awaitable_operators;
@@ -160,8 +163,8 @@ boost::asio::awaitable<void> async_write_mysql_frame(
 
   // if timer finished first, we consider it a timeout error
   if (timed_write_result.index() != 0UZ) {
-    throw boost::system::system_error{boost::asio::error::timed_out,
-                                      "frame write timeout"};
+    util::exception_location().raise<boost::system::system_error>(
+        boost::asio::error::timed_out, "frame write timeout");
   }
 
   // extracting the result of async_write
@@ -170,7 +173,8 @@ boost::asio::awaitable<void> async_write_mysql_frame(
   // an error
   const auto write_error_code{std::get<0UZ>(write_result)};
   if (write_error_code) {
-    throw boost::system::system_error{write_error_code, "frame write error"};
+    util::exception_location().raise<boost::system::system_error>(
+        write_error_code, "frame write error");
   }
   assert(std::get<1UZ>(write_result) == std::size(payload));
 }

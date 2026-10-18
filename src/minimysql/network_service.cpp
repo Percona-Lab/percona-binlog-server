@@ -80,6 +80,7 @@
 
 #include "util/byte_span.hpp"
 #include "util/common_optional_types.hpp"
+#include "util/exception_location_helpers.hpp"
 #include "util/file_operations_helpers.hpp"
 
 namespace minimysql {
@@ -968,7 +969,8 @@ boost::asio::awaitable<void> network_service::listener() {
       if (listener_ec) {
         if (listener_ec != boost::asio::error::operation_aborted &&
             listener_ec != boost::asio::error::bad_descriptor) {
-          throw boost::system::system_error{listener_ec};
+          util::exception_location().raise<boost::system::system_error>(
+              listener_ec);
         }
         logger_->log(binsrv::log_severity::info, "net    : listener stopped");
         break;
