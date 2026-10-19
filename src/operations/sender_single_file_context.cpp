@@ -526,4 +526,32 @@ sender_single_file_context::populate_event_block() {
   return event_fetching_result_type::success;
 }
 
+[[nodiscard]] bool
+sender_single_file_context::generate_heartbeat(util::const_byte_span &event) {
+  // A heartbeat reports the file name, server_id and read position reached so
+  // far, all of which only become known once the preamble (artificial ROTATE,
+  // FORMAT_DESCRIPTION and - at the start of a file - PREVIOUS_GTIDS_LOG) has
+  // been consumed and we have entered the main loop. A MySQL source behaves the
+  // same way: it only enters its heartbeat wait loop once positioned on the
+  // active file past the format description event
+  // (sql/rpl_binlog_sender.cc Binlog_sender::wait_with_heartbeat). Before that
+  // the fields above are still unset, so we report "not ready" and let the
+  // caller keep polling for the preamble to appear rather than emit a heartbeat
+  // with a zero position and server_id.
+  if (fsm_state_ != fsm_state_type::main_loop) {
+    event = {};
+    return false;
+  }
+  // 'current_position_' is the offset we have read up to in this file; while
+  // the dump sits idle at EOF this is the end of the file - exactly the
+  // position upstream reports in its heartbeats. 'extracted_checksum_enabled_'
+  // and 'extracted_server_id_' match the FORMAT_DESCRIPTION event the replica
+  // has already seen.
+  generate_heartbeat_log_v2_event_ex(
+      generated_heartbeat_, extracted_checksum_enabled_, extracted_server_id_,
+      construction_binlog_name_, current_position_);
+  event = generated_heartbeat_;
+  return true;
+}
+
 } // namespace operations

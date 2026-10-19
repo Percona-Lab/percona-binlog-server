@@ -46,6 +46,8 @@
 #include "binsrv/events/gtid_log_post_header_impl.hpp" // IWYU pragma: export
 #include "binsrv/events/gtid_tagged_log_body_impl.hpp" // IWYU pragma: export
 #include "binsrv/events/gtid_tagged_log_post_header_impl.hpp" // IWYU pragma: export
+#include "binsrv/events/heartbeat_log_v2_body_impl.hpp" // IWYU pragma: export
+#include "binsrv/events/heartbeat_log_v2_post_header_impl.hpp" // IWYU pragma: export
 #include "binsrv/events/previous_gtids_log_body_impl.hpp" // IWYU pragma: export
 #include "binsrv/events/previous_gtids_log_post_header_impl.hpp" // IWYU pragma: export
 #include "binsrv/events/reader_context_fwd.hpp"

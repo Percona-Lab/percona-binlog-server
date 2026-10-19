@@ -71,6 +71,15 @@ public:
   [[nodiscard]] event_fetching_result_type
   get_event(util::const_byte_span &event);
 
+  // Assembles a HEARTBEAT_LOG_EVENT_V2 describing the position reached so far
+  // in this binlog file (the point a blocking dump sits idle at) and sets
+  // 'event' to point at it. The event carries the same file name, server_id
+  // and checksum flag as the surrounding stream. Returns true when an event was
+  // produced; returns false with an empty 'event' when the preamble has not
+  // been consumed yet, so there is no valid position to report - the caller
+  // should keep waiting rather than treat this as an error.
+  [[nodiscard]] bool generate_heartbeat(util::const_byte_span &event);
+
 private:
   enum class fsm_state_type : std::uint8_t {
     artificial_rotate,
@@ -91,6 +100,9 @@ private:
   binsrv::events::event_storage generated_artificial_rotate_{};
   binsrv::events::event_storage extracted_format_description_{};
   binsrv::events::event_storage extracted_previous_gtids_log_{};
+
+  // space for the heartbeat events generated while idle at EOF
+  binsrv::events::event_storage generated_heartbeat_{};
 
   // cached parameters extracted from the format description event
   bool extracted_checksum_enabled_{};

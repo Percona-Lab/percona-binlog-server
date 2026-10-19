@@ -111,4 +111,19 @@ sender_context::get_event(util::const_byte_span &event) {
   }
 }
 
+[[nodiscard]] bool
+sender_context::generate_heartbeat(util::const_byte_span &event) {
+  if (!single_file_context_) {
+    // heartbeats describe the position reached inside a binlog file; before the
+    // first file has been resolved (empty storage) there is nothing to report
+    // yet - this is a transient "not ready", not an error, so stay quiet and
+    // let the caller keep waiting
+    event = {};
+    return false;
+  }
+  // the active single-file context owns the read-up-to position, server_id and
+  // checksum flag that the heartbeat has to carry, so it assembles the event
+  return single_file_context_->generate_heartbeat(event);
+}
+
 } // namespace operations

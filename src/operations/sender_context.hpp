@@ -49,6 +49,14 @@ public:
   [[nodiscard]] event_fetching_result_type
   get_event(util::const_byte_span &event);
 
+  // Generates a HEARTBEAT_LOG_EVENT_V2 for the current binlog file and
+  // position and sets 'event' to point at it, for use while the dump sits idle
+  // at EOF. Returns true when an event was produced; returns false with an
+  // empty 'event' when the stream is not yet positioned inside a binlog file
+  // past its preamble, so there is no valid position to report - the caller
+  // should keep waiting rather than treat this as an error.
+  [[nodiscard]] bool generate_heartbeat(util::const_byte_span &event);
+
 private:
   binsrv::basic_logger_ptr logger_{};
   binsrv::storage_ptr storage_{};
