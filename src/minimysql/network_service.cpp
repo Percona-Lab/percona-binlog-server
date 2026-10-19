@@ -76,6 +76,7 @@
 
 #include "minimysql/connection_context.hpp"
 #include "minimysql/handshake_query_patterns.hpp"
+#include "minimysql/heartbeat_sender.hpp"
 #include "minimysql/network_io_operations.hpp"
 
 #include "opensslpp/evp_pkey.hpp"
@@ -294,7 +295,8 @@ network_service::handle_binlog_dump_command(
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
     boost::asio::ip::tcp::socket &socket,
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
-    connection_context &context, bool session_source_binlog_checksum) {
+    connection_context &context, bool session_source_binlog_checksum,
+    std::chrono::nanoseconds session_heartbeat_period) {
   static constexpr auto block_size{1048576UZ};
   static constexpr auto blocking_poll_interval{std::chrono::milliseconds{500}};
 
@@ -310,6 +312,14 @@ network_service::handle_binlog_dump_command(
   operations::sender_context sender_ctx{
       logger_,     storage_, block_size,
       binlog_name, position, session_source_binlog_checksum};
+
+  // Emits HEARTBEAT_LOG_EVENT_V2 while this blocking dump sits idle at EOF, at
+  // the cadence the replica requested via SET @{master,source}_heartbeat_period
+  // (a zero period disables them).
+  heartbeat_sender heartbeat{
+      logger_,    session_heartbeat_period, write_timeout, socket, context,
+      sender_ctx, remote_endpoint_str};
+
   boost::asio::steady_timer idle_timer{
       co_await boost::asio::this_coro::executor};
   util::const_byte_span event_data{};
@@ -324,7 +334,10 @@ network_service::handle_binlog_dump_command(
       if (!blocking) {
         break;
       }
-      idle_timer.expires_after(blocking_poll_interval);
+      if (!co_await heartbeat.send_if_due()) {
+        co_return;
+      }
+      idle_timer.expires_after(heartbeat.wait_cap(blocking_poll_interval));
       co_await idle_timer.async_wait(boost::asio::use_awaitable);
       continue;
     }
@@ -334,6 +347,7 @@ network_service::handle_binlog_dump_command(
     logger_->log_format(binsrv::log_severity::debug,
                         "net    : sent server binlog event ({} bytes to {})",
                         std::size(event_frame), remote_endpoint_str);
+    heartbeat.reset();
   }
 
   const auto eof = context.generate_encoded_eof();
@@ -964,7 +978,8 @@ network_service::session(boost::asio::ip::tcp::socket socket) {
           break;
         }
         co_await handle_binlog_dump_command(socket, context,
-                                            session_source_binlog_checksum);
+                                            session_source_binlog_checksum,
+                                            session_heartbeat_period);
         terminated = true;
       } break;
       case client_command_type::quit: {

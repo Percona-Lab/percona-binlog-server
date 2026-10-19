@@ -56,12 +56,21 @@ public:
   // returns true and sets the event span to an empty object on EOF
   [[nodiscard]] bool get_event(util::const_byte_span &event);
 
+  // Generates a HEARTBEAT_LOG_EVENT_V2 for the current binlog file and
+  // position and sets 'event' to point at it. Must only be called once the
+  // stream has reached EOF (the binlog name is resolved by then). Returns
+  // false on error.
+  [[nodiscard]] bool generate_heartbeat(util::const_byte_span &event);
+
 private:
   binsrv::basic_logger_ptr logger_{};
   binsrv::storage_ptr storage_{};
 
   std::size_t block_size_{};
   bool current_binlog_checksum_{};
+  // server_id taken from the most recent FORMAT_DESCRIPTION event, reused as
+  // the server_id of the heartbeat events we generate
+  std::uint32_t fde_server_id_{};
 
   enum class fsm_state_type : std::uint8_t {
     start_from_beginning,
@@ -76,6 +85,7 @@ private:
   util::byte_range range_{};
   binsrv::events::event_storage artificial_rotate_{};
   binsrv::events::event_storage fde_{};
+  binsrv::events::event_storage heartbeat_{};
   util::dynamic_byte_buffer carry_buffer_{};
   binsrv::indexed_event_block_ptr event_block_{};
   std::size_t event_index_{};

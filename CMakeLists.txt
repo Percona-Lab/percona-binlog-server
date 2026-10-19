@@ -388,6 +388,13 @@ set(events_source_files
   src/binsrv/events/gtid_tagged_log_post_header_impl_fwd.hpp
   src/binsrv/events/gtid_tagged_log_post_header_impl.hpp
 
+  src/binsrv/events/heartbeat_log_v2_body_impl_fwd.hpp
+  src/binsrv/events/heartbeat_log_v2_body_impl.hpp
+  src/binsrv/events/heartbeat_log_v2_body_impl.cpp
+
+  src/binsrv/events/heartbeat_log_v2_post_header_impl_fwd.hpp
+  src/binsrv/events/heartbeat_log_v2_post_header_impl.hpp
+
   src/binsrv/events/previous_gtids_log_body_impl_fwd.hpp
   src/binsrv/events/previous_gtids_log_body_impl.hpp
   src/binsrv/events/previous_gtids_log_body_impl.cpp
@@ -713,6 +720,9 @@ set(minimysql_source_files
   src/minimysql/connection_context.hpp
   src/minimysql/connection_context.cpp
   src/minimysql/handshake_query_patterns.hpp
+  src/minimysql/heartbeat_sender_fwd.hpp
+  src/minimysql/heartbeat_sender.hpp
+  src/minimysql/heartbeat_sender.cpp
   src/minimysql/network_io_operations_fwd.hpp
   src/minimysql/network_io_operations.hpp
   src/minimysql/network_io_operations.cpp
