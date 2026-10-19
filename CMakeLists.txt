@@ -716,6 +716,7 @@ set(minimysql_source_files
   src/minimysql/connection_context_fwd.hpp
   src/minimysql/connection_context.hpp
   src/minimysql/connection_context.cpp
+  src/minimysql/handshake_query_patterns.hpp
   src/minimysql/network_io_operations_fwd.hpp
   src/minimysql/network_io_operations.hpp
   src/minimysql/network_io_operations.cpp
