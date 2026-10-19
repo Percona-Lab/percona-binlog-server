@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <array>
 #include <cassert>
+#include <charconv>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -27,8 +28,10 @@
 #include <iterator>
 #include <memory>
 #include <optional>
+#include <regex>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <tuple>
 #include <unordered_map>
 #include <utility>
@@ -72,6 +75,7 @@
 #include "binsrv/storage.hpp"
 
 #include "minimysql/connection_context.hpp"
+#include "minimysql/handshake_query_patterns.hpp"
 #include "minimysql/network_io_operations.hpp"
 
 #include "opensslpp/evp_pkey.hpp"
@@ -626,10 +630,22 @@ network_service::session(boost::asio::ip::tcp::socket socket) {
     using query_handler_type =
         std::function<network_buffer_container(connection_context & context)>;
     using query_container = std::unordered_map<std::string, query_handler_type>;
-    using prefix_query_container =
-        std::vector<std::pair<std::string, query_handler_type>>;
+    // Statements that cannot be matched against a fixed literal - because they
+    // carry a varying parameter or a trailing argument - are matched by regular
+    // expression, evaluated after the exact-match container (see the command
+    // loop below). The handler additionally receives the match so it can read
+    // any captured parameters.
+    using regex_query_handler_type = std::function<network_buffer_container(
+        connection_context & context, const std::smatch &match)>;
+    using regex_query_container =
+        std::vector<std::pair<std::regex, regex_query_handler_type>>;
 
     bool session_source_binlog_checksum{false};
+    // Heartbeat period requested by the replica via
+    // SET @{master,source}_heartbeat_period. A zero period (the initial value,
+    // and what the replica sends when it does not want heartbeats) means no
+    // heartbeats are emitted while the downstream binlog dump is idle.
+    std::chrono::nanoseconds session_heartbeat_period{};
     // Tracks the string value of @source_binlog_checksum /
     // @master_binlog_checksum for subsequent SELECT reads. std::nullopt means
     // the variable has never been assigned on this session (NULL on SELECT).
@@ -654,25 +670,47 @@ network_service::session(boost::asio::ip::tcp::socket socket) {
           return resultset;
         };
 
-    // Replies OK without altering any session state. Suitable for parameterized
-    // SET statements that we do not need to track (e.g. heartbeat period, NAMES
-    // charset) - the replica only cares that the SET succeeds.
-    //
-    // Each handshake statement currently wired to this handler is here only
+    // Replies OK without altering any session state and ignores the regular
+    // expression match. Suitable for SET statements that we accept but do not
+    // need to track (e.g. NAMES charset, replica uuid) - the replica only cares
+    // that the SET succeeds. Each statement wired to this handler is here only
     // because PBS does not yet implement the feature that would consume its
-    // payload. When PBS gains heartbeat emission on an idle downstream
-    // connection, SET @{source,master}_heartbeat_period must switch to a
-    // dedicated handler that records the per-session period and arms a
-    // timer. When PBS gains a SHOW REPLICAS / connected-replicas view (or
-    // uses the replica uuid for any other bookkeeping), SET @slave_uuid /
-    // SET @replica_uuid must switch to a handler that parses the value and
-    // stores it on the session. See the per-entry notes in
-    // 'known_prefix_queries' below.
-    const auto noop_ok_handler = [](connection_context &ctx) {
+    // payload; see the per-pattern notes in 'handshake_query_patterns.hpp'.
+    const auto noop_ok_handler = [](connection_context &ctx,
+                                    const std::smatch & /*match*/) {
       network_buffer_container resultset;
       resultset.emplace_back(ctx.generate_encoded_ok());
       return resultset;
     };
+
+    // Records the replica's requested heartbeat period on the session so that
+    // an idle downstream binlog dump can emit heartbeat events at that cadence.
+    // The nanosecond count is captured by 'heartbeat_period_query_pattern'
+    // (capture group 1). An out-of-range value is treated as zero (no
+    // heartbeats) rather than rejected, so a misbehaving replica cannot break
+    // the handshake.
+    const auto set_heartbeat_period_query_handler =
+        [&session_heartbeat_period,
+         logger = logger_](connection_context &ctx, const std::smatch &match) {
+          const std::string captured_period{match[1].str()};
+          const char *const period_bg{std::data(captured_period)};
+          const char *const period_en{
+              std::next(period_bg, std::ssize(captured_period))};
+          std::chrono::nanoseconds::rep period_count{0};
+          if (std::from_chars(period_bg, period_en, period_count).ec !=
+              std::errc{}) {
+            // an out-of-range (absurdly large) value disables heartbeats
+            period_count = 0;
+          }
+          session_heartbeat_period = std::chrono::nanoseconds{period_count};
+          logger->log_format(binsrv::log_severity::debug,
+                             "net    : replica requested heartbeat period of "
+                             "{} ns",
+                             session_heartbeat_period.count());
+          network_buffer_container resultset;
+          resultset.emplace_back(ctx.generate_encoded_ok());
+          return resultset;
+        };
     query_container known_queries{
         {"select * from tbl",
          [](connection_context &ctx) {
@@ -813,37 +851,51 @@ network_service::session(boost::asio::ip::tcp::socket socket) {
            return ctx.encode_resultset(rows, column_names);
          }}};
 
-    // Statements whose payload varies between invocations (e.g. the exact
-    // heartbeat-period nanosecond count) are matched by prefix instead of by
-    // exact string. First match wins, so order the entries from longest to
-    // shortest prefix if they could ever overlap.
-    const prefix_query_container known_prefix_queries{
-        // SET @{source,master}_heartbeat_period = <nanoseconds>. The replica
-        // asks the source to emit a Heartbeat_log_event every <N> nanoseconds
-        // of binlog idleness so the receiver thread can detect a stalled
-        // source without waiting for connection.read_timeout. PBS does not
-        // emit heartbeats today, so the setting is accepted and discarded.
-        // TODO: when heartbeat emission is implemented, replace noop_ok_handler
-        // with a dedicated handler that parses the nanosecond count, stores
-        // it per-session, and (re)arms the heartbeat timer on the current
-        // COM_BINLOG_DUMP stream.
-        {"SET @source_heartbeat_period", noop_ok_handler},
-        {"SET @master_heartbeat_period", noop_ok_handler},
-        // SET NAMES <charset> - sent by libmysqlclient when the replica opens
-        // the connection to initialize the session charset. PBS only speaks
-        // the binary binlog event stream, so the session charset has no
-        // observable effect and the SET is a no-op by design.
-        {"SET NAMES ", noop_ok_handler},
-        // SET @slave_uuid = '<replica uuid>'[, @replica_uuid = ...]. The
-        // replica tells the source its own uuid for anti-loop reporting and
-        // for the SHOW REPLICAS view. PBS exposes neither today, so the
-        // value is accepted and discarded.
-        // TODO: when PBS gains SHOW REPLICAS / a connected-replicas view
-        // (or needs the uuid for duplicate-replica detection), replace
-        // noop_ok_handler with a dedicated handler that parses the uuid and
-        // stores it on the session.
-        {"SET @slave_uuid", noop_ok_handler},
-        {"SET @replica_uuid", noop_ok_handler},
+    // Statements matched by regular expression (evaluated after the exact-match
+    // container). First match wins, so order the entries from most to least
+    // specific if their patterns could ever overlap. The patterns live in
+    // 'handshake_query_patterns.hpp'; see there for what each one recognizes.
+    const regex_query_container known_regex_queries{
+        // The replica asks the source to emit a heartbeat event every <N>
+        // nanoseconds of binlog idleness so its receiver thread can detect a
+        // stalled source without waiting for connection.read_timeout. The
+        // captured period is recorded on the session and consumed by the idle
+        // binlog dump loop.
+        {std::regex{std::string{heartbeat_period_query_pattern},
+                    std::regex::icase},
+         set_heartbeat_period_query_handler},
+        // The statements below are accepted and discarded (see
+        // noop_ok_handler).
+        {std::regex{std::string{set_names_query_pattern}, std::regex::icase},
+         noop_ok_handler},
+        {std::regex{std::string{slave_uuid_query_pattern}, std::regex::icase},
+         noop_ok_handler},
+        {std::regex{std::string{replica_uuid_query_pattern}, std::regex::icase},
+         noop_ok_handler},
+    };
+
+    // Resolves a COM_QUERY statement to a response by consulting the
+    // exact-match container first and then the regular-expression container.
+    // Returns an empty optional when neither recognizes the statement (the
+    // caller then replies with a syntax error).
+    const auto select_query_resultset =
+        [&known_queries, &known_regex_queries](connection_context &ctx)
+        -> std::optional<network_buffer_container> {
+      const std::string &statement{ctx.get_client_statement()};
+      if (const auto exact_match_it{known_queries.find(statement)};
+          exact_match_it != std::end(known_queries)) {
+        return exact_match_it->second(ctx);
+      }
+      std::smatch regex_match{};
+      if (const auto regex_match_it{std::ranges::find_if(
+              known_regex_queries,
+              [&statement, &regex_match](const auto &entry) {
+                return std::regex_search(statement, regex_match, entry.first);
+              })};
+          regex_match_it != std::end(known_regex_queries)) {
+        return regex_match_it->second(ctx, regex_match);
+      }
+      return std::nullopt;
     };
 
     // starting command loop
@@ -859,29 +911,15 @@ network_service::session(boost::asio::ip::tcp::socket socket) {
 
       switch (context.get_client_mysql_command()) {
       case minimysql::client_command_type::query: {
-        const std::string &statement{context.get_client_statement()};
-        const query_handler_type *selected_handler{nullptr};
-        const auto exact_match_it{known_queries.find(statement)};
-        if (exact_match_it != std::end(known_queries)) {
-          selected_handler = &exact_match_it->second;
-        } else {
-          const auto prefix_match_it{std::ranges::find_if(
-              known_prefix_queries, [&statement](const auto &entry) {
-                return std::string_view{statement}.starts_with(entry.first);
-              })};
-          if (prefix_match_it != std::end(known_prefix_queries)) {
-            selected_handler = &prefix_match_it->second;
-          }
-        }
-        if (selected_handler != nullptr) {
-          const auto resultset{(*selected_handler)(context)};
+        auto resultset{select_query_resultset(context)};
+        if (resultset.has_value()) {
           print_generic(remote_endpoint_str, context, "resultset");
-          co_await minimysql::async_write_mysql_frames(socket, resultset,
+          co_await minimysql::async_write_mysql_frames(socket, *resultset,
                                                        write_timeout);
           logger_->log_format(
               binsrv::log_severity::debug,
               "net    : sent server resultset ({} frames to {})",
-              std::size(resultset), remote_endpoint_str);
+              std::size(*resultset), remote_endpoint_str);
         } else {
           // return 'syntax error' for every other query
           const auto syntax_error = context.generate_encoded_syntax_error();
