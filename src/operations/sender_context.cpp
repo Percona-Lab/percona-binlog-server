@@ -560,6 +560,9 @@ sender_context::handle_start_states(util::const_byte_span &event) {
   std::uint32_t fde_server_id{};
   bool fde_checksum_enabled{};
   extract_fields_from_fde(fde_server_id, fde_checksum_enabled);
+  // remember the server_id so that heartbeat events generated while idle at
+  // EOF carry the same server_id as the rest of the stream
+  fde_server_id_ = fde_server_id;
 
   // for artificial events it is OK to pass magic_binlog_offset as the
   // offset as it will be ignored anyway
@@ -602,6 +605,27 @@ sender_context::handle_start_states(util::const_byte_span &event) {
 
   event = event_block_->get_event(event_index_);
   ++event_index_;
+  return true;
+}
+
+[[nodiscard]] bool
+sender_context::generate_heartbeat(util::const_byte_span &event) {
+  if (binlog_name_.is_empty()) {
+    // heartbeats are only emitted once the stream has reached EOF, by which
+    // point the binlog name has been resolved; guard against misuse
+    logger_->log(binsrv::log_severity::error,
+                 "sender : cannot generate a heartbeat event before the binlog "
+                 "name has been resolved");
+    return false;
+  }
+  // 'range_.get_offset()' is the position we have read up to, which at EOF is
+  // the end of the current binlog file - exactly the position upstream reports
+  // in its heartbeats. 'current_binlog_checksum_' matches the checksum of the
+  // FORMAT_DESCRIPTION event the replica has already seen.
+  generate_heartbeat_log_v2_event_ex(heartbeat_, current_binlog_checksum_,
+                                     fde_server_id_, binlog_name_,
+                                     range_.get_offset());
+  event = heartbeat_;
   return true;
 }
 

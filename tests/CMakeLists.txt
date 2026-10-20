@@ -95,6 +95,21 @@ set_target_properties(event_test PROPERTIES
   CXX_EXTENSIONS NO
 )
 
+add_executable(heartbeat_log_v2_event_test heartbeat_log_v2_event_test.cpp)
+target_include_directories(heartbeat_log_v2_event_test PRIVATE "${PROJECT_SOURCE_DIR}/src")
+target_link_libraries(heartbeat_log_v2_event_test
+  PRIVATE
+    binlog_server_compiler_flags
+    binsrv::lib_gtids
+    binsrv::lib_events
+    Boost::unit_test_framework
+    ZLIB::ZLIB
+)
+set_target_properties(heartbeat_log_v2_event_test PROPERTIES
+  CXX_STANDARD_REQUIRED YES
+  CXX_EXTENSIONS NO
+)
+
 add_executable(cipher_context_test cipher_context_test.cpp)
 target_include_directories(cipher_context_test PRIVATE "${PROJECT_SOURCE_DIR}/src")
 target_link_libraries(cipher_context_test
@@ -147,6 +162,18 @@ set_target_properties(evp_pkey_test PROPERTIES
   CXX_EXTENSIONS NO
 )
 
+add_executable(heartbeat_query_pattern_test heartbeat_query_pattern_test.cpp)
+target_include_directories(heartbeat_query_pattern_test PRIVATE "${PROJECT_SOURCE_DIR}/src")
+target_link_libraries(heartbeat_query_pattern_test
+  PRIVATE
+    binlog_server_compiler_flags
+    Boost::unit_test_framework
+)
+set_target_properties(heartbeat_query_pattern_test PROPERTIES
+  CXX_STANDARD_REQUIRED YES
+  CXX_EXTENSIONS NO
+)
+
 set(test_run_options --no_color_output)
 add_test(NAME byte_span_encoding_test COMMAND byte_span_encoding_test ${test_run_options})
 add_test(NAME uuid_test COMMAND uuid_test ${test_run_options})
@@ -158,3 +185,5 @@ add_test(NAME cipher_context_test COMMAND cipher_context_test ${test_run_options
 add_test(NAME crypto_rnd_test COMMAND crypto_rnd_test ${test_run_options})
 add_test(NAME digest_context_test COMMAND digest_context_test ${test_run_options})
 add_test(NAME evp_pkey_test COMMAND evp_pkey_test ${test_run_options})
+add_test(NAME heartbeat_query_pattern_test COMMAND heartbeat_query_pattern_test ${test_run_options})
+add_test(NAME heartbeat_log_v2_event_test COMMAND heartbeat_log_v2_event_test ${test_run_options})

@@ -57,6 +57,16 @@ generate_previous_gtids_log_event(binsrv::events::event_storage &event_buffer,
                                   std::uint32_t offset, std::uint32_t server_id,
                                   const binsrv::gtids::gtid_set &gtids);
 
+// Generates a HEARTBEAT_LOG_EVENT_V2 that reports 'position' within
+// 'binlog_name'. The event has a zero timestamp and no flags (like the one a
+// MySQL source emits while idle). 'position' is carried in full (64-bit) in the
+// body and, truncated to 32 bit, in the common header's next_event_position.
+void generate_heartbeat_log_v2_event_ex(
+    binsrv::events::event_storage &event_buffer, bool include_checksum,
+    std::uint32_t server_id,
+    const binsrv::events::composite_binlog_name &binlog_name,
+    std::uint64_t position);
+
 } // namespace operations
 
 #endif // OPERATIONS_EVENT_GENERATION_HELPERS_HPP

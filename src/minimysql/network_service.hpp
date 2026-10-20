@@ -16,6 +16,7 @@
 #ifndef MINIMYSQL_NETWORK_SERVICE_HPP
 #define MINIMYSQL_NETWORK_SERVICE_HPP
 
+#include <chrono>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -95,7 +96,8 @@ private:
   // for the 'socket' we use only the types available in the 'netfwd.hpp'
   [[nodiscard]] boost::asio::awaitable<void> handle_binlog_dump_command(
       boost::asio::basic_stream_socket<boost::asio::ip::tcp> &socket,
-      connection_context &context, bool session_source_binlog_checksum);
+      connection_context &context, bool session_source_binlog_checksum,
+      std::chrono::nanoseconds session_heartbeat_period);
 
   [[nodiscard]] boost::asio::awaitable<bool> perform_fast_authentication(
       boost::asio::basic_stream_socket<boost::asio::ip::tcp> &socket,

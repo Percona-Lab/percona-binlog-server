@@ -154,4 +154,39 @@ generate_previous_gtids_log_event(binsrv::events::event_storage &event_buffer,
                                     util::const_byte_span{event_buffer}};
 }
 
+void generate_heartbeat_log_v2_event_ex(
+    binsrv::events::event_storage &event_buffer, bool include_checksum,
+    std::uint32_t server_id,
+    const binsrv::events::composite_binlog_name &binlog_name,
+    std::uint64_t position) {
+  const binsrv::events::generic_post_header<
+      binsrv::events::code_type::heartbeat_log_v2>
+      post_header{};
+  const binsrv::events::generic_body<
+      binsrv::events::code_type::heartbeat_log_v2>
+      body{binlog_name, position};
+
+  // Upstream fills the common header's next_event_position with the current
+  // position (truncated to 32 bit). 'event::create_event' derives that field
+  // as 'offset + event_size', so pick the offset that makes it equal to
+  // 'position'. The authoritative 64-bit position lives in the body.
+  const std::size_t event_size{
+      binsrv::events::common_header::calculate_encoded_size() +
+      binsrv::events::generic_post_header<
+          binsrv::events::code_type::heartbeat_log_v2>::
+          calculate_encoded_size() +
+      body.calculate_encoded_size() +
+      (include_checksum ? binsrv::events::footer::calculate_encoded_size()
+                        : 0U)};
+  const auto offset{position >= event_size
+                        ? static_cast<std::uint32_t>(position - event_size)
+                        : 0U};
+
+  const auto generated_event{binsrv::events::event::create_event<
+      binsrv::events::code_type::heartbeat_log_v2>(
+      offset, util::ctime_timestamp{}, server_id,
+      binsrv::events::common_header_flag_set{}, post_header, body,
+      include_checksum, event_buffer)};
+}
+
 } // namespace operations
