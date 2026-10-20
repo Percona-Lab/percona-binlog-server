@@ -1,0 +1,152 @@
+# ==== Purpose ====
+#
+# Verify that PBS emits HEARTBEAT_LOG_EVENT_V2 packets to a connected replica
+# while a blocking COM_BINLOG_DUMP sits idle at EOF.
+#
+# A real MySQL replica (server_2) is pointed at PBS with a short
+# SOURCE_HEARTBEAT_PERIOD. Its I/O thread sends SET @source_heartbeat_period
+# to PBS during the handshake; PBS records the period and, once the replica
+# has consumed every available event and the source goes quiet, keeps the
+# blocking dump connection alive by sending heartbeat events at that cadence.
+# The replica counts them in
+# performance_schema.replication_connection_status.COUNT_RECEIVED_HEARTBEATS,
+# which this test waits to become non-zero.
+#
+# Without heartbeat support the connection would simply stay silent at EOF and
+# COUNT_RECEIVED_HEARTBEATS would remain 0, so the wait below would time out.
+#
+# ==== References ====
+#
+# PBS-30 Implement sending HEARTBEAT_LOG_EVENT / HEARTBEAT_LOG_EVENT_V2
+
+--source ../include/have_binsrv.inc
+
+--source ../include/v80_v84_compatibility_defines.inc
+
+--connection default
+--source include/count_sessions.inc
+
+--echo *** Resetting binary logs on the source.
+--disable_query_log
+eval $stmt_reset_binary_logs_and_gtids;
+--enable_query_log
+
+--source ../include/identify_storage_backend.inc
+
+--let $binsrv_connect_timeout = 3
+--let $binsrv_read_timeout = 10
+--let $binsrv_idle_time = 1
+--let $binsrv_verify_checksum = TRUE
+--let $binsrv_replication_mode = position
+--let $binsrv_checkpoint_interval = 1s
+--source ../include/set_up_auth_rsa_keys.inc
+--source ../include/set_up_binsrv_environment.inc
+
+--echo
+--echo *** Creating test data on server_1 (source) before PBS starts.
+CREATE DATABASE source_db;
+CREATE TABLE source_db.tbl(
+  id INT UNSIGNED NOT NULL,
+  value VARCHAR(32) NOT NULL,
+  PRIMARY KEY(id)
+) ENGINE=InnoDB;
+INSERT INTO source_db.tbl VALUES (1, 'one'), (2, 'two'), (3, 'three');
+
+--echo
+--echo *** Starting Binlog Server Utility in background in pull mode.
+--let $proc_command_line = $BINSRV pull $binsrv_config_file_path > /dev/null
+--source ../include/start_proc_in_background.inc
+--let $binsrv_pid = $proc_pid
+
+--echo
+--echo *** Waiting for the replication source listener port ready to accept
+--echo *** connections.
+--let $listening_host = $binsrv_connection_host
+--let $listening_port = $binsrv_replication_source_port
+--source ../include/wait_for_listening_port.inc
+
+--echo
+--echo *** Pointing server_2 (replica) at PBS with a short heartbeat period and
+--echo *** starting replication. The I/O thread sends SET @source_heartbeat_period
+--echo *** to PBS as part of the handshake.
+--connect (replica, 127.0.0.1, root,, test, $SLAVE_MYPORT)
+--connection replica
+
+--replace_result $binsrv_replication_source_port BINSRV_PORT
+eval CHANGE REPLICATION SOURCE TO
+       SOURCE_HOST='127.0.0.1',
+       SOURCE_PORT=$binsrv_replication_source_port,
+       SOURCE_USER='$binsrv_auth_user',
+       SOURCE_PASSWORD='$binsrv_auth_password',
+       GET_SOURCE_PUBLIC_KEY=1,
+       SOURCE_LOG_FILE='',
+       SOURCE_LOG_POS=4,
+       SOURCE_AUTO_POSITION=0,
+       SOURCE_HEARTBEAT_PERIOD=1,
+       SOURCE_CONNECT_RETRY=1,
+       SOURCE_RETRY_COUNT=1;
+START REPLICA;
+
+--echo
+--echo *** Waiting for both replica threads to be running.
+--let $wait_condition = SELECT (SELECT SERVICE_STATE FROM performance_schema.replication_connection_status) = 'ON' AND (SELECT SERVICE_STATE FROM performance_schema.replication_applier_status) = 'ON'
+--source include/wait_condition.inc
+
+--echo
+--echo *** Waiting for server_2 to consume all available events and reach
+--echo *** server_1's current position through PBS.
+--connection default
+--let $wait_binlog_file = query_get_value($stmt_show_binary_log_status, File, 1)
+--let $wait_binlog_position = query_get_value($stmt_show_binary_log_status, Position, 1)
+--connection replica
+--let $wait_condition = SELECT SOURCE_POS_WAIT('$wait_binlog_file', $wait_binlog_position, 60) >= 0
+--source include/wait_condition.inc
+
+--echo
+--echo *** Verifying that the data replicated through PBS matches the source.
+--let $diff_tables = default:source_db.tbl, replica:source_db.tbl
+--source include/diff_tables.inc
+
+--echo
+--echo *** The source is now idle and the replica has caught up, so the blocking
+--echo *** dump sits at EOF. Waiting for PBS to send at least one heartbeat
+--echo *** event (COUNT_RECEIVED_HEARTBEATS becomes non-zero on the replica).
+--connection replica
+--let $wait_condition = SELECT COUNT_RECEIVED_HEARTBEATS > 0 FROM performance_schema.replication_connection_status
+--source include/wait_condition.inc
+--echo *** The replica received at least one heartbeat from PBS while idle.
+
+--echo
+--echo *** Dropping the test database on server_1 and letting it flow to the
+--echo *** replica so both servers end clean.
+--connection default
+DROP DATABASE source_db;
+--let $wait_binlog_file = query_get_value($stmt_show_binary_log_status, File, 1)
+--let $wait_binlog_position = query_get_value($stmt_show_binary_log_status, Position, 1)
+--connection replica
+--let $wait_condition = SELECT SOURCE_POS_WAIT('$wait_binlog_file', $wait_binlog_position, 60) >= 0
+--source include/wait_condition.inc
+
+--echo
+--echo *** Stopping replication on server_2 and cleaning up its config.
+STOP REPLICA;
+RESET REPLICA ALL;
+--disconnect replica
+
+--echo
+--echo *** Sending SIGTERM signal to the Binlog Server Utility and waiting
+--echo *** for the process to terminate.
+--let $proc_pid = $binsrv_pid
+--source ../include/terminate_proc.inc
+
+--source ../include/tear_down_binsrv_environment.inc
+
+# PBS interrupts the Binlog Dump connection on timeout - close it on the
+# server side as well so that MTR's check-test before and after the run
+# produces the same output.
+--connection default
+--source ../include/kill_binlog_dump_connection.inc
+
+--source include/wait_until_count_sessions.inc
+
+# End of test.
