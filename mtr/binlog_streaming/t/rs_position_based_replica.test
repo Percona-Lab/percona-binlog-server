@@ -66,7 +66,6 @@ INSERT INTO source_db.tbl VALUES (1, 'one'), (2, 'two'), (3, 'three');
 --echo *** Starting Binlog Server Utility in background in pull mode.
 --let $proc_command_line = $BINSRV pull $binsrv_config_file_path > /dev/null
 --source ../include/start_proc_in_background.inc
---let $binsrv_pid = $proc_pid
 
 --echo
 --echo *** Waiting for the replication source listener port ready to accept
@@ -149,7 +148,6 @@ RESET REPLICA ALL;
 --echo
 --echo *** Sending SIGTERM signal to the Binlog Server Utility and waiting
 --echo *** for the process to terminate.
---let $proc_pid = $binsrv_pid
 --source ../include/terminate_proc.inc
 
 --source ../include/tear_down_binsrv_environment.inc

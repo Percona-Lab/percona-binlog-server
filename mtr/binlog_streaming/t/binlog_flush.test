@@ -82,7 +82,8 @@ if ($storage_backend == s3)
 
 --echo
 --echo *** Terminating pull mode without giving it a chance to flush on graceful shutdown.
---exec kill -9 $proc_pid
+--exec kill -9 `cat $proc_pid_file`
+--remove_file $proc_pid_file
 
 # Clean up any remaining binlog dump connection left by the killed pull process.
 --source ../include/kill_binlog_dump_connection.inc

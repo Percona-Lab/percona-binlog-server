@@ -16,6 +16,7 @@
 #ifndef MINIMYSQL_NETWORK_SERVICE_HPP
 #define MINIMYSQL_NETWORK_SERVICE_HPP
 
+#include <atomic>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -62,6 +63,12 @@ private:
   // clients that request it during full authentication (empty if no key)
   std::string auth_rsa_public_key_pem_;
 
+  // caching_sha2_password authentication cache - as only one user account
+  // is currently supported, a single flag is enough: it is set once this
+  // user has successfully passed full authentication (subsequent connections
+  // from this user go through fast authentication)
+  std::atomic<bool> auth_cached_;
+
   using acceptor_type =
       boost::asio::basic_socket_acceptor<boost::asio::ip::tcp>;
   using acceptor_ptr = std::unique_ptr<acceptor_type>;
@@ -89,8 +96,9 @@ private:
                             const connection_context &context);
   void handle_exception(std::string_view context);
 
-  [[nodiscard]] static bool
-  check_if_in_auth_cache(const connection_context &context);
+  [[nodiscard]] bool
+  check_if_in_auth_cache(const connection_context &context) const noexcept;
+  void add_to_auth_cache(const connection_context &context);
 
   // for the 'socket' we use only the types available in the 'netfwd.hpp'
   [[nodiscard]] boost::asio::awaitable<void> handle_binlog_dump_command(
