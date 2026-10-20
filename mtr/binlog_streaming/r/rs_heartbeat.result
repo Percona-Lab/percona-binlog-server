@@ -1,0 +1,73 @@
+*** Resetting binary logs on the source.
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+
+*** Creating test data on server_1 (source) before PBS starts.
+CREATE DATABASE source_db;
+CREATE TABLE source_db.tbl(
+id INT UNSIGNED NOT NULL,
+value VARCHAR(32) NOT NULL,
+PRIMARY KEY(id)
+) ENGINE=InnoDB;
+INSERT INTO source_db.tbl VALUES (1, 'one'), (2, 'two'), (3, 'three');
+
+*** Starting Binlog Server Utility in background in pull mode.
+
+*** Waiting for the replication source listener port ready to accept
+*** connections.
+
+*** Pointing server_2 (replica) at PBS with a short heartbeat period and
+*** starting replication. The I/O thread sends SET @source_heartbeat_period
+*** to PBS as part of the handshake.
+CHANGE REPLICATION SOURCE TO
+SOURCE_HOST='127.0.0.1',
+SOURCE_PORT=BINSRV_PORT,
+SOURCE_USER='rpl',
+SOURCE_PASSWORD='password',
+GET_SOURCE_PUBLIC_KEY=1,
+SOURCE_LOG_FILE='',
+SOURCE_LOG_POS=4,
+SOURCE_AUTO_POSITION=0,
+SOURCE_HEARTBEAT_PERIOD=1,
+SOURCE_CONNECT_RETRY=1,
+SOURCE_RETRY_COUNT=1;
+Warnings:
+Note	1759	Sending passwords in plain text without SSL/TLS is extremely insecure.
+Note	1760	Storing MySQL user name or password information in the connection metadata repository is not secure and is therefore not recommended. Please consider using the USER and PASSWORD connection options for START REPLICA; see the 'START REPLICA Syntax' in the MySQL Manual for more information.
+START REPLICA;
+
+*** Waiting for both replica threads to be running.
+
+*** Waiting for server_2 to consume all available events and reach
+*** server_1's current position through PBS.
+
+*** Verifying that the data replicated through PBS matches the source.
+include/diff_tables.inc [default:source_db.tbl, replica:source_db.tbl]
+
+*** The source is now idle and the replica has caught up, so the blocking
+*** dump sits at EOF. Waiting for PBS to send at least one heartbeat
+*** event (COUNT_RECEIVED_HEARTBEATS becomes non-zero on the replica).
+*** The replica received at least one heartbeat from PBS while idle.
+
+*** Dropping the test database on server_1 and letting it flow to the
+*** replica so both servers end clean.
+DROP DATABASE source_db;
+
+*** Stopping replication on server_2 and cleaning up its config.
+STOP REPLICA;
+RESET REPLICA ALL;
+
+*** Sending SIGTERM signal to the Binlog Server Utility and waiting
+*** for the process to terminate.
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.
