@@ -1,0 +1,38 @@
+*** Resetting replication at the very beginning of the test.
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+
+*** Determining the first binary log name.
+
+*** Creating a test database on the source.
+CREATE DATABASE test1;
+
+*** Fetching the source binary logs in position mode.
+
+*** Starting Binlog Server Utility in background in pull mode.
+
+*** Waiting for the replication source listener port ready to accept
+*** connections.
+
+*** Running 'mysqlbinlog --stop-never --connection-server-id=0'
+*** against PBS. PBS must close the dump at the end of the last
+*** binary log file instead of waiting for new events.
+include/assert_grep.inc [The dump contains the test database creation]
+
+*** Sending SIGTERM signal to the Binlog Server Utility and waiting for
+*** the process to terminate.
+
+*** Dropping the test database.
+DROP DATABASE test1;
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.

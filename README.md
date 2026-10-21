@@ -601,7 +601,7 @@ If this section is present, then the utility will not split binlog events the sa
 This section configures the built-in MySQL-compatible listener the utility exposes in `pull` mode so that downstream replicas can dump binary log events from it (the utility acts as a replication source).
 
 Two kinds of client are supported today:
-- `mysqlbinlog --read-from-remote-server` in both one-shot and `--stop-never` modes.
+- `mysqlbinlog --read-from-remote-server` in both one-shot and `--stop-never` modes. Just like MySQL Server, the utility closes the connection at the end of the last binary log file (non-blocking dump) when `COM_BINLOG_DUMP` has the `BINLOG_DUMP_NON_BLOCK` flag set or carries server id `0` (e.g. `mysqlbinlog --stop-never --connection-server-id=0`). The server id sent by the client is never used to filter events: filtering by server id (`mysqlbinlog --server-id=N`) is done on the client side.
 - A real MySQL server configured as a position-based replica via `CHANGE REPLICATION SOURCE TO ... SOURCE_AUTO_POSITION=0, SOURCE_LOG_FILE=..., SOURCE_LOG_POS=...` followed by `START REPLICA`. The listener answers the SQL statements a real replica's I/O thread issues before `COM_BINLOG_DUMP` (clock-skew probe, server id / uuid / gtid-mode queries, heartbeat negotiation, checksum negotiation, replica uuid, `COM_REGISTER_SLAVE`) using the values from `<replication_source.server_id>`, `<replication_source.server_uuid>` and the actual mode of the backing storage. GTID-based replicas (`SOURCE_AUTO_POSITION=1`) are not supported yet.
 
 - `<replication_source.port>` - the TCP port on which the utility listens for incoming replica connections.

@@ -1,0 +1,96 @@
+--source ../include/have_binsrv.inc
+
+--source ../include/v80_v84_compatibility_defines.inc
+
+--source include/count_sessions.inc
+
+# ==== Purpose ====
+#
+# A COM_BINLOG_DUMP with 'server_id' equal to 0 must be served as a
+# non-blocking dump even when the BINLOG_DUMP_NON_BLOCK flag is not set,
+# just like the MySQL source does ('Binlog_sender::init()').
+#
+# 'mysqlbinlog --stop-never --connection-server-id=0' sends exactly this
+# packet: '--stop-never' clears BINLOG_DUMP_NON_BLOCK and
+# '--connection-server-id=0' sets 'server_id' to 0. 'mysqlbinlog' prints
+# "Cannot set --server-id=0 when --stop-never is specified." for this
+# combination but still proceeds, so its stderr is discarded below.
+#
+# If PBS treated this dump as blocking, 'mysqlbinlog' would never return
+# and the test would fail on the MTR testcase timeout.
+
+--echo *** Resetting replication at the very beginning of the test.
+--disable_query_log
+eval $stmt_reset_binary_logs_and_gtids;
+--enable_query_log
+
+# identifying backend storage type ('file' or 's3')
+--source ../include/identify_storage_backend.inc
+
+--let $binsrv_connect_timeout = 3
+--let $binsrv_read_timeout = 3
+--let $binsrv_idle_time = 1
+--let $binsrv_verify_checksum = TRUE
+--let $binsrv_replication_mode = position
+--source ../include/set_up_auth_rsa_keys.inc
+--source ../include/set_up_binsrv_environment.inc
+
+--echo
+--echo *** Determining the first binary log name.
+--let $first_binlog = query_get_value($stmt_show_binary_log_status, File, 1)
+
+--echo
+--echo *** Creating a test database on the source.
+CREATE DATABASE test1;
+
+--echo
+--echo *** Fetching the source binary logs in position mode.
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+--echo
+--echo *** Starting Binlog Server Utility in background in pull mode.
+--let $proc_command_line = $BINSRV pull $binsrv_config_file_path > /dev/null
+--source ../include/start_proc_in_background.inc
+
+--echo
+--echo *** Waiting for the replication source listener port ready to accept
+--echo *** connections.
+--let $listening_host = $binsrv_connection_host
+--let $listening_port = $binsrv_replication_source_port
+--source ../include/wait_for_listening_port.inc
+
+--echo
+--echo *** Running 'mysqlbinlog --stop-never --connection-server-id=0'
+--echo *** against PBS. PBS must close the dump at the end of the last
+--echo *** binary log file instead of waiting for new events.
+--let $downstream_dump = $MYSQL_TMP_DIR/rs_non_blocking_dump_zero_server_id.sql
+--exec $MYSQL_BINLOG --read-from-remote-server --stop-never --connection-server-id=0 --host=$binsrv_connection_host --port=$binsrv_replication_source_port --user=$binsrv_auth_user --password=$binsrv_auth_password --default-auth=caching_sha2_password --get-server-public-key $first_binlog > $downstream_dump 2>/dev/null
+
+--let $assert_file = $downstream_dump
+--let $assert_count = 1
+--let $assert_text = The dump contains the test database creation
+--let $assert_select = CREATE DATABASE test1
+--source include/assert_grep.inc
+
+--echo
+--echo *** Sending SIGTERM signal to the Binlog Server Utility and waiting for
+--echo *** the process to terminate.
+--source ../include/terminate_proc.inc
+
+--echo
+--echo *** Dropping the test database.
+DROP DATABASE test1;
+
+--remove_file $downstream_dump
+
+# cleaning up
+--source ../include/tear_down_binsrv_environment.inc
+
+# As the Binlog Server Utility interrupts the connection upon timeout, here we
+# need to close it on the MySQL server side as well in order to make sure that
+# MTR 'check-test' before and after the test produces the same output.
+--source ../include/kill_binlog_dump_connection.inc
+
+--source include/wait_until_count_sessions.inc
+
+# End of test.
