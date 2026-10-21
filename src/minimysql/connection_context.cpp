@@ -169,6 +169,19 @@ connection_context::check_shared_text_result_with_session_tracking_supported()
 
 [[nodiscard]] bool
 connection_context::check_binlog_non_blocking_dump() const noexcept {
+  // Just like the MySQL source ('Binlog_sender::init()'), PBS considers a
+  // dump non-blocking either when the BINLOG_DUMP_NON_BLOCK flag is set or
+  // when the client sent 'server_id' equal to 0:
+  // https://github.com/mysql/mysql-server/blob/mysql-8.0.43/sql/rpl_binlog_sender.cc#L313
+  // https://github.com/mysql/mysql-server/blob/mysql-8.4.6/sql/rpl_binlog_sender.cc#L320
+  // The latter is the legacy, undocumented way of asking for a non-blocking
+  // dump, and it is still reachable:
+  // 'mysqlbinlog --stop-never --connection-server-id=0' only prints an error
+  // about this combination and then sends COM_BINLOG_DUMP with no flags and
+  // 'server_id' equal to 0.
+  if (get_binlog_server_id() == 0U) {
+    return true;
+  }
   stdx::flags<classic_protocol::message::client::BinlogDump::Flags>
       binlog_dump_flags{};
   binlog_dump_flags.underlying_value(get_binlog_flags());
@@ -490,6 +503,10 @@ void connection_context::parse_client_command(
     client_command_ = client_command_type::binlog_dump;
     const auto &binlog_dump_payload{frame.payload()};
     binlog_flags_ = binlog_dump_payload.flags().underlying_value();
+    // 'server_id' only identifies the downstream client. Just like the MySQL
+    // source, PBS never filters events by it (filtering by server id, e.g.
+    // 'mysqlbinlog --server-id=N', is done on the client side). Its only
+    // special value is 0, see 'check_binlog_non_blocking_dump()'.
     binlog_server_id_ = binlog_dump_payload.server_id();
     binlog_filename_ = binlog_dump_payload.filename();
     binlog_position_ = binlog_dump_payload.position();
