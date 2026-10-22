@@ -279,6 +279,8 @@ private:
   using storage_object_name_list = std::vector<std::string>;
 
   void remove_temporary_objects(storage_object_name_container &object_names);
+  [[nodiscard]] bool is_empty_binlog_metadata(
+      const events::composite_binlog_name &binlog_name) const;
   [[nodiscard]] bool collect_interrupted_first_binlog_objects(
       storage_object_name_container &object_names,
       storage_object_name_list &garbage_object_names) const;

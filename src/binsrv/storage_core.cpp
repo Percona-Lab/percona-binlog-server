@@ -640,6 +640,20 @@ void storage_core::remove_temporary_objects(
                       remove_objects.size());
 }
 
+[[nodiscard]] bool storage_core::is_empty_binlog_metadata(
+    const events::composite_binlog_name &binlog_name) const {
+  // the binlog metadata file of a newly created binlog file records only the
+  // magic binlog payload size and it is not updated before the binlog index
+  // is (binlog metadata files are always written atomically, so a crash
+  // cannot leave a partially written one)
+  try {
+    return load_binlog_metadata(binlog_name).size ==
+           events::magic_binlog_offset;
+  } catch (const std::exception &) {
+    return false;
+  }
+}
+
 [[nodiscard]] bool storage_core::collect_interrupted_first_binlog_objects(
     storage_object_name_container &object_names,
     storage_object_name_list &garbage_object_names) const {
@@ -654,6 +668,14 @@ void storage_core::remove_temporary_objects(
   //    no binlog index.
   // 2. If crash happens after (2), we will have 1 binlog data file, its
   //    binlog metadata file and no binlog index.
+  // 3. If the removal of the objects from scenario (2) fails in the middle
+  //    (the removal does not stop at the first failure), we may also have
+  //    only 1 binlog metadata file and no binlog index.
+  // In all these scenarios the binlog file holds no events, as events are
+  // written only after the binlog index is created: its data file holds the
+  // magic binlog payload at most (less if the crash happened before it was
+  // fully written) and its metadata file records the magic binlog payload
+  // size.
   // Anything else without the binlog index means that the binlog index was
   // lost or that the storage contains objects not created by the Binlog
   // Server - the storage cannot be repaired automatically in this case.
@@ -661,32 +683,37 @@ void storage_core::remove_temporary_objects(
   if (std::size(object_names) > 2U) {
     return false;
   }
-  const auto data_object_it{
-      std::ranges::find_if(object_names, [](const auto &object) {
-        const std::filesystem::path object_name{object.first};
-        return !object_name.has_extension() ||
-               object_name.extension() != binlog_metadata_extension;
-      })};
-  if (data_object_it == std::end(object_names)) {
-    return false;
+  // the binlog file name can be taken from any of the remaining objects, as
+  // it is either the binlog data file name or the binlog metadata file name
+  std::filesystem::path binlog_path{std::cbegin(object_names)->first};
+  if (binlog_path.extension() == binlog_metadata_extension) {
+    binlog_path = binlog_path.stem();
   }
-  auto data_object_name{data_object_it->first};
-  events::composite_binlog_name parsed_data_object_name;
+  events::composite_binlog_name binlog_name;
   try {
-    parsed_data_object_name =
-        events::composite_binlog_name::parse(data_object_name);
+    binlog_name = events::composite_binlog_name::parse(binlog_path.string());
   } catch (const std::exception &) {
     return false;
   }
-  auto metadata_object_name{
-      generate_binlog_metadata_name(parsed_data_object_name)};
+  auto data_object_name{binlog_name.str()};
+  auto metadata_object_name{generate_binlog_metadata_name(binlog_name)};
+  const auto data_object_it{object_names.find(data_object_name)};
+  const bool has_data_object{data_object_it != std::end(object_names)};
   const bool has_metadata_object{object_names.contains(metadata_object_name)};
-  if (std::size(object_names) == 2U && !has_metadata_object) {
+  if (std::size(object_names) !=
+      static_cast<std::size_t>(has_data_object) +
+          static_cast<std::size_t>(has_metadata_object)) {
+    return false;
+  }
+  if ((has_data_object &&
+       data_object_it->second > events::magic_binlog_offset) ||
+      (has_metadata_object && !is_empty_binlog_metadata(binlog_name))) {
     return false;
   }
 
-  // binlog metadata file goes first to the removal list - if the removal
-  // fails in the middle, we will end up in scenario (1) described above
+  // binlog metadata file goes first to the removal list (if the removal
+  // fails in the middle, we will end up in scenario (1) or (3) described
+  // above)
   if (has_metadata_object) {
     logger_->log_format(log_severity::warning,
                         "found binlog metadata file '{}' left after an "
@@ -694,11 +721,13 @@ void storage_core::remove_temporary_objects(
                         metadata_object_name);
     garbage_object_names.push_back(std::move(metadata_object_name));
   }
-  logger_->log_format(log_severity::warning,
-                      "found binlog data file '{}' left after an interrupted "
-                      "creation of the first binlog file",
-                      data_object_name);
-  garbage_object_names.push_back(std::move(data_object_name));
+  if (has_data_object) {
+    logger_->log_format(log_severity::warning,
+                        "found binlog data file '{}' left after an "
+                        "interrupted creation of the first binlog file",
+                        data_object_name);
+    garbage_object_names.push_back(std::move(data_object_name));
+  }
   object_names.clear();
   return true;
 }
@@ -723,8 +752,15 @@ void storage_core::collect_interrupted_rotation_objects(
   //    index.
   // 2. If crash happens after (2), we will have this orphaned binlog data
   //    file and its orphaned binlog metadata file.
-  // 3. There should not be a situation when we have an orphaned binlog
-  //    metadata file without the corresponding orphaned binlog data file.
+  // 3. If the removal of the objects from scenario (2) fails in the middle
+  //    (the removal does not stop at the first failure), we may also have
+  //    only the orphaned binlog metadata file.
+  // In all these scenarios the orphaned binlog file holds no events, as
+  // events are written only after the binlog index is updated: its data file
+  // holds the magic binlog payload at most (less if the crash happened before
+  // it was fully written) and its metadata file records the magic binlog
+  // payload size. Anything else means that the binlog index lost its last
+  // entry and the storage cannot be repaired automatically.
 
   if (binlog_records_.empty()) {
     return;
@@ -741,17 +777,25 @@ void storage_core::collect_interrupted_rotation_objects(
 
   auto next_binlog_name_str{next_binlog_name.str()};
   const auto object_it{object_names.find(next_binlog_name_str)};
-  if (object_it == std::end(object_names)) {
-    return;
-  }
-
-  // binlog metadata file goes first to the removal list - if the removal
-  // fails in the middle, we will end up in scenario (1), not (3)
   auto next_binlog_metadata_name_str{
       generate_binlog_metadata_name(next_binlog_name)};
   const auto metadata_it{
       object_metadata_names.find(next_binlog_metadata_name_str)};
-  if (metadata_it != std::end(object_metadata_names)) {
+  const bool has_data_object{object_it != std::end(object_names)};
+  const bool has_metadata_object{metadata_it !=
+                                 std::end(object_metadata_names)};
+  if (!has_data_object && !has_metadata_object) {
+    return;
+  }
+  if ((has_data_object && object_it->second > events::magic_binlog_offset) ||
+      (has_metadata_object && !is_empty_binlog_metadata(next_binlog_name))) {
+    return;
+  }
+
+  // binlog metadata file goes first to the removal list (if the removal
+  // fails in the middle, we will end up in scenario (1) or (3) described
+  // above)
+  if (has_metadata_object) {
     object_metadata_names.erase(metadata_it);
     logger_->log_format(log_severity::warning,
                         "found binlog metadata file '{}' left after an "
@@ -759,12 +803,14 @@ void storage_core::collect_interrupted_rotation_objects(
                         next_binlog_metadata_name_str);
     garbage_object_names.push_back(std::move(next_binlog_metadata_name_str));
   }
-  object_names.erase(object_it);
-  logger_->log_format(log_severity::warning,
-                      "found binlog data file '{}' left after an interrupted "
-                      "binlog rotation",
-                      next_binlog_name_str);
-  garbage_object_names.push_back(std::move(next_binlog_name_str));
+  if (has_data_object) {
+    object_names.erase(object_it);
+    logger_->log_format(log_severity::warning,
+                        "found binlog data file '{}' left after an "
+                        "interrupted binlog rotation",
+                        next_binlog_name_str);
+    garbage_object_names.push_back(std::move(next_binlog_name_str));
+  }
 }
 
 void storage_core::collect_interrupted_purge_objects(
