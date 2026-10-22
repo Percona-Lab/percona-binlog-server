@@ -104,6 +104,18 @@ include/read_file_to_var.inc
 DROP TABLE binlog_tbl;
 DROP TABLE keyring_tbl;
 
+*** Executing the Binlog Server utility in the 'list' mode
+*** with a keyring that does not contain the storage KEKs.
+include/read_file_to_var.inc
+
+*** Executing the Binlog Server utility in the 'search_by_timestamp'
+*** mode with a keyring that does not contain the storage KEKs.
+include/read_file_to_var.inc
+
+*** Executing the Binlog Server utility in the 'search_by_gtid_set'
+*** mode with a keyring that does not contain the storage KEKs.
+include/read_file_to_var.inc
+
 *** Dropping the table.
 DROP TABLE t1;
 
