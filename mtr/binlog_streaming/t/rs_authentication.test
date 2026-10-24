@@ -23,129 +23,126 @@ eval $stmt_reset_binary_logs_and_gtids;
 --source ../include/set_up_auth_rsa_keys.inc
 --source ../include/set_up_binsrv_environment.inc
 
---echo
---echo *** Starting Binlog Server Utility in background in pull mode.
---let $proc_command_line = $BINSRV pull $binsrv_config_file_path > /dev/null
---source ../include/start_proc_in_background.inc
-
 # SELECT VERSION() is one of the queries the Binlog Server's command loop
 # recognises. We do not care what row comes back - we discard the client's
-# stdout below and rely solely on the mysql client's exit code as the
-# pass/fail signal so the test stays stable when the Binlog Server's
-# hard-coded version string changes.
+# stdout and rely solely on the mysql client's exit code as the pass/fail
+# signal so the test stays stable when the Binlog Server's hard-coded
+# version string changes.
 --let $probe_query = SELECT VERSION()
 
+# user name, password, RSA key and authentication plugin options are added
+# for each combination individually (see
+# rs_authentication_run_combinations.inc)
+--let $mysql_client_base = $MYSQL --host=$binsrv_connection_host --port=$binsrv_replication_source_port
+
 --echo
---echo *** Waiting for the replication source listener port ready to accept
---echo *** connections.
+--echo *** Creating a table with all the authentication combinations.
+# - state: whether the user has already successfully passed full
+#   authentication at least once since the Binlog Server was started
+#   ('authenticated') or not ('fresh')
+# - user: 'valid' (the one from the Binlog Server configuration) or 'invalid'
+# - password: 'valid' (the one from the Binlog Server configuration),
+#   'invalid' or 'empty'
+# - key_option: 'none', 'path' (--server-public-key-path) or 'get'
+#   (--get-server-public-key)
+# - plugin: 'matching' (client starts with caching_sha2_password advertised
+#   by the Binlog Server) or 'switch' (client starts with
+#   mysql_native_password, so the Binlog Server has to send an
+#   AuthMethodSwitch)
+CREATE TABLE auth_combinations(
+  id INT UNSIGNED NOT NULL PRIMARY KEY,
+  state ENUM('fresh', 'authenticated') NOT NULL,
+  user ENUM('valid', 'invalid') NOT NULL,
+  password ENUM('valid', 'invalid', 'empty') NOT NULL,
+  key_option ENUM('none', 'path', 'get') NOT NULL,
+  plugin ENUM('matching', 'switch') NOT NULL,
+  expected_result BOOLEAN NOT NULL DEFAULT FALSE
+);
+
+--echo
+--echo *** state: all state * user * password * key_option * plugin
+--echo *** combinations.
+# 'id' values are assigned explicitly (instead of relying on AUTO_INCREMENT)
+# as InnoDB may leave gaps in AUTO_INCREMENT values for INSERT ... SELECT
+INSERT INTO auth_combinations(id, state, user, password, key_option, plugin)
+  SELECT ROW_NUMBER() OVER (ORDER BY s.o, u.o, p.o, k.o, pl.o),
+    s.v, u.v, p.v, k.v, pl.v
+  FROM (SELECT 1 AS o, 'fresh' AS v UNION ALL SELECT 2, 'authenticated') AS s
+    CROSS JOIN (SELECT 1 AS o, 'valid' AS v UNION ALL SELECT 2, 'invalid') AS u
+    CROSS JOIN (SELECT 1 AS o, 'valid' AS v UNION ALL SELECT 2, 'invalid' UNION ALL SELECT 3, 'empty') AS p
+    CROSS JOIN (SELECT 1 AS o, 'none' AS v UNION ALL SELECT 2, 'path' UNION ALL SELECT 3, 'get') AS k
+    CROSS JOIN (SELECT 1 AS o, 'matching' AS v UNION ALL SELECT 2, 'switch') AS pl;
+
+--echo
+--echo *** Marking the combinations expected to succeed.
+# fresh state: full authentication is required, so the client must send the
+# password itself, which (as the connection is not encrypted) is possible
+# only if the client has the server's RSA public key (either via
+# --server-public-key-path or --get-server-public-key) - the plugin does
+# not matter as after the AuthMethodSwitch the client uses
+# caching_sha2_password anyway
+UPDATE auth_combinations SET expected_result = TRUE
+  WHERE state = 'fresh' AND user = 'valid' AND password = 'valid' AND
+        key_option IN ('path', 'get');
+# authenticated state: the user is in the authentication cache, so the
+# scramble is verified directly (fast authentication) and no RSA public key
+# is needed - the plugin does not matter for the same reason as above
+UPDATE auth_combinations SET expected_result = TRUE
+  WHERE state = 'authenticated' AND user = 'valid' AND password = 'valid';
+
+--echo
+--echo *** Printing the full list of combinations.
+SELECT * FROM auth_combinations ORDER BY id;
+
+# a combination used to populate the authentication cache before executing
+# 'authenticated' state combinations
+--let $priming_combination_id = `SELECT MIN(id) FROM auth_combinations WHERE state = 'fresh' AND expected_result`
+
+--let $proc_command_line = $BINSRV pull $binsrv_config_file_path > /dev/null
 --let $listening_host = $binsrv_connection_host
 --let $listening_port = $binsrv_replication_source_port
+
+--echo
+--echo *** Executing all the combinations that can be run within a single
+--echo *** Binlog Server run.
+--source ../include/start_proc_in_background.inc
 --source ../include/wait_for_listening_port.inc
 
-# see set_up_auth_rsa_keys.inc for why the server's RSA public key is needed
---let $mysql_client_base = $MYSQL --host=$binsrv_connection_host --port=$binsrv_replication_source_port --user=$binsrv_auth_user
+--echo
+--echo *** 'fresh' state that is expected to fail (none of these attempts
+--echo ***  will populate the authentication cache).
+--let $combinations_condition = state = 'fresh' AND NOT expected_result
+--source ../include/rs_authentication_run_combinations.inc
 
 --echo
---echo *** No public key: client picks the same plugin the server advertises
---echo *** (caching_sha2_password), the Binlog Server requests full
---echo *** authentication, but the client has neither a secure connection nor
---echo *** the server's RSA public key to encrypt the password, so it must
---echo *** give up and mysql must return non-zero exit code.
---error 1
---exec $mysql_client_base --password=$binsrv_auth_password --default-auth=caching_sha2_password -e "$probe_query" >/dev/null 2>&1
+--echo *** Populating the authentication cache.
+--let $combinations_condition = id = $priming_combination_id
+--source ../include/rs_authentication_run_combinations.inc
 
 --echo
---echo *** Public key: same as above, but the client is given the server's RSA
---echo *** public key via --server-public-key-path, so it sends the password
---echo *** (XOR-ed with the scramble) encrypted with this key. A zero exit
---echo *** code from mysql confirms the session got as far as running the
---echo *** probe query.
---exec $mysql_client_base --password=$binsrv_auth_password --default-auth=caching_sha2_password --server-public-key-path=$binsrv_auth_rsa_public_key -e "$probe_query" >/dev/null 2>&1
+--echo *** 'authenticated' state that is expected to succeed or fail
+--echo ***  (none of these attempts will change the authentication cache).
+--let $combinations_condition = state = 'authenticated'
+--source ../include/rs_authentication_run_combinations.inc
 
---echo
---echo *** Public key, wrong password: the Binlog Server successfully decrypts
---echo *** the password, but it does not match the configured one, so access
---echo *** must be denied and mysql must return non-zero exit code.
---error 1
---exec $mysql_client_base --password=wrong_$binsrv_auth_password --default-auth=caching_sha2_password --server-public-key-path=$binsrv_auth_rsa_public_key -e "$probe_query" >/dev/null 2>&1
-
---echo
---echo *** Auth method switch + public key: client forces mysql_native_password
---echo *** in its handshake so the Binlog Server has to send an
---echo *** AuthMethodSwitch, after which the client switches to
---echo *** caching_sha2_password and goes through the full authentication with
---echo *** the server's RSA public key. If the switch encoding, the follow-up
---echo *** parse, or the full authentication path is broken, mysql returns
---echo *** non-zero and MTR fails the --exec. The log grep that follows the
---echo *** shutdown is what actually proves the switch happened - this line
---echo *** only proves the session survived it.
---exec $mysql_client_base --password=$binsrv_auth_password --default-auth=mysql_native_password --server-public-key-path=$binsrv_auth_rsa_public_key -e "$probe_query" >/dev/null 2>&1
-
---echo
---echo *** Requesting public key: client asks the Binlog Server for its RSA
---echo *** public key (--get-server-public-key) instead of using a local copy.
---echo *** The Binlog Server extracts the public component from its RSA
---echo *** private key and sends it in PEM format, after which the client
---echo *** encrypts the password with this key. A zero exit code from mysql
---echo *** confirms the session got as far as running the probe query.
---exec $mysql_client_base --password=$binsrv_auth_password --default-auth=caching_sha2_password --get-server-public-key -e "$probe_query" >/dev/null 2>&1
-
---echo
---echo *** Requesting public key, wrong password: the client receives the
---echo *** public key and sends the encrypted password, the Binlog Server
---echo *** successfully decrypts it, but it does not match the configured one,
---echo *** so access must be denied and mysql must return non-zero exit code.
---error 1
---exec $mysql_client_base --password=wrong_$binsrv_auth_password --default-auth=caching_sha2_password --get-server-public-key -e "$probe_query" >/dev/null 2>&1
-
---echo
---echo *** Auth method switch + requesting public key: client forces
---echo *** mysql_native_password in its handshake, then switches to
---echo *** caching_sha2_password and goes through the full authentication
---echo *** requesting the server's RSA public key (this shifts the sequence
---echo *** numbers of all subsequent packets by 2).
---exec $mysql_client_base --password=$binsrv_auth_password --default-auth=mysql_native_password --get-server-public-key -e "$probe_query" >/dev/null 2>&1
-
---echo
---echo *** Sending SIGTERM signal to the Binlog Server Utility and waiting for
---echo *** the process to terminate
 --source ../include/terminate_proc.inc
+--source ../include/kill_binlog_dump_connection.inc
 
 --echo
---echo *** Confirming the switch actually happened by grepping the Binlog
---echo *** Server stdout log (now complete and flushed) for the marker
---echo *** emitted after generate_encoded_auth_method_switch() writes its
---echo *** frame.
---let $grep_file = $binsrv_log_path
---let $grep_pattern = sent server auth method switch
---let $wait_timeout = 60
---source include/wait_for_pattern_in_file.inc
+--echo *** Executing every combination expected to succeed in the 'fresh'
+--echo *** state within its own Binlog Server run (so that each one starts
+--echo *** with an empty authentication cache).
+
+--let $combinations_condition = state = 'fresh' AND expected_result
+--let $combinations_restart_required = 1
+--source ../include/rs_authentication_run_combinations.inc
 
 --echo
---echo *** Confirming the full authentication was requested (marker emitted
---echo *** after generate_encoded_full_auth() writes its frame).
---let $grep_pattern = sent server full auth required
---source include/wait_for_pattern_in_file.inc
-
---echo
---echo *** Confirming the full authentication actually succeeded at least
---echo *** once (for the sessions with the correct password and public key).
---let $grep_pattern = client authentication succeeded
---source include/wait_for_pattern_in_file.inc
-
---echo
---echo *** Confirming the public key was actually sent to the client (marker
---echo *** emitted after generate_encoded_public_key() writes its frame).
---let $grep_pattern = sent server RSA public key
---source include/wait_for_pattern_in_file.inc
+--echo *** Dropping the table with the authentication combinations.
+DROP TABLE auth_combinations;
 
 # cleaning up
 --source ../include/tear_down_binsrv_environment.inc
-
-# As the Binlog Server Utility interrupts the connection upon timeout, here we
-# need to close it on the MySQL server side as well in order to make sure that
-# MTR 'check-test' before and after the test produces the same output.
---source ../include/kill_binlog_dump_connection.inc
 
 # Also, we use 'count_sessions' include files to make sure that 'Binlog Dump'
 # connection is indeed closed.

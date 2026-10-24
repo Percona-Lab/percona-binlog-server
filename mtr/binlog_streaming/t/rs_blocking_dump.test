@@ -34,8 +34,9 @@ eval $stmt_reset_binary_logs_and_gtids;
 --echo
 --echo *** Starting Binlog Server Utility in background in pull mode.
 --let $proc_command_line = $BINSRV pull $binsrv_config_file_path > /dev/null
+--let $proc_pid_file = $MYSQL_TMP_DIR/rs_blocking_dump_binsrv.pid
 --source ../include/start_proc_in_background.inc
---let $binsrv_pid = $proc_pid
+--let $binsrv_pid_file = $proc_pid_file
 
 --echo
 --echo *** Waiting for the replication source listener port ready to accept
@@ -52,8 +53,9 @@ eval $stmt_reset_binary_logs_and_gtids;
 --echo *** available instead of disconnecting on EOF.
 --let $downstream1_dump = $MYSQL_TMP_DIR/rs_blocking_dump_1.sql
 --let $proc_command_line = $MYSQL_BINLOG --read-from-remote-server --stop-never --host=$binsrv_connection_host --port=$binsrv_replication_source_port --user=$binsrv_auth_user --password=$binsrv_auth_password --default-auth=caching_sha2_password --get-server-public-key $first_binlog > $downstream1_dump 2>/dev/null
+--let $proc_pid_file = $MYSQL_TMP_DIR/rs_blocking_dump_downstream1.pid
 --source ../include/start_proc_in_background.inc
---let $downstream1_pid = $proc_pid
+--let $downstream1_pid_file = $proc_pid_file
 
 --echo
 --echo *** Starting a second downstream mysqlbinlog session against PBS so
@@ -61,8 +63,9 @@ eval $stmt_reset_binary_logs_and_gtids;
 --echo *** exercised at the same time.
 --let $downstream2_dump = $MYSQL_TMP_DIR/rs_blocking_dump_2.sql
 --let $proc_command_line = $MYSQL_BINLOG --read-from-remote-server --stop-never --host=$binsrv_connection_host --port=$binsrv_replication_source_port --user=$binsrv_auth_user --password=$binsrv_auth_password --default-auth=caching_sha2_password --get-server-public-key $first_binlog > $downstream2_dump 2>/dev/null
+--let $proc_pid_file = $MYSQL_TMP_DIR/rs_blocking_dump_downstream2.pid
 --source ../include/start_proc_in_background.inc
---let $downstream2_pid = $proc_pid
+--let $downstream2_pid_file = $proc_pid_file
 
 --echo
 --echo *** First batch of transactions on the source.
@@ -119,13 +122,13 @@ INSERT INTO test2.t VALUES (4), (5), (6);
 --echo
 --echo *** Sending SIGTERM to the first downstream mysqlbinlog session and
 --echo *** waiting for it to terminate.
---let $proc_pid = $downstream1_pid
+--let $proc_pid_file = $downstream1_pid_file
 --source ../include/terminate_proc.inc
 
 --echo
 --echo *** Sending SIGTERM to the second downstream mysqlbinlog session and
 --echo *** waiting for it to terminate.
---let $proc_pid = $downstream2_pid
+--let $proc_pid_file = $downstream2_pid_file
 --source ../include/terminate_proc.inc
 
 --echo
@@ -136,7 +139,7 @@ DROP DATABASE test2;
 --echo
 --echo *** Sending SIGTERM signal to the Binlog Server Utility and waiting
 --echo *** for the process to terminate.
---let $proc_pid = $binsrv_pid
+--let $proc_pid_file = $binsrv_pid_file
 --source ../include/terminate_proc.inc
 
 --remove_file $downstream1_dump

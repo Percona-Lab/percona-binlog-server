@@ -8,75 +8,201 @@
 *** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
 *** binlog files downloaded via the Binlog Server utility.
 
-*** Starting Binlog Server Utility in background in pull mode.
+*** Creating a table with all the authentication combinations.
+CREATE TABLE auth_combinations(
+id INT UNSIGNED NOT NULL PRIMARY KEY,
+state ENUM('fresh', 'authenticated') NOT NULL,
+user ENUM('valid', 'invalid') NOT NULL,
+password ENUM('valid', 'invalid', 'empty') NOT NULL,
+key_option ENUM('none', 'path', 'get') NOT NULL,
+plugin ENUM('matching', 'switch') NOT NULL,
+expected_result BOOLEAN NOT NULL DEFAULT FALSE
+);
 
-*** Waiting for the replication source listener port ready to accept
-*** connections.
+*** state: all state * user * password * key_option * plugin
+*** combinations.
+INSERT INTO auth_combinations(id, state, user, password, key_option, plugin)
+SELECT ROW_NUMBER() OVER (ORDER BY s.o, u.o, p.o, k.o, pl.o),
+s.v, u.v, p.v, k.v, pl.v
+FROM (SELECT 1 AS o, 'fresh' AS v UNION ALL SELECT 2, 'authenticated') AS s
+CROSS JOIN (SELECT 1 AS o, 'valid' AS v UNION ALL SELECT 2, 'invalid') AS u
+CROSS JOIN (SELECT 1 AS o, 'valid' AS v UNION ALL SELECT 2, 'invalid' UNION ALL SELECT 3, 'empty') AS p
+CROSS JOIN (SELECT 1 AS o, 'none' AS v UNION ALL SELECT 2, 'path' UNION ALL SELECT 3, 'get') AS k
+CROSS JOIN (SELECT 1 AS o, 'matching' AS v UNION ALL SELECT 2, 'switch') AS pl;
 
-*** No public key: client picks the same plugin the server advertises
-*** (caching_sha2_password), the Binlog Server requests full
-*** authentication, but the client has neither a secure connection nor
-*** the server's RSA public key to encrypt the password, so it must
-*** give up and mysql must return non-zero exit code.
+*** Marking the combinations expected to succeed.
+UPDATE auth_combinations SET expected_result = TRUE
+WHERE state = 'fresh' AND user = 'valid' AND password = 'valid' AND
+key_option IN ('path', 'get');
+UPDATE auth_combinations SET expected_result = TRUE
+WHERE state = 'authenticated' AND user = 'valid' AND password = 'valid';
 
-*** Public key: same as above, but the client is given the server's RSA
-*** public key via --server-public-key-path, so it sends the password
-*** (XOR-ed with the scramble) encrypted with this key. A zero exit
-*** code from mysql confirms the session got as far as running the
-*** probe query.
+*** Printing the full list of combinations.
+SELECT * FROM auth_combinations ORDER BY id;
+id	state	user	password	key_option	plugin	expected_result
+1	fresh	valid	valid	none	matching	0
+2	fresh	valid	valid	none	switch	0
+3	fresh	valid	valid	path	matching	1
+4	fresh	valid	valid	path	switch	1
+5	fresh	valid	valid	get	matching	1
+6	fresh	valid	valid	get	switch	1
+7	fresh	valid	invalid	none	matching	0
+8	fresh	valid	invalid	none	switch	0
+9	fresh	valid	invalid	path	matching	0
+10	fresh	valid	invalid	path	switch	0
+11	fresh	valid	invalid	get	matching	0
+12	fresh	valid	invalid	get	switch	0
+13	fresh	valid	empty	none	matching	0
+14	fresh	valid	empty	none	switch	0
+15	fresh	valid	empty	path	matching	0
+16	fresh	valid	empty	path	switch	0
+17	fresh	valid	empty	get	matching	0
+18	fresh	valid	empty	get	switch	0
+19	fresh	invalid	valid	none	matching	0
+20	fresh	invalid	valid	none	switch	0
+21	fresh	invalid	valid	path	matching	0
+22	fresh	invalid	valid	path	switch	0
+23	fresh	invalid	valid	get	matching	0
+24	fresh	invalid	valid	get	switch	0
+25	fresh	invalid	invalid	none	matching	0
+26	fresh	invalid	invalid	none	switch	0
+27	fresh	invalid	invalid	path	matching	0
+28	fresh	invalid	invalid	path	switch	0
+29	fresh	invalid	invalid	get	matching	0
+30	fresh	invalid	invalid	get	switch	0
+31	fresh	invalid	empty	none	matching	0
+32	fresh	invalid	empty	none	switch	0
+33	fresh	invalid	empty	path	matching	0
+34	fresh	invalid	empty	path	switch	0
+35	fresh	invalid	empty	get	matching	0
+36	fresh	invalid	empty	get	switch	0
+37	authenticated	valid	valid	none	matching	1
+38	authenticated	valid	valid	none	switch	1
+39	authenticated	valid	valid	path	matching	1
+40	authenticated	valid	valid	path	switch	1
+41	authenticated	valid	valid	get	matching	1
+42	authenticated	valid	valid	get	switch	1
+43	authenticated	valid	invalid	none	matching	0
+44	authenticated	valid	invalid	none	switch	0
+45	authenticated	valid	invalid	path	matching	0
+46	authenticated	valid	invalid	path	switch	0
+47	authenticated	valid	invalid	get	matching	0
+48	authenticated	valid	invalid	get	switch	0
+49	authenticated	valid	empty	none	matching	0
+50	authenticated	valid	empty	none	switch	0
+51	authenticated	valid	empty	path	matching	0
+52	authenticated	valid	empty	path	switch	0
+53	authenticated	valid	empty	get	matching	0
+54	authenticated	valid	empty	get	switch	0
+55	authenticated	invalid	valid	none	matching	0
+56	authenticated	invalid	valid	none	switch	0
+57	authenticated	invalid	valid	path	matching	0
+58	authenticated	invalid	valid	path	switch	0
+59	authenticated	invalid	valid	get	matching	0
+60	authenticated	invalid	valid	get	switch	0
+61	authenticated	invalid	invalid	none	matching	0
+62	authenticated	invalid	invalid	none	switch	0
+63	authenticated	invalid	invalid	path	matching	0
+64	authenticated	invalid	invalid	path	switch	0
+65	authenticated	invalid	invalid	get	matching	0
+66	authenticated	invalid	invalid	get	switch	0
+67	authenticated	invalid	empty	none	matching	0
+68	authenticated	invalid	empty	none	switch	0
+69	authenticated	invalid	empty	path	matching	0
+70	authenticated	invalid	empty	path	switch	0
+71	authenticated	invalid	empty	get	matching	0
+72	authenticated	invalid	empty	get	switch	0
 
-*** Public key, wrong password: the Binlog Server successfully decrypts
-*** the password, but it does not match the configured one, so access
-*** must be denied and mysql must return non-zero exit code.
+*** Executing all the combinations that can be run within a single
+*** Binlog Server run.
 
-*** Auth method switch + public key: client forces mysql_native_password
-*** in its handshake so the Binlog Server has to send an
-*** AuthMethodSwitch, after which the client switches to
-*** caching_sha2_password and goes through the full authentication with
-*** the server's RSA public key. If the switch encoding, the follow-up
-*** parse, or the full authentication path is broken, mysql returns
-*** non-zero and MTR fails the --exec. The log grep that follows the
-*** shutdown is what actually proves the switch happened - this line
-*** only proves the session survived it.
+*** 'fresh' state that is expected to fail (none of these attempts
+***  will populate the authentication cache).
+*** #1 fresh: user=valid, password=valid, key_option=none, plugin=matching -> failure
+*** #2 fresh: user=valid, password=valid, key_option=none, plugin=switch -> failure
+*** #7 fresh: user=valid, password=invalid, key_option=none, plugin=matching -> failure
+*** #8 fresh: user=valid, password=invalid, key_option=none, plugin=switch -> failure
+*** #9 fresh: user=valid, password=invalid, key_option=path, plugin=matching -> failure
+*** #10 fresh: user=valid, password=invalid, key_option=path, plugin=switch -> failure
+*** #11 fresh: user=valid, password=invalid, key_option=get, plugin=matching -> failure
+*** #12 fresh: user=valid, password=invalid, key_option=get, plugin=switch -> failure
+*** #13 fresh: user=valid, password=empty, key_option=none, plugin=matching -> failure
+*** #14 fresh: user=valid, password=empty, key_option=none, plugin=switch -> failure
+*** #15 fresh: user=valid, password=empty, key_option=path, plugin=matching -> failure
+*** #16 fresh: user=valid, password=empty, key_option=path, plugin=switch -> failure
+*** #17 fresh: user=valid, password=empty, key_option=get, plugin=matching -> failure
+*** #18 fresh: user=valid, password=empty, key_option=get, plugin=switch -> failure
+*** #19 fresh: user=invalid, password=valid, key_option=none, plugin=matching -> failure
+*** #20 fresh: user=invalid, password=valid, key_option=none, plugin=switch -> failure
+*** #21 fresh: user=invalid, password=valid, key_option=path, plugin=matching -> failure
+*** #22 fresh: user=invalid, password=valid, key_option=path, plugin=switch -> failure
+*** #23 fresh: user=invalid, password=valid, key_option=get, plugin=matching -> failure
+*** #24 fresh: user=invalid, password=valid, key_option=get, plugin=switch -> failure
+*** #25 fresh: user=invalid, password=invalid, key_option=none, plugin=matching -> failure
+*** #26 fresh: user=invalid, password=invalid, key_option=none, plugin=switch -> failure
+*** #27 fresh: user=invalid, password=invalid, key_option=path, plugin=matching -> failure
+*** #28 fresh: user=invalid, password=invalid, key_option=path, plugin=switch -> failure
+*** #29 fresh: user=invalid, password=invalid, key_option=get, plugin=matching -> failure
+*** #30 fresh: user=invalid, password=invalid, key_option=get, plugin=switch -> failure
+*** #31 fresh: user=invalid, password=empty, key_option=none, plugin=matching -> failure
+*** #32 fresh: user=invalid, password=empty, key_option=none, plugin=switch -> failure
+*** #33 fresh: user=invalid, password=empty, key_option=path, plugin=matching -> failure
+*** #34 fresh: user=invalid, password=empty, key_option=path, plugin=switch -> failure
+*** #35 fresh: user=invalid, password=empty, key_option=get, plugin=matching -> failure
+*** #36 fresh: user=invalid, password=empty, key_option=get, plugin=switch -> failure
 
-*** Requesting public key: client asks the Binlog Server for its RSA
-*** public key (--get-server-public-key) instead of using a local copy.
-*** The Binlog Server extracts the public component from its RSA
-*** private key and sends it in PEM format, after which the client
-*** encrypts the password with this key. A zero exit code from mysql
-*** confirms the session got as far as running the probe query.
+*** Populating the authentication cache.
+*** #3 fresh: user=valid, password=valid, key_option=path, plugin=matching -> success
 
-*** Requesting public key, wrong password: the client receives the
-*** public key and sends the encrypted password, the Binlog Server
-*** successfully decrypts it, but it does not match the configured one,
-*** so access must be denied and mysql must return non-zero exit code.
+*** 'authenticated' state that is expected to succeed or fail
+***  (none of these attempts will change the authentication cache).
+*** #37 authenticated: user=valid, password=valid, key_option=none, plugin=matching -> success
+*** #38 authenticated: user=valid, password=valid, key_option=none, plugin=switch -> success
+*** #39 authenticated: user=valid, password=valid, key_option=path, plugin=matching -> success
+*** #40 authenticated: user=valid, password=valid, key_option=path, plugin=switch -> success
+*** #41 authenticated: user=valid, password=valid, key_option=get, plugin=matching -> success
+*** #42 authenticated: user=valid, password=valid, key_option=get, plugin=switch -> success
+*** #43 authenticated: user=valid, password=invalid, key_option=none, plugin=matching -> failure
+*** #44 authenticated: user=valid, password=invalid, key_option=none, plugin=switch -> failure
+*** #45 authenticated: user=valid, password=invalid, key_option=path, plugin=matching -> failure
+*** #46 authenticated: user=valid, password=invalid, key_option=path, plugin=switch -> failure
+*** #47 authenticated: user=valid, password=invalid, key_option=get, plugin=matching -> failure
+*** #48 authenticated: user=valid, password=invalid, key_option=get, plugin=switch -> failure
+*** #49 authenticated: user=valid, password=empty, key_option=none, plugin=matching -> failure
+*** #50 authenticated: user=valid, password=empty, key_option=none, plugin=switch -> failure
+*** #51 authenticated: user=valid, password=empty, key_option=path, plugin=matching -> failure
+*** #52 authenticated: user=valid, password=empty, key_option=path, plugin=switch -> failure
+*** #53 authenticated: user=valid, password=empty, key_option=get, plugin=matching -> failure
+*** #54 authenticated: user=valid, password=empty, key_option=get, plugin=switch -> failure
+*** #55 authenticated: user=invalid, password=valid, key_option=none, plugin=matching -> failure
+*** #56 authenticated: user=invalid, password=valid, key_option=none, plugin=switch -> failure
+*** #57 authenticated: user=invalid, password=valid, key_option=path, plugin=matching -> failure
+*** #58 authenticated: user=invalid, password=valid, key_option=path, plugin=switch -> failure
+*** #59 authenticated: user=invalid, password=valid, key_option=get, plugin=matching -> failure
+*** #60 authenticated: user=invalid, password=valid, key_option=get, plugin=switch -> failure
+*** #61 authenticated: user=invalid, password=invalid, key_option=none, plugin=matching -> failure
+*** #62 authenticated: user=invalid, password=invalid, key_option=none, plugin=switch -> failure
+*** #63 authenticated: user=invalid, password=invalid, key_option=path, plugin=matching -> failure
+*** #64 authenticated: user=invalid, password=invalid, key_option=path, plugin=switch -> failure
+*** #65 authenticated: user=invalid, password=invalid, key_option=get, plugin=matching -> failure
+*** #66 authenticated: user=invalid, password=invalid, key_option=get, plugin=switch -> failure
+*** #67 authenticated: user=invalid, password=empty, key_option=none, plugin=matching -> failure
+*** #68 authenticated: user=invalid, password=empty, key_option=none, plugin=switch -> failure
+*** #69 authenticated: user=invalid, password=empty, key_option=path, plugin=matching -> failure
+*** #70 authenticated: user=invalid, password=empty, key_option=path, plugin=switch -> failure
+*** #71 authenticated: user=invalid, password=empty, key_option=get, plugin=matching -> failure
+*** #72 authenticated: user=invalid, password=empty, key_option=get, plugin=switch -> failure
 
-*** Auth method switch + requesting public key: client forces
-*** mysql_native_password in its handshake, then switches to
-*** caching_sha2_password and goes through the full authentication
-*** requesting the server's RSA public key (this shifts the sequence
-*** numbers of all subsequent packets by 2).
+*** Executing every combination expected to succeed in the 'fresh'
+*** state within its own Binlog Server run (so that each one starts
+*** with an empty authentication cache).
+*** #3 fresh: user=valid, password=valid, key_option=path, plugin=matching -> success
+*** #4 fresh: user=valid, password=valid, key_option=path, plugin=switch -> success
+*** #5 fresh: user=valid, password=valid, key_option=get, plugin=matching -> success
+*** #6 fresh: user=valid, password=valid, key_option=get, plugin=switch -> success
 
-*** Sending SIGTERM signal to the Binlog Server Utility and waiting for
-*** the process to terminate
-
-*** Confirming the switch actually happened by grepping the Binlog
-*** Server stdout log (now complete and flushed) for the marker
-*** emitted after generate_encoded_auth_method_switch() writes its
-*** frame.
-include/wait_for_pattern_in_file.inc [sent server auth method switch]
-
-*** Confirming the full authentication was requested (marker emitted
-*** after generate_encoded_full_auth() writes its frame).
-include/wait_for_pattern_in_file.inc [sent server full auth required]
-
-*** Confirming the full authentication actually succeeded at least
-*** once (for the sessions with the correct password and public key).
-include/wait_for_pattern_in_file.inc [client authentication succeeded]
-
-*** Confirming the public key was actually sent to the client (marker
-*** emitted after generate_encoded_public_key() writes its frame).
-include/wait_for_pattern_in_file.inc [sent server RSA public key]
+*** Dropping the table with the authentication combinations.
+DROP TABLE auth_combinations;
 
 *** Removing the Binlog Server utility storage directory.
 

@@ -275,12 +275,21 @@ void network_service::handle_exception(std::string_view context) {
   }
 }
 
+// similarly to MySQL Server, the caching_sha2_password authentication cache
+// remembers the user who has successfully passed full authentication
+// and lets them use the faster scramble-based authentication afterwards
 [[nodiscard]] bool network_service::check_if_in_auth_cache(
-    const connection_context & /*context*/) {
-  // TODO: implement a real caching_sha2_password authentication cache (MySQL
-  // Server remembers users who have successfully passed full authentication
-  // and lets them use the faster scramble-based authentication afterwards)
-  return false;
+    const connection_context &context) const noexcept {
+  return auth_cached_.load() &&
+         context.get_client_username() == context.get_server_username();
+}
+
+void network_service::add_to_auth_cache(const connection_context &context) {
+  if (!auth_cached_.exchange(true)) {
+    logger_->log_format(binsrv::log_severity::info,
+                        "net    : added {} to the authentication cache",
+                        context.get_client_username());
+  }
 }
 
 #pragma GCC diagnostic push
@@ -543,11 +552,27 @@ network_service::perform_connection_packet_exchange(
     context.parse_client_auth_method_switch(data);
     print_client_auth_method_switch(remote_endpoint_str, context);
   }
+  // just like MySQL Server, if the user is found in the authentication cache,
+  // only fast authentication is attempted (a scramble mismatch results in
+  // access denied without falling back to full authentication), otherwise
+  // full authentication is requested and, if successful, the user is added
+  // to the cache
   bool authenticated{false};
   if (check_if_in_auth_cache(context)) {
+    logger_->log_format(binsrv::log_severity::info,
+                        "net    : found {} in the authentication cache, "
+                        "performing fast authentication",
+                        context.get_client_username());
     authenticated = co_await perform_fast_authentication(socket, context);
   } else {
+    logger_->log_format(binsrv::log_severity::info,
+                        "net    : {} not found in the authentication cache, "
+                        "performing full authentication",
+                        context.get_client_username());
     authenticated = co_await perform_full_authentication(socket, context);
+    if (authenticated) {
+      add_to_auth_cache(context);
+    }
   }
 
   if (!authenticated) {
@@ -996,7 +1021,7 @@ network_service::network_service(binsrv::basic_logger_ptr logger,
                                  const binsrv::replication_source_config &cfg)
     : logger_{std::move(logger)}, io_ctx_{&io_ctx},
       storage_{std::move(storage)}, config_{&cfg}, auth_rsa_private_key_{},
-      auth_rsa_public_key_pem_{},
+      auth_rsa_public_key_pem_{}, auth_cached_{false},
       acceptor_{std::make_unique<acceptor_type>(
           io_ctx, boost::asio::ip::tcp::endpoint{boost::asio::ip::tcp::v4(),
                                                  cfg.get<"port">()})} {
