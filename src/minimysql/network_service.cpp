@@ -77,6 +77,7 @@
 #include "opensslpp/evp_pkey.hpp"
 
 #include "operations/sender_context.hpp"
+#include "operations/sender_single_file_context_fwd.hpp"
 
 #include "util/byte_span.hpp"
 #include "util/common_optional_types.hpp"
@@ -320,13 +321,8 @@ network_service::handle_binlog_dump_command(
       co_await boost::asio::this_coro::executor};
   util::const_byte_span event_data{};
   for (;;) {
-    if (!sender_ctx.get_event(event_data)) {
-      logger_->log_format(binsrv::log_severity::error,
-                          "net    : failed to fetch next event block for {}",
-                          remote_endpoint_str);
-      co_return;
-    }
-    if (event_data.empty()) {
+    const auto get_event_result{sender_ctx.get_event(event_data)};
+    if (get_event_result != operations::event_fetching_result_type::success) {
       if (!blocking) {
         break;
       }
