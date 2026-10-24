@@ -8,8 +8,6 @@
 *** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
 *** binlog files downloaded via the Binlog Server utility.
 
-*** Determining the first binary log name.
-
 *** Creating a table with a LONGBLOB column.
 CREATE DATABASE source_db;
 CREATE TABLE source_db.tbl(

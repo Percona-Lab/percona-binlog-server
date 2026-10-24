@@ -241,9 +241,14 @@ storage::purge_binlogs(const events::composite_binlog_name &target) {
   return core_->get_binlog_uri(binlog_name);
 }
 
-[[nodiscard]] bool
-storage::fetch_event_block(events::composite_binlog_name &binlog_name,
-                           util::byte_range &range,
+[[nodiscard]] events::composite_binlog_name storage::get_next_binlog_name(
+    const events::composite_binlog_name &current) const {
+  return core_->get_next_binlog_name(current);
+}
+
+[[nodiscard]] storage_fetch_result_type
+storage::fetch_event_block(const events::composite_binlog_name &binlog_name,
+                           const util::byte_range &range,
                            util::dynamic_byte_buffer &buffer) const {
   return core_->fetch_event_block(binlog_name, range, buffer);
 }

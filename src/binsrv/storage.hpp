@@ -29,7 +29,6 @@
 #include "binsrv/basic_storage_backend_fwd.hpp"
 #include "binsrv/encryption_config_fwd.hpp"
 #include "binsrv/encryption_format_type_fwd.hpp"
-#include "binsrv/indexed_event_block_fwd.hpp"
 #include "binsrv/main_config_fwd.hpp"
 #include "binsrv/replication_mode_type_fwd.hpp"
 #include "binsrv/storage_core_fwd.hpp"
@@ -122,9 +121,13 @@ public:
 
   [[nodiscard]] std::string
   get_binlog_uri(const events::composite_binlog_name &binlog_name) const;
-  [[nodiscard]] bool
-  fetch_event_block(events::composite_binlog_name &binlog_name,
-                    util::byte_range &range,
+
+  [[nodiscard]] events::composite_binlog_name
+  get_next_binlog_name(const events::composite_binlog_name &current) const;
+
+  [[nodiscard]] storage_fetch_result_type
+  fetch_event_block(const events::composite_binlog_name &binlog_name,
+                    const util::byte_range &range,
                     util::dynamic_byte_buffer &buffer) const;
 
   [[nodiscard]] bool is_keyring_initialized() const noexcept;

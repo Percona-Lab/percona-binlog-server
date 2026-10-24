@@ -31,9 +31,6 @@ namespace binsrv {
 
 class basic_storage_backend {
 public:
-  // 256 MB
-  static constexpr std::size_t max_memory_object_size{256UZ << 20UZ};
-
   basic_storage_backend() = default;
   basic_storage_backend(const basic_storage_backend &) = delete;
   basic_storage_backend(basic_storage_backend &&) noexcept = delete;

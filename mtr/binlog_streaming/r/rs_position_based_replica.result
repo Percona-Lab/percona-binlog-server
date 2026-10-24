@@ -17,10 +17,6 @@ PRIMARY KEY(id)
 ) ENGINE=InnoDB;
 INSERT INTO source_db.tbl VALUES (1, 'one'), (2, 'two'), (3, 'three');
 
-*** Capturing the current binary log coordinates - server_2 will be
-*** pointed at PBS starting from the first available binlog file so
-*** that it replays the whole history.
-
 *** Starting Binlog Server Utility in background in pull mode.
 
 *** Waiting for the replication source listener port ready to accept
@@ -34,7 +30,7 @@ SOURCE_PORT=BINSRV_PORT,
 SOURCE_USER='rpl',
 SOURCE_PASSWORD='password',
 GET_SOURCE_PUBLIC_KEY=1,
-SOURCE_LOG_FILE='FIRST_BINLOG_FILE',
+SOURCE_LOG_FILE='',
 SOURCE_LOG_POS=4,
 SOURCE_AUTO_POSITION=0,
 SOURCE_CONNECT_RETRY=1,

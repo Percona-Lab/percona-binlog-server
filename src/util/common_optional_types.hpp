@@ -16,6 +16,7 @@
 #ifndef UTIL_COMMON_OPTIONAL_TYPES_HPP
 #define UTIL_COMMON_OPTIONAL_TYPES_HPP
 
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -25,6 +26,8 @@ namespace util {
 using optional_string = std::optional<std::string>;
 
 using optional_bool = std::optional<bool>;
+
+using optional_size_t = std::optional<std::size_t>;
 
 using optional_uint8_t = std::optional<std::uint8_t>;
 using optional_uint16_t = std::optional<std::uint16_t>;

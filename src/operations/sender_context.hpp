@@ -20,21 +20,16 @@
 
 #include <cstddef>
 #include <cstdint>
-
-// needed for 'event_storage'
-#include <boost/container/small_vector.hpp> // IWYU pragma: keep
+#include <string_view>
 
 #include "binsrv/basic_logger_fwd.hpp"
-#include "binsrv/indexed_event_block_fwd.hpp"
 #include "binsrv/storage_fwd.hpp"
 
 #include "binsrv/events/composite_binlog_name.hpp"
-#include "binsrv/events/event_fwd.hpp"
 
-#include "util/byte_range.hpp"
+#include "operations/sender_single_file_context_fwd.hpp"
+
 #include "util/byte_span_fwd.hpp"
-#include "util/common_optional_types.hpp"
-#include "util/dynamic_byte_buffer_fwd.hpp"
 
 namespace operations {
 
@@ -51,66 +46,20 @@ public:
   sender_context &operator=(sender_context &&) = delete;
   ~sender_context();
 
-  // returns false on error
-  // returns true and sets the event span to a non-empty value on success
-  // returns true and sets the event span to an empty object on EOF
-  [[nodiscard]] bool get_event(util::const_byte_span &event);
+  [[nodiscard]] event_fetching_result_type
+  get_event(util::const_byte_span &event);
 
 private:
   binsrv::basic_logger_ptr logger_{};
   binsrv::storage_ptr storage_{};
 
-  std::size_t block_size_{};
+  std::size_t construction_block_size_{};
+
+  binsrv::events::composite_binlog_name current_binlog_name_{};
+  std::uint64_t current_position_{};
   bool current_binlog_checksum_{};
 
-  enum class fsm_state_type : std::uint8_t {
-    start_from_beginning,
-    start_from_offset,
-    generate_artificial_fde,
-    fetch_event_from_storage
-  };
-  fsm_state_type fsm_state_{};
-
-  std::uint64_t position_for_artificial_rotate_{};
-  binsrv::events::composite_binlog_name binlog_name_{};
-  util::byte_range range_{};
-  binsrv::events::event_storage artificial_rotate_{};
-  binsrv::events::event_storage fde_{};
-  util::dynamic_byte_buffer carry_buffer_{};
-  binsrv::indexed_event_block_ptr event_block_{};
-  std::size_t event_index_{};
-
-  [[nodiscard]] static std::size_t
-  calculate_fde_size(std::uint32_t encoded_server_version);
-  [[nodiscard]] bool fetch_fde_from_storage();
-  [[nodiscard]] bool extract_fde_from_event_block();
-  void extract_fields_from_fde(std::uint32_t &server_id,
-                               bool &checksum_enabled) const;
-  void transform_fde_to_artificial();
-
-  [[nodiscard]] util::optional_bool
-  populate_event_block(util::const_byte_span &event);
-
-  enum class fetch_size_status : std::uint8_t {
-    ready,           // 'buffer' already holds the complete first event
-    need_more,       // another storage fetch is required
-    event_too_large, // the advertised event size is corrupt / malicious
-  };
-  void snapshot_block_tail_to_carry();
-  [[nodiscard]] fetch_size_status
-  compute_fetch_size_requirements(const util::dynamic_byte_buffer &buffer,
-                                  std::size_t &desired_size) const;
-  void finalize_fetch_eof(util::dynamic_byte_buffer &buffer,
-                          util::const_byte_span &event);
-  [[nodiscard]] bool handle_binlog_file_switch(
-      const binsrv::events::composite_binlog_name &saved_binlog_name,
-      const util::dynamic_byte_buffer &buffer);
-
-  [[nodiscard]] bool handle_start_states(util::const_byte_span &event);
-  [[nodiscard]] bool
-  handle_generate_artificial_fde_state(util::const_byte_span &event);
-  [[nodiscard]] bool
-  handle_fetch_event_from_storage_state(util::const_byte_span &event);
+  sender_single_file_context_ptr single_file_context_{};
 };
 
 } // namespace operations

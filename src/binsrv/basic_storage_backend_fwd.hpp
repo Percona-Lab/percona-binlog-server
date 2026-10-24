@@ -50,7 +50,6 @@ struct transparent_string_like_hash {
 using storage_object_name_container =
     std::unordered_map<std::string, std::uint64_t, transparent_string_like_hash,
                        std::equal_to<>>;
-} // namespace binsrv
 
 // suffix appended to the object name when writing the temporary file
 // used by the atomic-overwrite implementation of 'do_put_object'; a
@@ -58,5 +57,11 @@ using storage_object_name_container =
 // '<name>.tmp' left by a crashed put is simply overwritten by the
 // next legitimate put for the same name
 inline constexpr std::string_view tmp_storage_object_suffix{".tmp"};
+
+// 256 MB
+inline constexpr std::size_t max_storage_backend_memory_object_size{256UZ
+                                                                    << 20UZ};
+
+} // namespace binsrv
 
 #endif // BINSRV_BASIC_STORAGE_BACKEND_FWD_HPP
