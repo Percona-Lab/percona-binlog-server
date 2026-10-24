@@ -36,6 +36,13 @@ enum class open_binlog_status : std::uint8_t {
   opened_with_data_present
 };
 
+enum class storage_fetch_result_type : std::uint8_t {
+  success_full,
+  success_truncated,
+  non_active_file_eof,
+  active_file_eof
+};
+
 struct binlog_encryption_record;
 using optional_binlog_encryption_record =
     std::optional<binlog_encryption_record>;

@@ -536,6 +536,10 @@ set(operations_source_files
   src/operations/sender_context.hpp
   src/operations/sender_context.cpp
 
+  src/operations/sender_single_file_context_fwd.hpp
+  src/operations/sender_single_file_context.hpp
+  src/operations/sender_single_file_context.cpp
+
   src/operations/version_operation.hpp
   src/operations/version_operation.cpp
 )
