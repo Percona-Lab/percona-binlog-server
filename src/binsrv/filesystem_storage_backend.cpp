@@ -121,7 +121,7 @@ filesystem_storage_backend::do_get_object(std::string_view name,
                                           const util::byte_range &range) {
   const auto object_path{get_object_path(name)};
   return util::read_file_content("underlying object file", object_path,
-                                 max_memory_object_size, range);
+                                 max_storage_backend_memory_object_size, range);
 }
 
 void filesystem_storage_backend::do_put_object(std::string_view name,

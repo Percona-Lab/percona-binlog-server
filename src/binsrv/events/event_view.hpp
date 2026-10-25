@@ -207,16 +207,22 @@ public:
 
   // common header section
   using event_view_base::get_common_header_size;
+  using event_view_base::get_common_header_raw;
+  using event_view_base::get_common_header_view;
 
   // post header section
   using event_view_base::get_post_header_size;
+  using event_view_base::get_post_header_raw;
 
   // body section
   using event_view_base::get_body_size;
+  using event_view_base::get_body_raw;
 
   // footer section
   using event_view_base::get_footer_size;
   using event_view_base::has_footer;
+  using event_view_base::get_footer_raw;
+  using event_view_base::get_footer_view;
   // clang-format on
 
   [[nodiscard]] write_proxy get_write_proxy() const {

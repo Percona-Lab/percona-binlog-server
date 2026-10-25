@@ -63,10 +63,6 @@ eval $stmt_reset_binary_logs_and_gtids;
 --source ../include/set_up_binsrv_environment.inc
 
 --echo
---echo *** Determining the first binary log name (binlog N).
---let $first_binlog = query_get_value($stmt_show_binary_log_status, File, 1)
-
---echo
 --echo *** Phase 1: writing events into binlog N on the source.
 CREATE DATABASE test1;
 CREATE TABLE test1.t(id INT UNSIGNED NOT NULL PRIMARY KEY) ENGINE=InnoDB;
@@ -80,8 +76,8 @@ INSERT INTO test1.t VALUES (1), (2), (3);
 --source include/restart_mysqld.inc
 
 --echo
---echo *** Determining the second binary log name after restart (binlog N+1).
---let $second_binlog = query_get_value($stmt_show_binary_log_status, File, 1)
+--echo *** Determining the binary log name after restart (binlog N+1).
+--let $binlog_after_restart = query_get_value($stmt_show_binary_log_status, File, 1)
 
 --echo
 --echo *** Starting Binlog Server Utility in background in pull mode. On a
@@ -107,7 +103,7 @@ INSERT INTO test1.t VALUES (1), (2), (3);
 --echo *** connection open so PBS delivers events as they appear instead of
 --echo *** disconnecting on EOF.
 --let $downstream_dump = $MYSQL_TMP_DIR/rs_rotate_into_empty_binlog.sql
---let $proc_command_line = $MYSQL_BINLOG --read-from-remote-server --stop-never --host=$binsrv_connection_host --port=$binsrv_replication_source_port --user=$binsrv_auth_user --password=$binsrv_auth_password --default-auth=caching_sha2_password --get-server-public-key $first_binlog > $downstream_dump 2>/dev/null
+--let $proc_command_line = $MYSQL_BINLOG --read-from-remote-server --stop-never --host=$binsrv_connection_host --port=$binsrv_replication_source_port --user=$binsrv_auth_user --password=$binsrv_auth_password --default-auth=caching_sha2_password --get-server-public-key "" > $downstream_dump 2>/dev/null
 --let $proc_pid_file = $MYSQL_TMP_DIR/rs_rotate_into_empty_binlog_downstream.pid
 --source ../include/start_proc_in_background.inc
 --let $downstream_pid_file = $proc_pid_file
@@ -134,7 +130,7 @@ INSERT INTO test1.t VALUES (4), (5), (6);
 --echo *** binlog N+1 ahead of N+1's events. Without the fix this ROTATE
 --echo *** is never emitted (N+1's events stream as a continuation of N) and
 --echo *** this wait times out, failing the test.
---let $grep_pattern = Rotate to $second_binlog
+--let $grep_pattern = Rotate to $binlog_after_restart
 --let $grep_file = $downstream_dump
 --let $wait_timeout = 60
 --source include/wait_for_pattern_in_file.inc

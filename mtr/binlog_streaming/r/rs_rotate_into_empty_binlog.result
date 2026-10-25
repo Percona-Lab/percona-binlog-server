@@ -8,8 +8,6 @@
 *** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
 *** binlog files downloaded via the Binlog Server utility.
 
-*** Determining the first binary log name (binlog N).
-
 *** Phase 1: writing events into binlog N on the source.
 CREATE DATABASE test1;
 CREATE TABLE test1.t(id INT UNSIGNED NOT NULL PRIMARY KEY) ENGINE=InnoDB;
@@ -21,7 +19,7 @@ INSERT INTO test1.t VALUES (1), (2), (3);
 *** PREVIOUS_GTIDS header.
 # restart
 
-*** Determining the second binary log name after restart (binlog N+1).
+*** Determining the binary log name after restart (binlog N+1).
 
 *** Starting Binlog Server Utility in background in pull mode. On a
 *** fresh storage it collects binlog N (finalized at its STOP event)

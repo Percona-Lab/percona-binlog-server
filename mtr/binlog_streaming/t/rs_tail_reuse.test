@@ -22,10 +22,6 @@ eval $stmt_reset_binary_logs_and_gtids;
 --source ../include/set_up_binsrv_environment.inc
 
 --echo
---echo *** Determining the first binary log name.
---let $first_binlog = query_get_value($stmt_show_binary_log_status, File, 1)
-
---echo
 --echo *** Creating a table with a MEDIUMBLOB column.
 CREATE DATABASE source_db;
 CREATE TABLE source_db.tbl(
@@ -73,7 +69,7 @@ while ($i <= 20)
 --echo *** source. --stop-never is NOT set, so PBS disconnects on EOF
 --echo *** once it has streamed everything in storage.
 --let $tail_reuse_dump = $MYSQL_TMP_DIR/rs_tail_reuse.sql
---exec $MYSQL_BINLOG --read-from-remote-server --host=$binsrv_connection_host --port=$binsrv_replication_source_port --user=$binsrv_auth_user --password=$binsrv_auth_password --default-auth=caching_sha2_password --get-server-public-key $first_binlog > $tail_reuse_dump 2>/dev/null
+--exec $MYSQL_BINLOG --read-from-remote-server --host=$binsrv_connection_host --port=$binsrv_replication_source_port --user=$binsrv_auth_user --password=$binsrv_auth_password --default-auth=caching_sha2_password --get-server-public-key --to-last-log "" > $tail_reuse_dump 2>/dev/null
 
 --echo
 --echo *** Waiting for the tail-reuse log entry in the PBS log. Its

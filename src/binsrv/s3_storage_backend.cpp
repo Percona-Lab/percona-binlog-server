@@ -279,7 +279,7 @@ s3_storage_backend::aws_context::get_object_into_byte_buffer(
   }
 
   if (range.has_length()) {
-    if (range.get_length() > max_memory_object_size) {
+    if (range.get_length() > max_storage_backend_memory_object_size) {
       util::exception_location().raise<std::out_of_range>(
           "The requested S3 object range is too large to be loaded in memory");
     }
@@ -289,9 +289,10 @@ s3_storage_backend::aws_context::get_object_into_byte_buffer(
                                          std::iostream &content_stream) {
     // TODO: check object length in advance before calling GetObject
     //       (with HeadObject, for instance)
-    //       alternatively, set `bytes=0-<max_memory_object_size - 1>` byte
+    //       alternatively, set
+    //       `bytes=0-<max_storage_backend_memory_object_size - 1>` byte
     //       range in the request and this operation will return up to
-    //       `max_memory_object_size` bytes.
+    //       `max_storage_backend_memory_object_size` bytes.
     if (range.has_length()) {
       if (content_length != range.get_length()) {
         util::exception_location().raise<std::out_of_range>(
@@ -299,7 +300,7 @@ s3_storage_backend::aws_context::get_object_into_byte_buffer(
             "received memory content");
       }
     } else {
-      if (content_length > max_memory_object_size) {
+      if (content_length > max_storage_backend_memory_object_size) {
         util::exception_location().raise<std::out_of_range>(
             "S3 object is too large to be loaded in memory");
       }

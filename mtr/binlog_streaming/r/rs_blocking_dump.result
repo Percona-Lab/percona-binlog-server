@@ -8,8 +8,6 @@
 *** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
 *** binlog files downloaded via the Binlog Server utility.
 
-*** Determining the first binary log name.
-
 *** Starting Binlog Server Utility in background in pull mode.
 
 *** Waiting for the replication source listener port ready to accept
