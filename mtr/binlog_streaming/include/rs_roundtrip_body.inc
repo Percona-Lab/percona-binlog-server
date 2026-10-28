@@ -55,6 +55,7 @@ INSERT INTO source_db.tbl VALUES (4, 'four'), (5, 'five'), (6, 'six');
 
 --let $first_roundtrip_dump = $MYSQL_TMP_DIR/first_rs_roundtrip.sql
 --let $checkpoint_label = the beginning of the oldest binlog file
+--let $checkpoint_replication_mode = position
 --let $checkpoint_binlog_name =
 --let $checkpoint_binlog_position = 4
 --let $saved_roundtrip_dump = $first_roundtrip_dump
@@ -94,6 +95,7 @@ INSERT INTO source_db.tbl VALUES (10, 'ten'), (11, 'eleven'), (12, 'twelve');
 
 --let $second_roundtrip_dump = $MYSQL_TMP_DIR/second_rs_roundtrip.sql
 --let $checkpoint_label = after inserting the second batch of rows
+--let $checkpoint_replication_mode = position
 --let $checkpoint_binlog_name = $second_part_binlog_name
 --let $checkpoint_binlog_position = $second_part_binlog_position
 --let $saved_roundtrip_dump = $second_roundtrip_dump

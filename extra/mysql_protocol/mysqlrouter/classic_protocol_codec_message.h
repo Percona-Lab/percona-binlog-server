@@ -3702,12 +3702,9 @@ class Codec<borrowable::message::client::BinlogDumpGtid<Borrowed>>
         .step(bw::FixedInt<4>(v_.server_id()))
         .step(bw::FixedInt<4>(v_.filename().size()))
         .step(bw::String<Borrowed>(v_.filename()))
-        .step(bw::FixedInt<8>(v_.position()));
-
-    if (v_.flags() & value_type::Flags::through_gtid) {
-      accu.step(bw::FixedInt<4>(v_.sids().size()))
-          .step(bw::String<Borrowed>(v_.sids()));
-    }
+        .step(bw::FixedInt<8>(v_.position()))
+        .step(bw::FixedInt<4>(v_.sids().size()))
+        .step(bw::String<Borrowed>(v_.sids()));
 
     return accu.result();
   }
@@ -3752,18 +3749,6 @@ class Codec<borrowable::message::client::BinlogDumpGtid<Borrowed>>
         accu.template step<bw::String<Borrowed>>(filename_len_res->value());
     auto position_res = accu.template step<bw::FixedInt<8>>();
 
-    stdx::flags<typename value_type::Flags> flags;
-    flags.underlying_value(flags_res->value());
-
-    if (!(flags & value_type::Flags::through_gtid)) {
-      if (!accu.result()) return stdx::unexpected(accu.result().error());
-
-      return std::make_pair(
-          accu.result().value(),
-          value_type(flags, server_id_res->value(), filename_res->value(),
-                     position_res->value(), {}));
-    }
-
     auto sids_len_res = accu.template step<bw::FixedInt<4>>();
     if (!accu.result()) return stdx::unexpected(accu.result().error());
 
@@ -3771,6 +3756,9 @@ class Codec<borrowable::message::client::BinlogDumpGtid<Borrowed>>
         accu.template step<bw::String<Borrowed>>(sids_len_res->value());
 
     if (!accu.result()) return stdx::unexpected(accu.result().error());
+
+    stdx::flags<typename value_type::Flags> flags;
+    flags.underlying_value(flags_res->value());
 
     return std::make_pair(
         accu.result().value(),

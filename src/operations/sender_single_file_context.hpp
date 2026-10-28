@@ -26,11 +26,14 @@
 
 #include "binsrv/basic_logger_fwd.hpp"
 #include "binsrv/indexed_event_block_fwd.hpp"
+#include "binsrv/replication_mode_type_fwd.hpp"
 #include "binsrv/storage_core_fwd.hpp"
 #include "binsrv/storage_fwd.hpp"
 
 #include "binsrv/events/composite_binlog_name.hpp"
 #include "binsrv/events/event_fwd.hpp"
+
+#include "binsrv/gtids/gtid_set.hpp"
 
 #include "util/byte_range.hpp"
 #include "util/byte_span_fwd.hpp"
@@ -41,14 +44,19 @@ namespace operations {
 
 class sender_single_file_context {
 public:
+  // this value should be large enough to accommodate at least event common
+  // header in position-based replication, and at least the size of a
+  // ANONYMOUS_GTID_LOG / GTID_LOG / GTID_TAGGED_LOG event in GTID-based
+  // replication in order to be able to identify the total size of a
+  // truncated transaction
   static constexpr std::size_t min_allowed_block_size{4096UZ};
 
   // deliberately passing by value as we will be moving from these objects
-  sender_single_file_context(binsrv::basic_logger_ptr logger,
-                             binsrv::storage_ptr storage,
-                             std::size_t block_size,
-                             binsrv::events::composite_binlog_name binlog_name,
-                             std::uint64_t position, bool checksum_enabled);
+  sender_single_file_context(
+      binsrv::basic_logger_ptr logger, binsrv::storage_ptr storage,
+      std::size_t block_size, binsrv::replication_mode_type replication_mode,
+      binsrv::events::composite_binlog_name binlog_name, std::uint64_t position,
+      const binsrv::gtids::gtid_set &gtids, bool checksum_enabled);
 
   sender_single_file_context(const sender_single_file_context &) = delete;
   sender_single_file_context &
@@ -92,8 +100,10 @@ private:
   binsrv::basic_logger_ptr logger_{};
   binsrv::storage_ptr storage_{};
   std::size_t construction_block_size_{};
+  binsrv::replication_mode_type construction_replication_mode_{};
   binsrv::events::composite_binlog_name construction_binlog_name_{};
   std::uint64_t construction_position_{};
+  const binsrv::gtids::gtid_set *construction_gtids_borrowed_{};
   bool construction_checksum_enabled_{};
 
   // space for preamble events
@@ -107,6 +117,7 @@ private:
   // cached parameters extracted from the format description event
   bool extracted_checksum_enabled_{};
   std::uint32_t extracted_server_id_{};
+  std::uint32_t extracted_encoded_server_version_{};
 
   // internal state for iteration within 'get_event()'
   fsm_state_type fsm_state_{fsm_state_type::artificial_rotate};
@@ -129,12 +140,14 @@ private:
 
   [[nodiscard]] static std::size_t
   calculate_fde_size(std::uint32_t encoded_server_version);
-  void process_format_description(bool transform_to_artificial);
+  void process_format_description();
   void process_previous_gtids();
   void generate_artificial_rotate();
 
   [[nodiscard]] event_fetching_result_type populate_preamble();
   [[nodiscard]] event_fetching_result_type populate_event_block();
+  [[nodiscard]] event_fetching_result_type
+  populate_event_block_until_matching_events_found();
 };
 
 } // namespace operations

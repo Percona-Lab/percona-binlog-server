@@ -41,6 +41,7 @@ class BinlogDump {
   // flags of message::client::BinlogDump
   enum class Flags : uint16_t {
     non_blocking = 1 << 0,
+    use_heartbeat_event_v2 = 1 << 1
   };
 };
 }  // namespace classic_protocol::message::client::impl
@@ -58,8 +59,7 @@ class BinlogDumpGtid {
   // flags of message::client::BinlogDumpGtid
   enum class Flags : uint16_t {
     non_blocking = 1 << 0,
-    through_position = 1 << 1,
-    through_gtid = 1 << 2,
+    use_heartbeat_event_v2 = 1 << 1
   };
 };
 }  // namespace classic_protocol::message::client::impl

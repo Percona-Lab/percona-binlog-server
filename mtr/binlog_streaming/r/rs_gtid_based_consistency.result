@@ -1,0 +1,51 @@
+*** Resetting replication at the very beginning of the test.
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+
+*** Initializing the @checkpoints session variable (a JSON array) for
+*** storing GTID checkpoints.
+
+*** Saving the <empty> GTID set checkpoint.
+
+*** Step 0: Saving the initial executed GTID set.
+
+*** Step 1: Creating tbl.
+CREATE TABLE tbl(
+id INT UNSIGNED NOT NULL,
+value VARCHAR(32) NOT NULL,
+PRIMARY KEY(id)
+) ENGINE=InnoDB;
+
+*** Fetching the source binary logs in position mode.
+
+*** Starting Binlog Server Utility in background in pull mode.
+
+*** Waiting for the replication source listener port ready to accept
+*** connections.
+
+*** Comparing event sequences from the PBS and MySQL Server starting
+*** from checkpoint 'from the empty GTID set'.
+
+*** Comparing event sequences from the PBS and MySQL Server starting
+*** from checkpoint 'at the very beginning'.
+
+*** Comparing event sequences from the PBS and MySQL Server starting
+*** from checkpoint 'after creating tbl'.
+
+*** Sending SIGTERM signal to the Binlog Server Utility and waiting for
+*** the process to terminate.
+
+*** Dropping the table.
+DROP TABLE tbl;
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.

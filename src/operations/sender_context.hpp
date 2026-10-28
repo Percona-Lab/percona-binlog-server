@@ -23,9 +23,12 @@
 #include <string_view>
 
 #include "binsrv/basic_logger_fwd.hpp"
+#include "binsrv/replication_mode_type_fwd.hpp"
 #include "binsrv/storage_fwd.hpp"
 
 #include "binsrv/events/composite_binlog_name.hpp"
+
+#include "binsrv/gtids/gtid_set.hpp"
 
 #include "operations/sender_single_file_context_fwd.hpp"
 
@@ -37,8 +40,11 @@ class sender_context {
 public:
   // deliberately passing by value as we will be moving from these objects
   sender_context(binsrv::basic_logger_ptr logger, binsrv::storage_ptr storage,
-                 std::size_t block_size, std::string_view binlog_name,
-                 std::uint64_t position, bool session_source_binlog_checksum);
+                 std::size_t block_size,
+                 binsrv::replication_mode_type replication_mode,
+                 std::string_view binlog_name, std::uint64_t position,
+                 binsrv::gtids::gtid_set gtids,
+                 bool session_source_binlog_checksum);
 
   sender_context(const sender_context &) = delete;
   sender_context &operator=(const sender_context &) = delete;
@@ -62,6 +68,9 @@ private:
   binsrv::storage_ptr storage_{};
 
   std::size_t construction_block_size_{};
+  binsrv::gtids::gtid_set construction_gtids_{};
+
+  binsrv::replication_mode_type construction_replication_mode_;
 
   binsrv::events::composite_binlog_name current_binlog_name_{};
   std::uint64_t current_position_{};

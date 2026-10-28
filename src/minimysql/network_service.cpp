@@ -74,6 +74,8 @@
 #include "binsrv/replication_source_config.hpp"
 #include "binsrv/storage.hpp"
 
+#include "binsrv/gtids/gtid_set.hpp"
+
 #include "minimysql/connection_context.hpp"
 #include "minimysql/handshake_query_patterns.hpp"
 #include "minimysql/heartbeat_sender.hpp"
@@ -213,7 +215,9 @@ void network_service::print_client_command(std::string_view remote_endpoint,
     command_details =
         std::format("\n  statement       : {}", context.get_client_statement());
   }
-  if (context.get_client_mysql_command() == client_command_type::binlog_dump) {
+  if (context.get_client_mysql_command() == client_command_type::binlog_dump ||
+      context.get_client_mysql_command() ==
+          client_command_type::binlog_dump_gtid) {
     command_details = std::format(
         "\n  binlog blocking mode : {}"
         "\n  binlog server id     : {}"
@@ -223,6 +227,14 @@ void network_service::print_client_command(std::string_view remote_endpoint,
                                                   : "blocking"),
         context.get_binlog_server_id(), context.get_binlog_filename(),
         context.get_binlog_position());
+    if (context.get_client_mysql_command() ==
+        client_command_type::binlog_dump_gtid) {
+      command_details +=
+          std::format("\n  binlog SIDs          : {} byte(s)"
+                      "\n  binlog use heartbeat event v2 : {}",
+                      std::size(context.get_binlog_sids()),
+                      context.check_binlog_use_heartbeat_event_v2());
+    }
   }
   logger_->log_format(binsrv::log_severity::debug,
                       "net    : frame sequence_number {:d}\n"
@@ -320,9 +332,20 @@ network_service::handle_binlog_dump_command(
   const auto &binlog_name{context.get_binlog_filename()};
   const auto position{context.get_binlog_position()};
 
+  // TODO: close connection with an error if client requested a GTID-based
+  //       mode whereas the storage was created in position-based mode
+  auto replication_mode{binsrv::replication_mode_type::position};
+  binsrv::gtids::gtid_set gtids{};
+  if (context.get_client_mysql_command() ==
+      client_command_type::binlog_dump_gtid) {
+    replication_mode = binsrv::replication_mode_type::gtid;
+    gtids = binsrv::gtids::gtid_set{
+        util::as_const_byte_span(context.get_binlog_sids())};
+  }
+
   operations::sender_context sender_ctx{
-      logger_,     storage_, block_size,
-      binlog_name, position, session_source_binlog_checksum};
+      logger_,     storage_, block_size,       replication_mode,
+      binlog_name, position, std::move(gtids), session_source_binlog_checksum};
 
   // Emits HEARTBEAT_LOG_EVENT_V2 while this blocking dump sits idle at EOF, at
   // the cadence the replica requested via SET @{master,source}_heartbeat_period
@@ -973,7 +996,8 @@ network_service::session(boost::asio::ip::tcp::socket socket) {
             "net    : sent server ok after register replica ({} bytes to {})",
             std::size(ok_after_register_replica), remote_endpoint_str);
       } break;
-      case minimysql::client_command_type::binlog_dump: {
+      case minimysql::client_command_type::binlog_dump:
+      case minimysql::client_command_type::binlog_dump_gtid: {
         // Refuse to dump if the replica never set @source_binlog_checksum.
         // PBS may send events with a CRC32 trailer, and a client that is
         // not checksum-aware cannot parse them.

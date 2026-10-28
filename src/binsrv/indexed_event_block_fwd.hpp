@@ -16,8 +16,15 @@
 #ifndef BINSRV_INDEXED_EVENT_BLOCK_FWD_HPP
 #define BINSRV_INDEXED_EVENT_BLOCK_FWD_HPP
 
+#include <cstdint>
 #include <memory>
+
 namespace binsrv {
+
+enum class indexed_event_block_mode_type : std::uint8_t {
+  by_event,
+  by_transaction
+};
 
 class indexed_event_block;
 using indexed_event_block_ptr = std::unique_ptr<indexed_event_block>;

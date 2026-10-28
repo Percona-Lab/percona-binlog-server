@@ -25,9 +25,12 @@
 
 #include "binsrv/basic_logger.hpp"
 #include "binsrv/log_severity.hpp"
+#include "binsrv/replication_mode_type.hpp"
 #include "binsrv/storage.hpp"
 
 #include "binsrv/events/protocol_traits_fwd.hpp"
+
+#include "binsrv/gtids/gtid_set.hpp"
 
 #include "operations/sender_single_file_context.hpp"
 
@@ -36,14 +39,15 @@
 
 namespace operations {
 
-sender_context::sender_context(binsrv::basic_logger_ptr logger,
-                               binsrv::storage_ptr storage,
-                               std::size_t block_size,
-                               std::string_view binlog_name,
-                               std::uint64_t position,
-                               bool session_source_binlog_checksum)
+sender_context::sender_context(
+    binsrv::basic_logger_ptr logger, binsrv::storage_ptr storage,
+    std::size_t block_size, binsrv::replication_mode_type replication_mode,
+    std::string_view binlog_name, std::uint64_t position,
+    binsrv::gtids::gtid_set gtids, bool session_source_binlog_checksum)
     : logger_{std::move(logger)}, storage_{std::move(storage)},
       construction_block_size_{block_size},
+      construction_gtids_{std::move(gtids)},
+      construction_replication_mode_{replication_mode},
       current_binlog_name_{
           binlog_name.empty()
               ? binsrv::events::composite_binlog_name{}
@@ -52,6 +56,15 @@ sender_context::sender_context(binsrv::basic_logger_ptr logger,
       current_binlog_checksum_{session_source_binlog_checksum} {
   assert(logger_);
   assert(storage_);
+  logger_->log_format(
+      binsrv::log_severity::info,
+      "sender : starting serving events in {}-based mode from {}:{}",
+      to_string_view(replication_mode), binlog_name, current_position_);
+  if (construction_replication_mode_ == binsrv::replication_mode_type::gtid) {
+    logger_->log_format(binsrv::log_severity::info,
+                        "sender : initial GTID set - {}",
+                        construction_gtids_.str());
+  }
 }
 
 sender_context::~sender_context() = default;
@@ -60,6 +73,32 @@ sender_context::~sender_context() = default;
 sender_context::get_event(util::const_byte_span &event) {
   // resolving real binlog name
   if (current_binlog_name_.is_empty()) {
+    // in GTID-based replication mode we need to perform binlog
+    // auto-selection based on the provided GTID set
+
+    // here we also need to make sure that the specified GTID set is a
+    // subset of what is already present in the storage
+
+    // This is what Server reports in such a case.
+
+    // Replica has more GTIDs than the source has, using the source's
+    // SERVER_UUID. This may indicate that the the last binary log file was
+    // truncated or lost, e.g., after a power failure when sync_binlog != 1.
+    // The source may have rolled back transactions that were already
+    // replicated to the replica. Replicate any transactions that source has
+    // rolled back from replica to source, and/or commit empty transactions
+    // on source to account for transactions that have been committed on
+    // source but are not included in GTID_EXECUTED
+
+    // TODO: implement GTID-based binlog auto-selection logic here
+
+    // TODO: ensure that client doesn't have more GTIDs that we have in the
+    //       storage - purged binlog files affect this check
+    //       see 'find_first_log_not_in_gtid_set()' implementation in the
+    //       MySQL Server code
+
+    // currently binlog auto-selection always starts from the first available
+    // binlog in storage
     current_binlog_name_ = storage_->get_next_binlog_name(current_binlog_name_);
     // the result may still be empty if the storage is empty
     if (current_binlog_name_.is_empty()) {
@@ -76,8 +115,9 @@ sender_context::get_event(util::const_byte_span &event) {
   while (true) {
     if (!single_file_context_) {
       single_file_context_ = std::make_unique<sender_single_file_context>(
-          logger_, storage_, construction_block_size_, current_binlog_name_,
-          current_position_, current_binlog_checksum_);
+          logger_, storage_, construction_block_size_,
+          construction_replication_mode_, current_binlog_name_,
+          current_position_, construction_gtids_, current_binlog_checksum_);
       logger_->log_format(binsrv::log_severity::info,
                           "sender : switched to a new binlog file {}",
                           current_binlog_name_.str());

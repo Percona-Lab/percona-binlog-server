@@ -130,6 +130,7 @@ public:
     return binlog_flags_;
   }
   [[nodiscard]] bool check_binlog_non_blocking_dump() const noexcept;
+  [[nodiscard]] bool check_binlog_use_heartbeat_event_v2() const noexcept;
   [[nodiscard]] std::uint32_t get_binlog_server_id() const noexcept {
     return binlog_server_id_;
   }
@@ -138,6 +139,9 @@ public:
   }
   [[nodiscard]] std::uint64_t get_binlog_position() const noexcept {
     return binlog_position_;
+  }
+  [[nodiscard]] const std::string &get_binlog_sids() const noexcept {
+    return binlog_sids_;
   }
 
   [[nodiscard]] network_buffer_type generate_encoded_server_greeting();
@@ -249,6 +253,7 @@ private:
   std::uint32_t binlog_server_id_{};
   std::string binlog_filename_{};
   std::uint64_t binlog_position_{};
+  std::string binlog_sids_{};
 
   [[nodiscard]] static capability_bitset
   get_default_server_capabilities() noexcept;

@@ -1,0 +1,13 @@
+[srv_nocrc_default_id]
+binlog-checksum = NONE
+
+[srv_nocrc_custom_id]
+binlog-checksum = NONE
+server-id = 67
+
+[srv_crc_default_id]
+binlog-checksum = CRC32
+
+[srv_crc_custom_id]
+binlog-checksum = CRC32
+server-id = 67

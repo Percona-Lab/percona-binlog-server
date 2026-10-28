@@ -8,7 +8,7 @@
 # --source ../include/kill_binlog_dump_connection.inc
 #
 
---let $binlog_dump_connection_id = `SELECT ID FROM performance_schema.processlist WHERE COMMAND = 'Binlog Dump'`
+--let $binlog_dump_connection_id = `SELECT ID FROM performance_schema.processlist WHERE COMMAND LIKE 'Binlog Dump%'`
 if ($binlog_dump_connection_id != '')
 {
   --disable_query_log
