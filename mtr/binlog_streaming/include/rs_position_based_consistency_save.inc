@@ -22,19 +22,17 @@
 #
 # The $checkpoint_label must not contain single quotes.
 
+--let $resolved_checkpoint_binlog_name = $checkpoint_binlog_name
+--let $resolved_checkpoint_binlog_position = $checkpoint_binlog_position
 if ($checkpoint_binlog_position == "")
 {
-  --let $checkpoint_binlog_name = query_get_value($stmt_show_binary_log_status, File, 1)
-  --let $checkpoint_binlog_position = query_get_value($stmt_show_binary_log_status, Position, 1)
+  --let $resolved_checkpoint_binlog_name = query_get_value($stmt_show_binary_log_status, File, 1)
+  --let $resolved_checkpoint_binlog_position = query_get_value($stmt_show_binary_log_status, Position, 1)
 }
 
 --disable_query_log
 eval SET @checkpoints = JSON_ARRAY_APPEND(@checkpoints, '\$',
-  JSON_OBJECT('binlog_file', '$checkpoint_binlog_name',
-              'position', $checkpoint_binlog_position,
+  JSON_OBJECT('binlog_file', '$resolved_checkpoint_binlog_name',
+              'position', $resolved_checkpoint_binlog_position,
               'test_label', '$checkpoint_label'));
 --enable_query_log
-
---let $checkpoint_binlog_name =
---let $checkpoint_binlog_position =
---let $checkpoint_label =

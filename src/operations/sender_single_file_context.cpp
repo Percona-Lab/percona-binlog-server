@@ -45,6 +45,8 @@
 #include "binsrv/events/protocol_traits_fwd.hpp"
 #include "binsrv/events/reader_context.hpp"
 
+#include "binsrv/gtids/gtid_set.hpp"
+
 #include "operations/event_generation_helpers.hpp"
 
 #include "util/byte_range.hpp"
@@ -57,12 +59,14 @@ namespace operations {
 
 sender_single_file_context::sender_single_file_context(
     binsrv::basic_logger_ptr logger, binsrv::storage_ptr storage,
-    std::size_t block_size, binsrv::events::composite_binlog_name binlog_name,
-    std::uint64_t position, bool checksum_enabled)
+    std::size_t block_size, binsrv::replication_mode_type replication_mode,
+    binsrv::events::composite_binlog_name binlog_name, std::uint64_t position,
+    const binsrv::gtids::gtid_set &gtids, bool checksum_enabled)
     : logger_{std::move(logger)}, storage_{std::move(storage)},
       construction_block_size_{block_size},
+      construction_replication_mode_{replication_mode},
       construction_binlog_name_{std::move(binlog_name)},
-      construction_position_{position},
+      construction_position_{position}, construction_gtids_borrowed_{&gtids},
       construction_checksum_enabled_{checksum_enabled} {
   assert(logger_);
   assert(storage_);
@@ -105,15 +109,16 @@ sender_single_file_context::get_event(util::const_byte_span &event) {
     return event_fetching_result_type::success;
 
   case fsm_state_type::format_description:
-    // TODO: in GTID-based replication, PREVIOUS_GTIDS_LOG event should
-    //       also be sent
-
     // in position-based replication whether we should send
     // PREVIOUS_GTIDS_LOG event or not depends on whether we started
-    // sending events from the beginning of the file
-    fsm_state_ = (construction_position_ == binsrv::events::magic_binlog_offset
-                      ? fsm_state_type::previous_gtids_log
-                      : fsm_state_type::main_loop);
+    // sending events from the beginning of the file,
+    // in GTID-based replication mode this event should always be sent
+    fsm_state_ =
+        (construction_replication_mode_ ==
+                     binsrv::replication_mode_type::position &&
+                 construction_position_ != binsrv::events::magic_binlog_offset
+             ? fsm_state_type::main_loop
+             : fsm_state_type::previous_gtids_log);
     event = extracted_format_description_;
     return event_fetching_result_type::success;
 
@@ -123,7 +128,8 @@ sender_single_file_context::get_event(util::const_byte_span &event) {
     return event_fetching_result_type::success;
 
   case fsm_state_type::main_loop: {
-    const auto populate_result{populate_event_block()};
+    const auto populate_result{
+        populate_event_block_until_matching_events_found()};
     if (populate_result != event_fetching_result_type::success) {
       if (populate_result == event_fetching_result_type::eof) {
         fsm_state_ = fsm_state_type::finish;
@@ -134,7 +140,8 @@ sender_single_file_context::get_event(util::const_byte_span &event) {
     }
     // at this point the 'event_block_' must be populated and have
     // available events
-    assert(event_block_ && event_index_ < event_block_->get_number_of_events());
+    assert(event_block_ &&
+           event_index_ < event_block_->get_number_of_matching_events());
     event = event_block_->get_event(event_index_);
     ++event_index_;
 
@@ -230,9 +237,11 @@ sender_single_file_context::fetch_with_carry_buffer(
          binsrv::events::default_footer_length;
 }
 
-void sender_single_file_context::process_format_description(
-    bool transform_to_artificial) {
+void sender_single_file_context::process_format_description() {
   // FORMAT_DESCRIPTION events always have checksums
+
+  // server version is not used during the parsing of the FORMAT_DESCRIPTION
+  // events, so 0 is OK here
   const binsrv::events::reader_context fake_ctx{
       0U,   /* connection_encoded_server_version */
       true, /* checksum_verification_enabled */
@@ -255,42 +264,52 @@ void sender_single_file_context::process_format_description(
       binsrv::events::code_type::format_description>
       fde_body{fde_uv.get_body_raw()};
 
-  extracted_server_id_ = fde_common_header_v.get_server_id_raw();
   extracted_checksum_enabled_ =
       (fde_body.get_checksum_algorithm() ==
        binsrv::events::checksum_algorithm_type::crc32);
-  if (transform_to_artificial) {
-    // artificial FDE must have 'next_event_pos' field in the common header
-    // set to 0U and 'create_timestamp' in the post header set to 0U
+  extracted_server_id_ = fde_common_header_v.get_server_id_raw();
+
+  binsrv::events::generic_post_header_impl<
+      binsrv::events::code_type::format_description>
+      fde_post_header{fde_uv.get_post_header_raw()};
+  extracted_encoded_server_version_ =
+      fde_post_header.get_encoded_server_version();
+
+  // TODO: the rules for the GTID-based replication in MySQL Server are much
+  //       more complicated. The 'created' timestamp is cleared only in the
+  //       case when no binlog name was provided and MySQL Server went through
+  //       the process of auto-positioning. The 'created  timestamp must be
+  //       cleared only when the first GTID of the chosen start file is in the
+  //       client's set
+
+  // for now, we follow a simplified approach
+
+  // in position-based mode:
+  // * if position == 4, leave FDE as is
+  // * if position != 4, set 'next_event_pos' in the common header to 0 and
+  //   'create_timestamp' in the post header to 0
+  // in GTID-based mode:
+  // * always set 'create_timestamp' in the post header to 0
+  if (construction_replication_mode_ == binsrv::replication_mode_type::gtid ||
+      construction_position_ != binsrv::events::magic_binlog_offset) {
     const auto write_proxy{fde_uv.get_write_proxy()};
-    const auto fde_common_header_uv{
-        write_proxy.get_common_header_updatable_view()};
-    fde_common_header_uv.set_next_event_position_raw(0U);
+    if (construction_replication_mode_ ==
+        binsrv::replication_mode_type::position) {
+      const auto fde_common_header_uv{
+          write_proxy.get_common_header_updatable_view()};
+      fde_common_header_uv.set_next_event_position_raw(0U);
+    }
     auto fde_post_header_span{write_proxy.get_post_header_updatable_raw()};
-    binsrv::events::generic_post_header_impl<
-        binsrv::events::code_type::format_description>
-        fde_post_header{fde_post_header_span};
     fde_post_header.set_create_timestamp_raw(0U);
     fde_post_header.encode_to(fde_post_header_span);
   }
 }
 
 void sender_single_file_context::process_previous_gtids() {
-  const binsrv::events::reader_context fake_ctx{
-      0U,                          /* connection_encoded_server_version */
-      extracted_checksum_enabled_, /* checksum_verification_enabled */
-      binsrv::replication_mode_type::position, /* replication_mode */
-      "",                                      /* binlog_name */
-      0U,                                      /* position */
-  };
-
   const util::const_byte_span previous_gtids_span{
       extracted_previous_gtids_log_};
-  const binsrv::events::event_view previous_gtids_v{fake_ctx,
-                                                    previous_gtids_span};
-
-  const auto previous_gtids_common_header_v{
-      previous_gtids_v.get_common_header_view()};
+  const binsrv::events::common_header_view previous_gtids_common_header_v{
+      previous_gtids_span.first(binsrv::events::default_common_header_length)};
 
   if (previous_gtids_common_header_v.get_type_code() !=
       binsrv::events::code_type::previous_gtids_log) {
@@ -368,14 +387,19 @@ sender_single_file_context::populate_preamble() {
 
   // we are interested in the first two events: FORMAT_DESCRIPTION and
   // PREVIOUS_GTIDS_LOG
+
+  // identifying transactions in the preamble does not make sense,
+  // therefore 'by_event'
+
+  // using 'by_event' 'indexed_event_block' constructor alias here
   binsrv::indexed_event_block preamble_indexed_block{std::move(preamble_buffer),
                                                      2UZ};
-  switch (preamble_indexed_block.get_number_of_events()) {
+  switch (preamble_indexed_block.get_number_of_matching_events()) {
   case 1UZ: {
     // this is the case where 'approximate_preamble_size' was not enough
     // to include the full PREVIOUS_GTIDS_LOG event
     const auto previous_gtids_size{
-        preamble_indexed_block.get_first_event_size_in_unparsed_tail()};
+        preamble_indexed_block.get_first_entity_size_in_unparsed_tail()};
     if (!previous_gtids_size.has_value()) {
       util::exception_location().raise<std::runtime_error>(
           "Failed to determine size of PREVIOUS_GTIDS_LOG event");
@@ -393,9 +417,10 @@ sender_single_file_context::populate_preamble() {
       util::exception_location().raise<std::runtime_error>(
           "Failed to fetch the remainder of PREVIOUS_GTIDS_LOG event");
     }
+    // using 'by_event' 'indexed_event_block' constructor alias here
     preamble_indexed_block =
         binsrv::indexed_event_block{std::move(preamble_buffer), 2UZ};
-    if (preamble_indexed_block.get_number_of_events() != 2UZ) {
+    if (preamble_indexed_block.get_number_of_matching_events() != 2UZ) {
       util::exception_location().raise<std::runtime_error>(
           "Encountered corrupted preamble block after fetching the remainder "
           "of PREVIOUS_GTIDS_LOG event");
@@ -409,21 +434,18 @@ sender_single_file_context::populate_preamble() {
     util::exception_location().raise<std::runtime_error>(
         "Encountered corrupted preamble block");
   }
-  assert(preamble_indexed_block.get_number_of_events() == 2UZ);
+  assert(preamble_indexed_block.get_number_of_matching_events() == 2UZ);
 
   const auto format_description_span{preamble_indexed_block.get_event(0UZ)};
   extracted_format_description_.assign(std::cbegin(format_description_span),
                                        std::cend(format_description_span));
-  // in case we are not starting from the beginning of a binlog file, we
-  // need to transform the FDE to an artificial one
-  process_format_description(construction_position_ !=
-                             binsrv::events::magic_binlog_offset);
+  // this function may transform the format description event to an
+  // artificial one in certain scenarios
+  process_format_description();
 
   const auto previous_gtids_log_span{preamble_indexed_block.get_event(1UZ)};
   extracted_previous_gtids_log_.assign(std::cbegin(previous_gtids_log_span),
                                        std::cend(previous_gtids_log_span));
-  // TODO: check if transformation to artificial should be done for the
-  //       PREVIOUS_GTIDS_LOG event as well
   process_previous_gtids();
 
   // after these assignments we may still have useful data in the tail of the
@@ -460,7 +482,8 @@ sender_single_file_context::populate_event_block() {
   // early return if we have a non-empty event block and have not consumed
   // all events in it
 
-  if (event_block_ && event_index_ < event_block_->get_number_of_events()) {
+  if (event_block_ &&
+      event_index_ < event_block_->get_number_of_matching_events()) {
     return event_fetching_result_type::success;
   }
 
@@ -483,14 +506,21 @@ sender_single_file_context::populate_event_block() {
     return event_fetching_result_type::waiting;
   }
 
-  event_block_ =
-      std::make_unique<binsrv::indexed_event_block>(std::move(fetch_buffer));
-  if (event_block_->is_empty()) {
+  const auto indexed_event_block_mode{
+      construction_replication_mode_ == binsrv::replication_mode_type::position
+          ? binsrv::indexed_event_block_mode_type::by_event
+          : binsrv::indexed_event_block_mode_type::by_transaction};
+  event_block_ = std::make_unique<binsrv::indexed_event_block>(
+      indexed_event_block_mode, std::move(fetch_buffer),
+      *construction_gtids_borrowed_, extracted_encoded_server_version_,
+      extracted_checksum_enabled_);
+
+  if (event_block_->get_parsed_size() == 0UZ) {
     assign_carry_buffer(event_block_->get_unparsed_tail_span(),
                         current_position_);
 
     const auto optional_first_event_size{
-        event_block_->get_first_event_size_in_unparsed_tail()};
+        event_block_->get_first_entity_size_in_unparsed_tail()};
     if (!optional_first_event_size.has_value()) {
       util::exception_location().raise<std::runtime_error>(
           "Cannot determine the size of the first event in the truncated "
@@ -510,20 +540,37 @@ sender_single_file_context::populate_event_block() {
       util::exception_location().raise<std::runtime_error>(
           "Failed to fetch block with at least one event");
     }
-    event_block_ =
-        std::make_unique<binsrv::indexed_event_block>(std::move(fetch_buffer));
+    event_block_ = std::make_unique<binsrv::indexed_event_block>(
+        indexed_event_block_mode, std::move(fetch_buffer),
+        *construction_gtids_borrowed_, extracted_encoded_server_version_,
+        extracted_checksum_enabled_);
   }
-  if (event_block_->is_empty()) {
+  if (event_block_->get_parsed_size() == 0UZ) {
     util::exception_location().raise<std::runtime_error>(
         "Failed to fetch block with at least one event after retry");
   }
-  logger_->log_format(
-      binsrv::log_severity::info,
-      "sender : parsed event block with {} events, actual size {} byte(s)",
-      event_block_->get_number_of_events(), event_block_->get_parsed_size());
+  logger_->log_format(binsrv::log_severity::info,
+                      "sender : parsed event block with {} matching events, "
+                      "actual size {} byte(s)",
+                      event_block_->get_number_of_matching_events(),
+                      event_block_->get_parsed_size());
 
   event_index_ = 0UZ;
   return event_fetching_result_type::success;
+}
+
+[[nodiscard]] event_fetching_result_type
+sender_single_file_context::populate_event_block_until_matching_events_found() {
+  // in GTID-based mode, when we do transaction filtering by the specified
+  // GTID set there is a chance that every transaction in the fetched block
+  // will be skipped - in this case we need to continue fetching and populating
+  // event blocks until we find a one with at least one not filtered event
+  event_fetching_result_type populate_result{};
+  while ((populate_result = populate_event_block()) ==
+             event_fetching_result_type::success &&
+         event_block_->get_number_of_matching_events() == 0UZ) {
+  }
+  return populate_result;
 }
 
 [[nodiscard]] bool

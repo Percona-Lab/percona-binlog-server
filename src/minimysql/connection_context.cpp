@@ -169,11 +169,51 @@ connection_context::check_shared_text_result_with_session_tracking_supported()
 
 [[nodiscard]] bool
 connection_context::check_binlog_non_blocking_dump() const noexcept {
-  stdx::flags<classic_protocol::message::client::BinlogDump::Flags>
-      binlog_dump_flags{};
-  binlog_dump_flags.underlying_value(get_binlog_flags());
-  return (binlog_dump_flags &
-          classic_protocol::message::client::BinlogDump::Flags::non_blocking);
+  switch (client_command_) {
+  case client_command_type::binlog_dump: {
+    stdx::flags<classic_protocol::message::client::BinlogDump::Flags>
+        binlog_dump_flags{};
+    binlog_dump_flags.underlying_value(get_binlog_flags());
+    return (binlog_dump_flags &
+            classic_protocol::message::client::BinlogDump::Flags::non_blocking);
+  }
+
+  case client_command_type::binlog_dump_gtid: {
+    stdx::flags<classic_protocol::message::client::BinlogDumpGtid::Flags>
+        binlog_dump_gtid_flags{};
+    binlog_dump_gtid_flags.underlying_value(get_binlog_flags());
+    return (
+        binlog_dump_gtid_flags &
+        classic_protocol::message::client::BinlogDumpGtid::Flags::non_blocking);
+  }
+
+  default:
+    return false;
+  }
+}
+[[nodiscard]] bool
+connection_context::check_binlog_use_heartbeat_event_v2() const noexcept {
+  switch (client_command_) {
+  case client_command_type::binlog_dump: {
+    stdx::flags<classic_protocol::message::client::BinlogDump::Flags>
+        binlog_dump_flags{};
+    binlog_dump_flags.underlying_value(get_binlog_flags());
+    return (binlog_dump_flags & classic_protocol::message::client::BinlogDump::
+                                    Flags::use_heartbeat_event_v2);
+  }
+
+  case client_command_type::binlog_dump_gtid: {
+    stdx::flags<classic_protocol::message::client::BinlogDumpGtid::Flags>
+        binlog_dump_gtid_flags{};
+    binlog_dump_gtid_flags.underlying_value(get_binlog_flags());
+    return (binlog_dump_gtid_flags &
+            classic_protocol::message::client::BinlogDumpGtid::Flags::
+                use_heartbeat_event_v2);
+  }
+
+  default:
+    return false;
+  }
 }
 
 [[nodiscard]] std::string
@@ -503,6 +543,12 @@ void connection_context::parse_client_command(
     validate_and_update_sequence_number(frame.seq_id());
 
     client_command_ = client_command_type::binlog_dump_gtid;
+    const auto &binlog_dump_gtid_payload{frame.payload()};
+    binlog_flags_ = binlog_dump_gtid_payload.flags().underlying_value();
+    binlog_server_id_ = binlog_dump_gtid_payload.server_id();
+    binlog_filename_ = binlog_dump_gtid_payload.filename();
+    binlog_position_ = binlog_dump_gtid_payload.position();
+    binlog_sids_ = binlog_dump_gtid_payload.sids();
     break;
   }
   default:

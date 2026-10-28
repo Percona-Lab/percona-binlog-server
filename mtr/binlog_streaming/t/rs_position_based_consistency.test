@@ -38,6 +38,7 @@ SET @checkpoints = JSON_ARRAY();
 --echo
 --echo *** Step 0: Saving the initial binary log position.
 --let $checkpoint_label = at the very beginning
+--let $checkpoint_binlog_position =
 --source ../include/rs_position_based_consistency_save.inc
 
 --echo
@@ -127,6 +128,7 @@ while ($binlog_file_exists)
 --let $checkpoint_json_index = 0
 while ($checkpoint_json_index < $number_of_checkpoints)
 {
+  --let $checkpoint_replication_mode = position
   --let $checkpoint_binlog_name = `SELECT JSON_UNQUOTE(JSON_EXTRACT(@checkpoints, '\$[$checkpoint_json_index].binlog_file'))`
   --let $checkpoint_binlog_position = `SELECT JSON_UNQUOTE(JSON_EXTRACT(@checkpoints, '\$[$checkpoint_json_index].position'))`
   --let $checkpoint_label = `SELECT JSON_UNQUOTE(JSON_EXTRACT(@checkpoints, '\$[$checkpoint_json_index].test_label'))`
