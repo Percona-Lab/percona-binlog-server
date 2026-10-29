@@ -247,6 +247,42 @@ while ($binlog_index < $number_of_binlogs)
 DROP TABLE binlog_tbl;
 DROP TABLE keyring_tbl;
 
+# replacing the keyring with one that does not contain the KEKs used for
+# the encrypted binlog files in the storage
+--let $write_var = {"version": 1, "keys": [{"id": "beta16", "cipher": "AES-128-CBC", "data_hex": "101112131415161718191A1B1C1D1E1F"}]}
+--let $write_to_file = $binsrv_keyring_data_file_path
+--source include/write_var_to_file.inc
+
+--let $read_from_file = $list_result_file
+--let $missing_kek_message = found encryption record in the binlog metadata but keyring does not contain the specified KEK ID
+
+--echo
+--echo *** Executing the Binlog Server utility in the 'list' mode
+--echo *** with a keyring that does not contain the storage KEKs.
+--error 1
+--exec $BINSRV list $binsrv_config_file_path > $read_from_file
+--source include/read_file_to_var.inc
+--assert(`SELECT JSON_EXTRACT('$result', '$.status') = 'error'`)
+--assert(`SELECT JSON_EXTRACT('$result', '$.message') = '$missing_kek_message'`)
+
+--echo
+--echo *** Executing the Binlog Server utility in the 'search_by_timestamp'
+--echo *** mode with a keyring that does not contain the storage KEKs.
+--error 1
+--exec $BINSRV search_by_timestamp $binsrv_config_file_path 2100-01-01T00:00:00 > $read_from_file
+--source include/read_file_to_var.inc
+--assert(`SELECT JSON_EXTRACT('$result', '$.status') = 'error'`)
+--assert(`SELECT JSON_EXTRACT('$result', '$.message') = '$missing_kek_message'`)
+
+--echo
+--echo *** Executing the Binlog Server utility in the 'search_by_gtid_set'
+--echo *** mode with a keyring that does not contain the storage KEKs.
+--error 1
+--exec $BINSRV search_by_gtid_set $binsrv_config_file_path "" > $read_from_file
+--source include/read_file_to_var.inc
+--assert(`SELECT JSON_EXTRACT('$result', '$.status') = 'error'`)
+--assert(`SELECT JSON_EXTRACT('$result', '$.message') = '$missing_kek_message'`)
+
 --echo
 --echo *** Dropping the table.
 DROP TABLE t1;

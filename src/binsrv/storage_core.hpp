@@ -330,6 +330,7 @@ private:
   [[nodiscard]] binlog_record
   load_binlog_metadata(const events::composite_binlog_name &binlog_name) const;
   void validate_binlog_metadata(const binlog_record &record) const;
+  void validate_binlog_encryption_record(const binlog_record &record) const;
   void save_binlog_metadata(const binlog_record &record) const;
 
   void recover_binlog_file_size(const binlog_record &record,

@@ -1081,6 +1081,10 @@ void storage_core::validate_binlog_metadata(const binlog_record &record) const {
           "replication mode");
     }
   }
+}
+
+void storage_core::validate_binlog_encryption_record(
+    const binlog_record &record) const {
   // make sure that if the encryption record is present in the binlog
   // metadata, keyring must be initialized and contain the KEK with the
   // ID specified in the encryption record
@@ -1178,6 +1182,9 @@ void storage_core::load_and_validate_binlog_metadata_set(
       }
       throw;
     }
+    // keyring problems are configuration errors, not storage damage, so they
+    // must not be skipped even in the querying_only mode
+    validate_binlog_encryption_record(loaded_binlog_metadata);
     // validating binlog size from the metadata only makes sense if we are not
     // in the querying_only mode
     if (construction_mode_ != storage_construction_mode_type::querying_only) {
