@@ -58,6 +58,13 @@ private:
   binsrv::storage_ptr storage_;
   const binsrv::replication_source_config *config_;
 
+  struct impl_helper;
+  struct ssl_context_deleter {
+    void operator()(void *ssl_context) const noexcept;
+  };
+  using ssl_context_ptr = std::unique_ptr<void, ssl_context_deleter>;
+  ssl_context_ptr ssl_context_;
+
   // empty if <replication_source.auth_rsa_private_key> is not configured
   opensslpp::evp_pkey auth_rsa_private_key_;
   // public component of 'auth_rsa_private_key_' in PEM format sent to the
@@ -81,6 +88,13 @@ private:
   [[nodiscard]] const binsrv::replication_source_config &
   get_config() const noexcept {
     return *config_;
+  }
+
+  [[nodiscard]] bool is_auth_rsa_key_available() const noexcept {
+    return !auth_rsa_private_key_.is_empty();
+  }
+  [[nodiscard]] bool is_ssl_tls_available() const noexcept {
+    return static_cast<bool>(ssl_context_);
   }
 
   void print_server_greeting(std::string_view remote_endpoint,
@@ -123,7 +137,9 @@ private:
   [[nodiscard]] boost::asio::awaitable<void>
   session(boost::asio::basic_stream_socket<boost::asio::ip::tcp> socket);
   [[nodiscard]] boost::asio::awaitable<void> listener();
-  void load_auth_rsa_private_key();
+  void load_optional_auth_rsa_private_key();
+  void initialize_optional_ssl_context();
+
   [[nodiscard]] static std::string extract_remote_endpoint_str(
       const boost::asio::basic_stream_socket<boost::asio::ip::tcp> &socket);
 };

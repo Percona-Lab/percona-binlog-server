@@ -521,6 +521,12 @@ The Percona Binary Log Server configuration file has the following format.
     "server_uuid": "00000000-0000-0000-0000-00000000008e",
     "read_timeout": 60,
     "write_timeout": 60,
+    "require_secure_transport": true,
+    "ssl": {
+      "cert": "/etc/mysql/source-cert.pem",
+      "key": "/etc/mysql/source-key.pem"
+    },
+    "auth_rsa_private_key": "/etc/mysql/source-rsa-private.pem",
     "authentication": {
       "user": "rpl_user",
       "password": "rpl_password",
@@ -609,7 +615,13 @@ Two kinds of client are supported today:
 - `<replication_source.server_uuid>` - the UUID the listener returns for `SELECT @@GLOBAL.SERVER_UUID` to downstream MySQL replicas. Must be in the canonical 8-4-4-4-12 lowercase hex form (e.g. `00000000-0000-0000-0000-00000000008e`); other shapes are rejected at configuration load time. Must not collide with any downstream replica's own `@@GLOBAL.SERVER_UUID` for the same anti-loop reason as `<replication_source.server_id>`. The value the listener reports for `SELECT @@GLOBAL.GTID_MODE` is not configured here - it is derived from the actual mode of the backing storage (`OFF` for a position-mode storage, `ON` for a gtid-mode storage), so operators cannot accidentally advertise a mode the storage cannot serve.
 - `<replication_source.read_timeout>` - the number of seconds the utility will wait to read data from a connected replica before treating the connection as timed out.
 - `<replication_source.write_timeout>` - the number of seconds the utility will wait to write data to a connected replica before treating the connection as timed out.
+- `<replication_source.require_secure_transport>` - when `true`, the listener requires secure transport and `<replication_source.ssl>` must be present. Its `cert` and `key` values must not be empty. When `false`, the SSL section is not required.
 - `<replication_source.auth_rsa_private_key>` (optional) - the path to a PEM file with the RSA private key used by the `caching_sha2_password` full authentication: replicas connecting over an unencrypted connection send their password encrypted with the corresponding RSA public key (e.g. specified via the `--server-public-key-path` mysql client option or the `SOURCE_PUBLIC_KEY_PATH` option of the `CHANGE REPLICATION SOURCE TO` statement). If not specified, full authentication is not available and such replicas are denied access. Alternatively, replicas may request the public key from the listener (e.g. via the `--get-server-public-key` mysql client option or the `GET_SOURCE_PUBLIC_KEY = 1` option of the `CHANGE REPLICATION SOURCE TO` statement) - in this case the public component is extracted from the configured RSA private key and sent to the replica in PEM format. Please notice that over an unencrypted connection the received public key cannot be verified by the replica, so providing it locally is the more secure option.
+
+#### \<replication_source.ssl\> section
+TLS certificate configuration for the built-in listener. Required when `<replication_source.require_secure_transport>` is `true`.
+- `<replication_source.ssl.cert>` - path to the PEM-encoded TLS certificate presented by the listener (must not be empty).
+- `<replication_source.ssl.key>` - path to the PEM-encoded private key for the certificate (must not be empty).
 
 #### \<replication_source.authentication\> section
 Credentials the built-in listener accepts from downstream replicas.

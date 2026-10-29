@@ -15,6 +15,9 @@
 #   --let $binsrv_idle_time = 10
 #   --let $binsrv_verify_checksum = TRUE | FALSE
 #   --let $binsrv_replication_mode = position | gtid
+#   --let $binsrv_source_secure_transport_required = TRUE | FALSE (optional, default: FALSE)
+#   --let $binsrv_source_ssl_cert = /path/to/source-cert.pem (optional)
+#   --let $binsrv_source_ssl_private_key = /path/to/source-key.pem (optional)
 #   --let $binsrv_checkpoint_size = 2M (optional)
 #   --let $binsrv_checkpoint_interval = 30s (optional)
 #   --let $binsrv_rewrite_file_size = 1K (optional)

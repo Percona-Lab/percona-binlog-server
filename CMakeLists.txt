@@ -21,6 +21,8 @@ project(BinlogServer VERSION 0.5 LANGUAGES CXX)
 add_library(binlog_server_compiler_flags INTERFACE)
 target_compile_features(binlog_server_compiler_flags INTERFACE cxx_std_23)
 target_include_directories(binlog_server_compiler_flags INTERFACE "${PROJECT_SOURCE_DIR}/src")
+# disabling boost::asio deprecated functions
+target_compile_definitions(binlog_server_compiler_flags INTERFACE BOOST_ASIO_NO_DEPRECATED)
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_SOURCE_DIR}/cmake)
 include(compiler_warnings)
@@ -648,6 +650,10 @@ set(binsrv_source_files
   src/binsrv/size_unit.hpp
   src/binsrv/size_unit.cpp
 
+  src/binsrv/source_ssl_config_fwd.hpp
+  src/binsrv/source_ssl_config.hpp
+  src/binsrv/source_ssl_config.cpp
+
   src/binsrv/s3_error_helpers_private.hpp
   src/binsrv/s3_error_helpers_private.cpp
   src/binsrv/s3_error.hpp
@@ -753,7 +759,7 @@ target_link_libraries(binlog_server
     binsrv::lib_opensslpp
     Boost::headers Boost::json Boost::url Boost::asio
     aws-cpp-sdk-s3-crt
-    OpenSSL::Crypto
+    OpenSSL::Crypto OpenSSL::SSL
 )
 # it is not possible to propagate CXX_EXTENSIONS and CXX_STANDARD_REQUIRED
 # via interface library (binlog_server_compiler_flags)

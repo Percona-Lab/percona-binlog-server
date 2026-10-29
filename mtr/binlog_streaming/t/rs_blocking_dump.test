@@ -48,7 +48,11 @@ eval $stmt_reset_binary_logs_and_gtids;
 --echo *** must keep the connection open and deliver events as they become
 --echo *** available instead of disconnecting on EOF.
 --let $downstream1_dump = $MYSQL_TMP_DIR/rs_blocking_dump_1.sql
---let $proc_command_line = $MYSQL_BINLOG --read-from-remote-server --stop-never --host=$binsrv_connection_host --port=$binsrv_replication_source_port --user=$binsrv_auth_user --password=$binsrv_auth_password --default-auth=caching_sha2_password --get-server-public-key "" > $downstream1_dump 2>/dev/null
+--let $proc_command_line = $MYSQL_BINLOG
+--let $proc_command_line = $proc_command_line --read-from-remote-server --stop-never --host=$binsrv_connection_host --port=$binsrv_replication_source_port
+--let $proc_command_line = $proc_command_line --user=$binsrv_auth_user --password=$binsrv_auth_password --default-auth=caching_sha2_password
+--let $proc_command_line = $proc_command_line --get-server-public-key --ssl-mode=DISABLED
+--let $proc_command_line = $proc_command_line "" > $downstream1_dump 2>/dev/null
 --let $proc_pid_file = $MYSQL_TMP_DIR/rs_blocking_dump_downstream1.pid
 --source ../include/start_proc_in_background.inc
 --let $downstream1_pid_file = $proc_pid_file
@@ -58,7 +62,11 @@ eval $stmt_reset_binary_logs_and_gtids;
 --echo *** that two concurrent blocking COM_BINLOG_DUMP sessions are
 --echo *** exercised at the same time.
 --let $downstream2_dump = $MYSQL_TMP_DIR/rs_blocking_dump_2.sql
---let $proc_command_line = $MYSQL_BINLOG --read-from-remote-server --stop-never --host=$binsrv_connection_host --port=$binsrv_replication_source_port --user=$binsrv_auth_user --password=$binsrv_auth_password --default-auth=caching_sha2_password --get-server-public-key "" > $downstream2_dump 2>/dev/null
+--let $proc_command_line = $MYSQL_BINLOG
+--let $proc_command_line = $proc_command_line --read-from-remote-server --stop-never --host=$binsrv_connection_host --port=$binsrv_replication_source_port
+--let $proc_command_line = $proc_command_line --user=$binsrv_auth_user --password=$binsrv_auth_password --default-auth=caching_sha2_password
+--let $proc_command_line = $proc_command_line --get-server-public-key --ssl-mode=DISABLED
+--let $proc_command_line = $proc_command_line "" > $downstream2_dump 2>/dev/null
 --let $proc_pid_file = $MYSQL_TMP_DIR/rs_blocking_dump_downstream2.pid
 --source ../include/start_proc_in_background.inc
 --let $downstream2_pid_file = $proc_pid_file

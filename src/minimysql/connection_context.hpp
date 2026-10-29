@@ -46,9 +46,12 @@ public:
   static constexpr std::string_view default_server_auth_method{
       "caching_sha2_password"};
 
-  connection_context(std::string_view server_username,
+  connection_context(bool ssl_tls_available, std::string_view server_username,
                      std::string_view server_password);
 
+  [[nodiscard]] bool is_ssl_tls_available() const noexcept {
+    return ssl_tls_available_;
+  }
   [[nodiscard]] const std::string &get_server_username() const noexcept {
     return server_username_;
   }
@@ -223,6 +226,7 @@ public:
 private:
   static std::atomic_uint32_t next_connection_id_;
 
+  bool ssl_tls_available_{false};
   std::string server_username_;
   // TODO: rework authentication model to store double-hashed password here
   //       instead of a plain-text one
@@ -255,8 +259,8 @@ private:
   std::uint64_t binlog_position_{};
   std::string binlog_sids_{};
 
-  [[nodiscard]] static capability_bitset
-  get_default_server_capabilities() noexcept;
+  [[nodiscard]] capability_bitset
+  get_default_server_capabilities() const noexcept;
   [[nodiscard]] const util::dynamic_byte_buffer &
   generate_server_auth_method_data();
   [[nodiscard]] std::uint8_t generate_sequence_number();

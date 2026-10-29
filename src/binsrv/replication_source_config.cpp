@@ -73,12 +73,31 @@ void replication_source_config::validate() const {
         "error validating replication source config: "
         "write_timeout must be greater than 0");
   }
-  const auto &optional_auth_rsa_private_key{get<"auth_rsa_private_key">()};
-  if (optional_auth_rsa_private_key.has_value() &&
-      optional_auth_rsa_private_key->empty()) {
-    util::exception_location().raise<std::invalid_argument>(
-        "error validating replication source config: "
-        "auth_rsa_private_key must not be empty if specified");
+  const auto &optional_ssl{get<"ssl">()};
+  if (get<"require_secure_transport">()) {
+    // in the case when secure transport is required, the 'ssl' section
+    // must be present
+    if (!optional_ssl.has_value()) {
+      util::exception_location().raise<std::invalid_argument>(
+          "error validating replication source config: "
+          "ssl section must be present when secure transport is required");
+    }
+  } else {
+    // in the case when secure transport is not required, auth_rsa_private_key
+    // must be present because there will be no way to perform authentication
+    // otherwise
+    const auto &optional_auth_rsa_private_key{get<"auth_rsa_private_key">()};
+    if (optional_auth_rsa_private_key.has_value() &&
+        optional_auth_rsa_private_key->empty()) {
+      util::exception_location().raise<std::invalid_argument>(
+          "error validating replication source config: "
+          "auth_rsa_private_key must not be empty when secure transport is not "
+          "required");
+    }
+  }
+  // if the 'ssl' section is present, it must be valid
+  if (optional_ssl.has_value()) {
+    optional_ssl->validate();
   }
   get<"authentication">().validate();
 }
