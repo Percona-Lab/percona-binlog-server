@@ -71,6 +71,7 @@ exec $MYSQL_BINLOG
   --read-from-remote-source=$checkpoint_remote_source_mode $checkpoint_gtid_options
   --host=$binsrv_connection_host --port=$binsrv_replication_source_port
   --user=$binsrv_auth_user --password=$binsrv_auth_password --default-auth=caching_sha2_password
+  --ssl-mode=DISABLED
   --get-server-public-key
   --start-position=$checkpoint_binlog_position --to-last-log "$checkpoint_binlog_name" > $checkpoint_roundtrip_dump 2>/dev/null;
 --let $checkpoint_roundtrip_dump_filtered = $checkpoint_roundtrip_dump.filtered

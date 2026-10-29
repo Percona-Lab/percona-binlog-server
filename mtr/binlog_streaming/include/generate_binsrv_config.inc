@@ -30,6 +30,9 @@
 #   --let $binsrv_auth_user = rpl (optional, default: rpl)
 #   --let $binsrv_auth_password = password (optional, default: password)
 #   --let $binsrv_auth_rsa_private_key = /path/to/rsa_private_key.pem (optional)
+#   --let $binsrv_source_secure_transport_required = TRUE | FALSE (optional, default: FALSE)
+#   --let $binsrv_source_ssl_cert = /path/to/source-cert.pem (optional)
+#   --let $binsrv_source_ssl_private_key = /path/to/source-key.pem (optional)
 #   --source set_up_binsrv_environment.inc
 
 --echo
@@ -118,6 +121,19 @@ if ($binsrv_auth_password == "")
 {
   --let $binsrv_auth_password = password
 }
+if ($binsrv_source_secure_transport_required == "")
+{
+  --let $binsrv_source_secure_transport_required = FALSE
+}
+
+--let $binsrv_source_ssl_enabled = 0
+if ($binsrv_source_ssl_cert != "")
+{
+  if ($binsrv_source_ssl_private_key != "")
+  {
+    --let $binsrv_source_ssl_enabled = 1
+  }
+}
 
 eval SET @binsrv_config_json = JSON_OBJECT(
   'logger', JSON_OBJECT(
@@ -145,6 +161,7 @@ eval SET @binsrv_config_json = JSON_OBJECT(
      'server_uuid', UUID(),
      'read_timeout', 60,
      'write_timeout', 60,
+     'require_secure_transport', $binsrv_source_secure_transport_required,
      'authentication', JSON_OBJECT(
         'user', '$binsrv_auth_user',
         'password', '$binsrv_auth_password',
@@ -219,6 +236,17 @@ if ($binsrv_encryption_enabled)
       'format', 'generic',
       'kek_id', '$binsrv_encryption_kek_id',
       'cipher', '$binsrv_encryption_cipher'
+    )
+  );
+}
+
+if ($binsrv_source_ssl_enabled)
+{
+  eval SET @binsrv_config_json = JSON_INSERT(
+    @binsrv_config_json, '$.replication_source.ssl',
+    JSON_OBJECT(
+      'cert', '$binsrv_source_ssl_cert',
+      'key', '$binsrv_source_ssl_private_key'
     )
   );
 }

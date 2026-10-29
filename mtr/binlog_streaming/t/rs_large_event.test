@@ -57,7 +57,11 @@ INSERT INTO source_db.tbl VALUES (1, REPEAT('X', 1500000));
 --echo *** source. --stop-never is NOT set, so PBS disconnects on EOF
 --echo *** once it has streamed everything in storage.
 --let $large_event_dump = $MYSQL_TMP_DIR/rs_large_event.sql
---exec $MYSQL_BINLOG --read-from-remote-server --host=$binsrv_connection_host --port=$binsrv_replication_source_port --user=$binsrv_auth_user --password=$binsrv_auth_password --default-auth=caching_sha2_password --get-server-public-key --to-last-log "" > $large_event_dump 2>/dev/null
+exec $MYSQL_BINLOG
+  --read-from-remote-server --host=$binsrv_connection_host --port=$binsrv_replication_source_port
+  --user=$binsrv_auth_user --password=$binsrv_auth_password --default-auth=caching_sha2_password
+  --get-server-public-key --ssl-mode=DISABLED
+  --to-last-log "" > $large_event_dump 2>/dev/null;
 
 --echo
 --echo *** Waiting for the exact-size-retry log entry in the PBS log.

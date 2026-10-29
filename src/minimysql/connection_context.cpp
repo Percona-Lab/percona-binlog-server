@@ -103,10 +103,11 @@ fix_server_auth_data(const util::dynamic_byte_buffer &data) {
 } // namespace
 
 connection_context::connection_context(
+    bool ssl_tls_available,
     // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
     std::string_view server_username, std::string_view server_password)
-    : server_username_(server_username), server_password_(server_password),
-      connection_id_(next_connection_id_++) {
+    : ssl_tls_available_(ssl_tls_available), server_username_(server_username),
+      server_password_(server_password), connection_id_(next_connection_id_++) {
   static_assert(std::is_same_v<capability_bitset,
                                classic_protocol::capabilities::value_type>,
                 "capability_bitset MUST be the same type as "
@@ -559,7 +560,7 @@ void connection_context::parse_client_command(
 std::atomic_uint32_t connection_context::next_connection_id_{0U};
 
 [[nodiscard]] capability_bitset
-connection_context::get_default_server_capabilities() noexcept {
+connection_context::get_default_server_capabilities() const noexcept {
   return classic_protocol::capabilities::long_password |
          classic_protocol::capabilities::found_rows |
          classic_protocol::capabilities::long_flag |
@@ -571,7 +572,9 @@ connection_context::get_default_server_capabilities() noexcept {
          // ignore_space (client only)
          classic_protocol::capabilities::protocol_41 |
          // interactive (client-only)
-         // ssl (below)
+         (is_ssl_tls_available()
+              ? classic_protocol::capabilities::ssl
+              : classic_protocol::capabilities::value_type{}) |
          // ignore sigpipe (client-only)
          classic_protocol::capabilities::transactions |
          classic_protocol::capabilities::secure_connection |
@@ -585,6 +588,7 @@ connection_context::get_default_server_capabilities() noexcept {
       // disable session_track
       // disable text_result_with_session_tracking
       // optional_resultset_metadata (not yet)
+      // query_attributes
       // compress_zstd (not yet)
       ;
 }

@@ -76,7 +76,11 @@ eval $stmt_reset_binary_logs_and_gtids;
 --echo *** an empty binlog name selects the oldest available binlog.
 --echo *** PBS must wait until storage becomes non-empty.
 --let $downstream_dump = $MYSQL_TMP_DIR/rs_blocking_dump_empty_storage.sql
---let $proc_command_line = $MYSQL_BINLOG --read-from-remote-server --stop-never --host=$binsrv_connection_host --port=$binsrv_replication_source_port --user=$binsrv_auth_user --password=$binsrv_auth_password --default-auth=caching_sha2_password --get-server-public-key "" > $downstream_dump 2>/dev/null
+--let $proc_command_line = $MYSQL_BINLOG
+--let $proc_command_line = $proc_command_line --read-from-remote-server --stop-never --host=$binsrv_connection_host --port=$binsrv_replication_source_port
+--let $proc_command_line = $proc_command_line --user=$binsrv_auth_user --password=$binsrv_auth_password --default-auth=caching_sha2_password
+--let $proc_command_line = $proc_command_line --get-server-public-key --ssl-mode=DISABLED
+--let $proc_command_line = $proc_command_line "" > $downstream_dump 2>/dev/null
 --let $proc_pid_file = $MYSQL_TMP_DIR/rs_blocking_dump_empty_downstream.pid
 --source ../include/start_proc_in_background.inc
 --let $downstream_pid_file = $proc_pid_file

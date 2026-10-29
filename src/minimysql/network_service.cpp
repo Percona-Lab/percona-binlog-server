@@ -33,6 +33,7 @@
 #include <string_view>
 #include <system_error>
 #include <tuple>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -62,6 +63,8 @@
 #include <boost/asio/use_awaitable.hpp>
 
 #include <boost/asio/ip/tcp.hpp>
+
+#include <boost/asio/ssl/context.hpp>
 
 #include <boost/describe/enum_to_string.hpp>
 
@@ -123,6 +126,23 @@ private:
 };
 
 } // anonymous namespace
+
+struct network_service::impl_helper {
+  [[nodiscard]] static auto deimpl(auto &impl) noexcept {
+    using cast_type = std::conditional_t<
+        std::is_const_v<std::remove_reference_t<decltype(impl)>>,
+        const boost::asio::ssl::context, boost::asio::ssl::context>;
+    return static_cast<cast_type *>(impl.get());
+  }
+};
+
+void network_service::ssl_context_deleter::operator()(
+    void *ssl_context) const noexcept {
+  // using 'std::default_delete' here instead of 'delete' to avoid clang-tidy
+  // warnings
+  std::default_delete<boost::asio::ssl::context>{}(
+      static_cast<boost::asio::ssl::context *>(ssl_context));
+}
 
 void network_service::print_server_greeting(std::string_view remote_endpoint,
                                             const connection_context &context) {
@@ -420,6 +440,7 @@ network_service::perform_public_key_dispatch(
     boost::asio::ip::tcp::socket &socket,
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
     connection_context &context) {
+  assert(is_auth_rsa_key_available());
   network_buffer_type data;
   data.reserve(network_service::expected_packet_size);
 
@@ -487,11 +508,13 @@ network_service::perform_full_authentication(
   context.parse_client_full_auth_response(data);
 
   // just like MySQL Server, checking for the RSA key availability before
-  // checking whether the client requested the public key
-  if (auth_rsa_private_key_.is_empty()) {
+  // checking performing full authentication (including the public key
+  // request part)
+  if (!is_auth_rsa_key_available()) {
     logger_->log(binsrv::log_severity::warning,
-                 "net    : cannot perform full authentication as "
-                 "<replication_source.auth_rsa_private_key> is not configured");
+                 "net    : cannot perform full authentication in a non-SSL/TLS "
+                 "connection as <replication_source.auth_rsa_private_key> is "
+                 "not configured");
     co_return false;
   }
 
@@ -654,6 +677,7 @@ network_service::session(boost::asio::ip::tcp::socket socket) {
     data.reserve(network_service::expected_packet_size);
 
     connection_context context{
+        is_ssl_tls_available(),
         get_config().get<"authentication">().get<"user">(),
         get_config().get<"authentication">().get<"password">()};
 
@@ -1091,14 +1115,15 @@ network_service::network_service(binsrv::basic_logger_ptr logger,
                                  binsrv::storage_ptr storage,
                                  const binsrv::replication_source_config &cfg)
     : logger_{std::move(logger)}, io_ctx_{&io_ctx},
-      storage_{std::move(storage)}, config_{&cfg}, auth_rsa_private_key_{},
-      auth_rsa_public_key_pem_{}, auth_cached_{false},
+      storage_{std::move(storage)}, config_{&cfg}, ssl_context_{},
+      auth_rsa_private_key_{}, auth_rsa_public_key_pem_{}, auth_cached_{false},
       acceptor_{std::make_unique<acceptor_type>(
           io_ctx, boost::asio::ip::tcp::endpoint{boost::asio::ip::tcp::v4(),
                                                  cfg.get<"port">()})} {
   assert(logger_);
 
-  load_auth_rsa_private_key();
+  initialize_optional_ssl_context();
+  load_optional_auth_rsa_private_key();
 
   // NOLINTNEXTLINE(misc-include-cleaner)
   boost::asio::co_spawn(get_io_ctx(), listener(), boost::asio::detached);
@@ -1106,7 +1131,7 @@ network_service::network_service(binsrv::basic_logger_ptr logger,
 
 network_service::~network_service() = default;
 
-void network_service::load_auth_rsa_private_key() {
+void network_service::load_optional_auth_rsa_private_key() {
   const auto &optional_key_path{get_config().get<"auth_rsa_private_key">()};
   if (!optional_key_path.has_value()) {
     logger_->log(
@@ -1133,6 +1158,34 @@ void network_service::load_auth_rsa_private_key() {
   // full authentication (e.g. 'mysql --get-server-public-key')
   auth_rsa_public_key_pem_ = opensslpp::evp_pkey::export_public_pem(
       auth_rsa_private_key_.derive_public_key());
+}
+
+void network_service::initialize_optional_ssl_context() {
+  const auto &optional_ssl_config{get_config().get<"ssl">()};
+  if (!optional_ssl_config.has_value()) {
+    logger_->log(binsrv::log_severity::info,
+                 "net    : no SSL/TLS configuration found, SSL/TLS will not be "
+                 "available");
+    return;
+  }
+  // using std::make_unique here instead of 'new' to avoid clang-tidy warnings
+  auto local_ssl_context{std::make_unique<boost::asio::ssl::context>(
+      boost::asio::ssl::context::tls_server)};
+  const auto &ssl_config{*optional_ssl_config};
+  boost::system::error_code ssl_context_ec{};
+  local_ssl_context->use_certificate_chain_file(ssl_config.get<"cert">(),
+                                                ssl_context_ec);
+  if (ssl_context_ec) {
+    util::exception_location().raise<boost::system::system_error>(
+        ssl_context_ec, "cannot load SSL/TLS certificate");
+  }
+  local_ssl_context->use_private_key_file(
+      ssl_config.get<"key">(), boost::asio::ssl::context::pem, ssl_context_ec);
+  if (ssl_context_ec) {
+    util::exception_location().raise<boost::system::system_error>(
+        ssl_context_ec, "cannot load SSL/TLS private key");
+  }
+  ssl_context_.reset(local_ssl_context.release());
 }
 
 [[nodiscard]] std::string network_service::extract_remote_endpoint_str(

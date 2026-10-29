@@ -63,6 +63,7 @@ while ($combination_index < $combination_count)
   --disable_query_log
   eval SELECT
       CONCAT_WS(' ',
+        '--ssl-mode=DISABLED',
         CASE user WHEN 'valid' THEN '--user=$binsrv_auth_user' ELSE '--user=wrong_$binsrv_auth_user' END,
         CASE password WHEN 'valid' THEN '--password=$binsrv_auth_password' WHEN 'invalid' THEN '--password=wrong_$binsrv_auth_password' ELSE '--password=' END,
         CASE key_option WHEN 'path' THEN '--server-public-key-path=$binsrv_auth_rsa_public_key' WHEN 'get' THEN '--get-server-public-key' ELSE '' END,
