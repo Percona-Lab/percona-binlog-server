@@ -1,4 +1,7 @@
 {
+  "instance": {
+    "local_settings_path": "/var/lib/pbs"
+  },
   "logger": {
     "level": "debug",
     "file": "binsrv.log"

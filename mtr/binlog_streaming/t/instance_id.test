@@ -1,0 +1,50 @@
+--source ../include/have_binsrv.inc
+
+# The instance id feature is independent of the storage backend (the id lives
+# under instance.local_settings_path, not in the binlog storage), so this test
+# runs with the default 'file' backend only.
+--source ../include/identify_storage_backend.inc
+
+--echo *** Setting up the Binlog Server utility environment.
+--let $binsrv_connect_timeout = 20
+--let $binsrv_read_timeout = 60
+--let $binsrv_idle_time = 10
+--let $binsrv_verify_checksum = TRUE
+--let $binsrv_replication_mode = `SELECT IF(@@global.gtid_mode = 'ON', 'gtid', 'position')`
+--let $binsrv_local_settings_path = $MYSQL_TMP_DIR/binsrv_local_settings
+--source ../include/set_up_binsrv_environment.inc
+
+--let $instance_id_file = $binsrv_local_settings_path/instance_id
+
+--echo
+--echo *** 1. The first run creates the instance_id file holding a canonical
+--echo ***    UUID. A one-shot 'fetch' is used here (it also writes the utility
+--echo ***    log file removed during teardown).
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+--file_exists $instance_id_file
+--let $read_from_file = $instance_id_file
+--source include/read_file_to_var.inc
+--let $first_instance_id = $result
+--assert(`SELECT IS_UUID('$first_instance_id')`)
+
+--echo
+--echo *** 2. A subsequent run in a different mode ('list') reuses the same
+--echo ***    instance_id.
+--exec $BINSRV list $binsrv_config_file_path > /dev/null
+--source include/read_file_to_var.inc
+--assert(`SELECT '$result' = '$first_instance_id'`)
+
+--echo
+--echo *** 3. A spoiled instance_id file is replaced with a freshly generated
+--echo ***    canonical UUID on the next run.
+--remove_file $instance_id_file
+--write_file $instance_id_file
+not-a-uuid
+EOF
+--exec $BINSRV list $binsrv_config_file_path > /dev/null
+--source include/read_file_to_var.inc
+--assert(`SELECT IS_UUID('$result')`)
+--assert(`SELECT '$result' <> 'not-a-uuid'`)
+
+# cleaning up (tear_down removes the local settings directory and its contents)
+--source ../include/tear_down_binsrv_environment.inc

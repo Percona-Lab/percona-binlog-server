@@ -33,6 +33,7 @@
 #   --let $binsrv_source_secure_transport_required = TRUE | FALSE (optional, default: FALSE)
 #   --let $binsrv_source_ssl_cert = /path/to/source-cert.pem (optional)
 #   --let $binsrv_source_ssl_private_key = /path/to/source-key.pem (optional)
+#   --let $binsrv_local_settings_path = /existing/dir (optional, default: $MYSQL_TMP_DIR/binsrv_local_settings)
 #   --source set_up_binsrv_environment.inc
 
 --echo
@@ -135,7 +136,20 @@ if ($binsrv_source_ssl_cert != "")
   }
 }
 
+# The 'instance' section is mandatory. Its 'local_settings_path' must point to
+# an existing directory. We use a dedicated per-worker directory that
+# set_up_binsrv_environment.inc creates and tear_down_binsrv_environment.inc
+# removes, so that the instance_id file the utility writes there does not stay
+# behind in $MYSQL_TMP_DIR and trip MTR's check for leftover files.
+if ($binsrv_local_settings_path == "")
+{
+  --let $binsrv_local_settings_path = $MYSQL_TMP_DIR/binsrv_local_settings
+}
+
 eval SET @binsrv_config_json = JSON_OBJECT(
+  'instance', JSON_OBJECT(
+    'local_settings_path', '$binsrv_local_settings_path'
+  ),
   'logger', JSON_OBJECT(
     'level', '$binsrv_log_level',
     'file', @log_path

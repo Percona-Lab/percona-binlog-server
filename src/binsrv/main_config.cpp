@@ -17,9 +17,12 @@
 
 #include <cstddef>
 #include <stdexcept>
+#include <string>
 #include <string_view>
 
 #include <boost/json/parse.hpp>
+
+#include "binsrv/instance_id.hpp"
 
 // Needed for encryption_format's operator <<
 #include "binsrv/encryption_format_type.hpp" // IWYU pragma: keep
@@ -54,9 +57,16 @@ main_config::main_config(std::string_view file_name) {
   util::nv_tuple_from_json(json_value, impl_);
 
   validate();
+
+  // Establish this instance's identity once the configuration is known to be
+  // valid: read the existing id or generate and persist a fresh one under
+  // instance.local_settings_path.
+  instance_id_ = load_or_create_instance_id(
+      root().get<"instance">().get<"local_settings_path">());
 }
 
 void main_config::validate() const {
+  root().get<"instance">().validate();
   root().get<"connection">().validate();
   root().get<"storage">().validate();
   root().get<"replication">().validate();
