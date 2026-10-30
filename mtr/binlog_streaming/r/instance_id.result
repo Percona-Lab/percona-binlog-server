@@ -1,0 +1,28 @@
+*** Setting up the Binlog Server utility environment.
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+
+*** 1. The first run creates the instance_id file holding a canonical
+***    UUID. A one-shot 'fetch' is used here (it also writes the utility
+***    log file removed during teardown).
+include/read_file_to_var.inc
+
+*** 2. A subsequent run in a different mode ('list') reuses the same
+***    instance_id.
+include/read_file_to_var.inc
+
+*** 3. A spoiled instance_id file is replaced with a freshly generated
+***    canonical UUID on the next run.
+include/read_file_to_var.inc
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.

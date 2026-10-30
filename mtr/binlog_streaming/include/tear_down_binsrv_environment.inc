@@ -17,3 +17,8 @@ if ($storage_backend == s3)
 --echo
 --echo *** Removing the Binlog Server utility configuration file.
 --remove_file $binsrv_config_file_path
+
+# Remove the per-instance local settings directory created in
+# set_up_binsrv_environment.inc (together with the instance_id file inside it).
+# No --echo here on purpose, to keep recorded results stable.
+--force-rmdir $binsrv_local_settings_path

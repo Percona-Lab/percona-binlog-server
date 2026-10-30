@@ -478,6 +478,9 @@ Please also notice that running the utility in the `purge_binlogs` mode on a cer
 The Percona Binary Log Server configuration file has the following format.
 ```json
 {
+  "instance": {
+    "local_settings_path": "/var/lib/pbs"
+  },
   "logger": {
     "level": "debug",
     "file": "binsrv.log"
@@ -550,6 +553,10 @@ The Percona Binary Log Server configuration file has the following format.
   }
 }
 ```
+
+#### \<instance\> section
+This mandatory section identifies the Percona Binary Log Server instance and points to its node-local state.
+- `<instance.local_settings_path>` - a path to a writable local directory (which must already exist and be a directory, or a symbolic link to one) where the utility keeps per-instance state. When several Binary Log Server instances run on the same host, give each one its own `local_settings_path` so that they do not share instance-local state. On the first run of any mode that reads the configuration file (`fetch`, `pull`, `list`, `search_by_timestamp`, `search_by_gtid_set`, `purge_binlogs`) the utility generates a stable instance identifier and stores it in an `instance_id` file inside this directory; subsequent runs reuse it (a missing or malformed `instance_id` file is regenerated).
 
 #### \<logger\> section
 - `<logger.level>` sets the minimum severity of the log messages that user want to appear in the log output, can be one of the `trace` / `debug` / `info` / `warning` / `error` / `fatal`  (explained below).

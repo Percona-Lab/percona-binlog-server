@@ -24,6 +24,7 @@
 #   --let $binsrv_encryption_cipher = AES-256-CTR (optional)
 #   --let $binsrv_encryption_kek_id = alpha (optional)
 #   --let $binsrv_keyring_data_file_path = $MYSQL_TMP_DIR/keyring_data.json (optional)
+#   --let $binsrv_local_settings_path = /existing/dir (optional, default: $MYSQL_TMP_DIR/binsrv_local_settings)
 #   --source set_up_binsrv_environment.inc
 
 --source ../include/generate_binsrv_config.inc
@@ -51,3 +52,9 @@ if ($storage_backend == s3)
 {
   --mkdir $binsrv_buffer_path
 }
+
+# Create the per-instance local settings directory (where the utility writes
+# its instance_id file). No --echo here on purpose: keeping this silent avoids
+# changing every test's recorded result. tear_down_binsrv_environment.inc
+# removes it so it never lingers in $MYSQL_TMP_DIR.
+--mkdir $binsrv_local_settings_path
