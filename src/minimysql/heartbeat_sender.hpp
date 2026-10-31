@@ -24,11 +24,10 @@
 
 #include <boost/asio/awaitable.hpp>
 
-#include <boost/asio/ts/netfwd.hpp>
-
 #include "binsrv/basic_logger_fwd.hpp"
 
 #include "minimysql/connection_context_fwd.hpp"
+#include "minimysql/session_frame_stream_fwd.hpp"
 
 #include "operations/sender_context_fwd.hpp"
 
@@ -43,12 +42,10 @@ namespace minimysql {
 // elapsed since the last reset. A zero period disables heartbeats entirely.
 class heartbeat_sender {
 public:
-  heartbeat_sender(
-      binsrv::basic_logger_ptr logger, std::chrono::nanoseconds period,
-      std::chrono::seconds write_timeout,
-      boost::asio::basic_stream_socket<boost::asio::ip::tcp> &socket,
-      connection_context &context, operations::sender_context &sender_ctx,
-      std::string_view remote_endpoint);
+  heartbeat_sender(binsrv::basic_logger_ptr logger,
+                   std::chrono::nanoseconds period,
+                   session_frame_stream &stream, connection_context &context,
+                   operations::sender_context &sender_ctx);
 
   [[nodiscard]] bool enabled() const noexcept { return period_.count() > 0; }
 
@@ -70,12 +67,10 @@ public:
 
 private:
   binsrv::basic_logger_ptr logger_;
-  boost::asio::basic_stream_socket<boost::asio::ip::tcp> *socket_;
+  session_frame_stream *stream_;
   connection_context *context_;
   operations::sender_context *sender_ctx_;
-  std::string remote_endpoint_;
   std::chrono::nanoseconds period_;
-  std::chrono::seconds write_timeout_;
   std::chrono::steady_clock::time_point last_reset_{
       std::chrono::steady_clock::now()};
 };

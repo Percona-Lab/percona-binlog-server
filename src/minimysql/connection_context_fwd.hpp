@@ -24,7 +24,7 @@
 
 #include <boost/describe/enum.hpp>
 
-#include "minimysql/network_io_operations_fwd.hpp"
+#include "minimysql/session_frame_stream_fwd.hpp"
 
 namespace minimysql {
 

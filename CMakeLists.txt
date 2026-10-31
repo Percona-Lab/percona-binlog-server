@@ -733,11 +733,13 @@ set(minimysql_source_files
   src/minimysql/heartbeat_sender_fwd.hpp
   src/minimysql/heartbeat_sender.hpp
   src/minimysql/heartbeat_sender.cpp
-  src/minimysql/network_io_operations_fwd.hpp
-  src/minimysql/network_io_operations.hpp
-  src/minimysql/network_io_operations.cpp
+  src/minimysql/session_frame_stream_fwd.hpp
+  src/minimysql/session_frame_stream.hpp
+  src/minimysql/session_frame_stream.cpp
   src/minimysql/network_service.hpp
   src/minimysql/network_service.cpp
+  src/minimysql/upgradable_stream_fwd.hpp
+  src/minimysql/upgradable_stream.hpp
 )
 
 add_executable(binlog_server

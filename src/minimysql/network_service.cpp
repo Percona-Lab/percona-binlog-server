@@ -82,7 +82,7 @@
 #include "minimysql/connection_context.hpp"
 #include "minimysql/handshake_query_patterns.hpp"
 #include "minimysql/heartbeat_sender.hpp"
-#include "minimysql/network_io_operations.hpp"
+#include "minimysql/session_frame_stream.hpp"
 
 #include "opensslpp/evp_pkey.hpp"
 
@@ -336,16 +336,14 @@ void network_service::add_to_auth_cache(const connection_context &context) {
 [[nodiscard]] boost::asio::awaitable<void>
 network_service::handle_binlog_dump_command(
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
-    boost::asio::ip::tcp::socket &socket,
+    session_frame_stream &stream,
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
     connection_context &context, bool session_source_binlog_checksum,
     std::chrono::nanoseconds session_heartbeat_period) {
   static constexpr auto block_size{1048576UZ};
   static constexpr auto blocking_poll_interval{std::chrono::milliseconds{500}};
 
-  const auto remote_endpoint_str{extract_remote_endpoint_str(socket)};
-
-  const std::chrono::seconds write_timeout{get_config().get<"write_timeout">()};
+  const auto &remote_endpoint_str{stream.get_readable_remote_endpoint()};
 
   const bool blocking{!context.check_binlog_non_blocking_dump()};
 
@@ -370,9 +368,8 @@ network_service::handle_binlog_dump_command(
   // Emits HEARTBEAT_LOG_EVENT_V2 while this blocking dump sits idle at EOF, at
   // the cadence the replica requested via SET @{master,source}_heartbeat_period
   // (a zero period disables them).
-  heartbeat_sender heartbeat{
-      logger_,    session_heartbeat_period, write_timeout, socket, context,
-      sender_ctx, remote_endpoint_str};
+  heartbeat_sender heartbeat{logger_, session_heartbeat_period, stream, context,
+                             sender_ctx};
 
   boost::asio::steady_timer idle_timer{
       co_await boost::asio::this_coro::executor};
@@ -390,7 +387,7 @@ network_service::handle_binlog_dump_command(
     }
     const auto event_frame{context.generate_encoded_binlog_event(event_data)};
     print_generic(remote_endpoint_str, context, "binlog event");
-    co_await async_write_mysql_frame(socket, event_frame, write_timeout);
+    co_await stream.async_write_mysql_frame(event_frame);
     logger_->log_format(binsrv::log_severity::debug,
                         "net    : sent server binlog event ({} bytes to {})",
                         std::size(event_frame), remote_endpoint_str);
@@ -399,7 +396,7 @@ network_service::handle_binlog_dump_command(
 
   const auto eof = context.generate_encoded_eof();
   print_generic(remote_endpoint_str, context, "binlog eof");
-  co_await async_write_mysql_frame(socket, eof, write_timeout);
+  co_await stream.async_write_mysql_frame(eof);
   logger_->log_format(binsrv::log_severity::debug,
                       "net    : sent server eof ({} bytes to {})",
                       std::size(eof), remote_endpoint_str);
@@ -408,15 +405,13 @@ network_service::handle_binlog_dump_command(
 [[nodiscard]] boost::asio::awaitable<bool>
 network_service::perform_fast_authentication(
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
-    boost::asio::ip::tcp::socket &socket,
+    session_frame_stream &stream,
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
     connection_context &context) {
   network_buffer_type data;
   data.reserve(network_service::expected_packet_size);
 
-  const auto remote_endpoint_str{extract_remote_endpoint_str(socket)};
-
-  const std::chrono::seconds write_timeout{get_config().get<"write_timeout">()};
+  const auto &remote_endpoint_str{stream.get_readable_remote_endpoint()};
 
   // fast authentication: the scramble received in the client greeting
   // (or in the auth method switch response) is verified directly
@@ -426,7 +421,7 @@ network_service::perform_fast_authentication(
   // sending fast auth success
   const auto fast_auth_success{context.generate_encoded_fast_auth()};
   print_generic(remote_endpoint_str, context, "auth method data (fast auth)");
-  co_await async_write_mysql_frame(socket, fast_auth_success, write_timeout);
+  co_await stream.async_write_mysql_frame(fast_auth_success);
   logger_->log_format(binsrv::log_severity::debug,
                       "net    : sent server fast auth success ({} bytes to {})",
                       std::size(fast_auth_success), remote_endpoint_str);
@@ -437,17 +432,14 @@ network_service::perform_fast_authentication(
 [[nodiscard]] boost::asio::awaitable<void>
 network_service::perform_public_key_dispatch(
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
-    boost::asio::ip::tcp::socket &socket,
+    session_frame_stream &stream,
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
     connection_context &context) {
   assert(is_auth_rsa_key_available());
   network_buffer_type data;
   data.reserve(network_service::expected_packet_size);
 
-  const auto remote_endpoint_str{extract_remote_endpoint_str(socket)};
-
-  const std::chrono::seconds read_timeout{get_config().get<"read_timeout">()};
-  const std::chrono::seconds write_timeout{get_config().get<"write_timeout">()};
+  const auto &remote_endpoint_str{stream.get_readable_remote_endpoint()};
 
   // the client (e.g. 'mysql --get-server-public-key') does not have the
   // server's RSA public key and asks for it - sending it in PEM format,
@@ -458,12 +450,12 @@ network_service::perform_public_key_dispatch(
   const auto public_key{
       context.generate_encoded_public_key(auth_rsa_public_key_pem_)};
   print_generic(remote_endpoint_str, context, "auth method data (public key)");
-  co_await async_write_mysql_frame(socket, public_key, write_timeout);
+  co_await stream.async_write_mysql_frame(public_key);
   logger_->log_format(binsrv::log_severity::debug,
                       "net    : sent server RSA public key ({} bytes to {})",
                       std::size(public_key), remote_endpoint_str);
 
-  co_await async_read_mysql_frame(socket, data, read_timeout);
+  co_await stream.async_read_mysql_frame(data);
   logger_->log_format(binsrv::log_severity::debug,
                       "net    : received client full auth response after "
                       "public key ({} bytes from {})",
@@ -478,29 +470,31 @@ network_service::perform_public_key_dispatch(
 [[nodiscard]] boost::asio::awaitable<bool>
 network_service::perform_full_authentication(
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
-    boost::asio::ip::tcp::socket &socket,
+    session_frame_stream &stream,
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
     connection_context &context) {
   network_buffer_type data;
   data.reserve(network_service::expected_packet_size);
 
-  const auto remote_endpoint_str{extract_remote_endpoint_str(socket)};
-
-  const std::chrono::seconds read_timeout{get_config().get<"read_timeout">()};
-  const std::chrono::seconds write_timeout{get_config().get<"write_timeout">()};
+  const auto &remote_endpoint_str{stream.get_readable_remote_endpoint()};
 
   // full authentication: the client has to send the password itself and,
   // as the connection is not encrypted, the password is expected to be
   // encrypted with the server's RSA public key
   const auto full_auth_required{context.generate_encoded_full_auth()};
   print_generic(remote_endpoint_str, context, "auth method data (full auth)");
-  co_await async_write_mysql_frame(socket, full_auth_required, write_timeout);
+
+  // TODO: re-evaluate this when upgrading to clang-21, clang-22, or clang-23
+
+  // Suppressing a false positive from 'clang-tidy'
+  // NOLINTNEXTLINE(clang-analyzer-core.CallAndMessage)
+  co_await stream.async_write_mysql_frame(full_auth_required);
   logger_->log_format(
       binsrv::log_severity::debug,
       "net    : sent server full auth required ({} bytes to {})",
       std::size(full_auth_required), remote_endpoint_str);
 
-  co_await async_read_mysql_frame(socket, data, read_timeout);
+  co_await stream.async_read_mysql_frame(data);
   logger_->log_format(binsrv::log_severity::debug,
                       "net    : received client full auth response "
                       "({} bytes from {})",
@@ -519,7 +513,7 @@ network_service::perform_full_authentication(
   }
 
   if (context.check_client_requested_public_key()) {
-    co_await perform_public_key_dispatch(socket, context);
+    co_await perform_public_key_dispatch(stream, context);
   }
 
   co_return context.check_client_full_authentication(auth_rsa_private_key_);
@@ -528,16 +522,13 @@ network_service::perform_full_authentication(
 [[nodiscard]] boost::asio::awaitable<bool>
 network_service::perform_connection_packet_exchange(
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
-    boost::asio::ip::tcp::socket &socket,
+    session_frame_stream &stream,
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
     connection_context &context) {
   network_buffer_type data;
   data.reserve(network_service::expected_packet_size);
 
-  const auto remote_endpoint_str{extract_remote_endpoint_str(socket)};
-
-  const std::chrono::seconds read_timeout{get_config().get<"read_timeout">()};
-  const std::chrono::seconds write_timeout{get_config().get<"write_timeout">()};
+  const auto &remote_endpoint_str{stream.get_readable_remote_endpoint()};
 
   // creating and sending server greeting packet:
   //   protocol_version: 10
@@ -551,7 +542,7 @@ network_service::perform_connection_packet_exchange(
 
   const auto server_greeting{context.generate_encoded_server_greeting()};
   print_server_greeting(remote_endpoint_str, context);
-  co_await async_write_mysql_frame(socket, server_greeting, write_timeout);
+  co_await stream.async_write_mysql_frame(server_greeting);
   logger_->log_format(binsrv::log_severity::debug,
                       "net    : sent server greeting ({} bytes to {})",
                       std::size(server_greeting), remote_endpoint_str);
@@ -566,7 +557,7 @@ network_service::perform_connection_packet_exchange(
   //   auth_method_name
   //   attributes
 
-  co_await async_read_mysql_frame(socket, data, read_timeout);
+  co_await stream.async_read_mysql_frame(data);
   logger_->log_format(binsrv::log_severity::debug,
                       "net    : received client greeting ({} bytes from {})",
                       std::size(data), remote_endpoint_str);
@@ -578,7 +569,7 @@ network_service::perform_connection_packet_exchange(
                  "net    : client does not support plugin authentication");
     const auto access_denied{context.generate_encoded_access_denied()};
     print_error(remote_endpoint_str, context, "plugin auth required");
-    co_await async_write_mysql_frame(socket, access_denied, write_timeout);
+    co_await stream.async_write_mysql_frame(access_denied);
     logger_->log_format(binsrv::log_severity::debug,
                         "net    : sent server access denied ({} bytes to {})",
                         std::size(access_denied), remote_endpoint_str);
@@ -596,13 +587,13 @@ network_service::perform_connection_packet_exchange(
     const auto auth_method_switch{
         context.generate_encoded_auth_method_switch()};
     print_generic(remote_endpoint_str, context, "auth method switch");
-    co_await async_write_mysql_frame(socket, auth_method_switch, write_timeout);
+    co_await stream.async_write_mysql_frame(auth_method_switch);
     logger_->log_format(
         binsrv::log_severity::debug,
         "net    : sent server auth method switch ({} bytes to {})",
         std::size(auth_method_switch), remote_endpoint_str);
 
-    co_await async_read_mysql_frame(socket, data, read_timeout);
+    co_await stream.async_read_mysql_frame(data);
     logger_->log_format(binsrv::log_severity::debug,
                         "net    : received client auth method switch response "
                         "({} bytes from {})",
@@ -621,13 +612,13 @@ network_service::perform_connection_packet_exchange(
                         "net    : found {} in the authentication cache, "
                         "performing fast authentication",
                         context.get_client_username());
-    authenticated = co_await perform_fast_authentication(socket, context);
+    authenticated = co_await perform_fast_authentication(stream, context);
   } else {
     logger_->log_format(binsrv::log_severity::info,
                         "net    : {} not found in the authentication cache, "
                         "performing full authentication",
                         context.get_client_username());
-    authenticated = co_await perform_full_authentication(socket, context);
+    authenticated = co_await perform_full_authentication(stream, context);
     if (authenticated) {
       add_to_auth_cache(context);
     }
@@ -639,7 +630,7 @@ network_service::perform_connection_packet_exchange(
                         context.get_client_username());
     const auto access_denied{context.generate_encoded_access_denied()};
     print_error(remote_endpoint_str, context, "auth failure");
-    co_await async_write_mysql_frame(socket, access_denied, write_timeout);
+    co_await stream.async_write_mysql_frame(access_denied);
     logger_->log_format(binsrv::log_severity::debug,
                         "net    : sent server access denied ({} bytes to {})",
                         std::size(access_denied), remote_endpoint_str);
@@ -653,7 +644,7 @@ network_service::perform_connection_packet_exchange(
   // sending server ok after successful authentication
   const auto auth_ok{context.generate_encoded_ok()};
   print_generic(remote_endpoint_str, context, "ok (auth)");
-  co_await async_write_mysql_frame(socket, auth_ok, write_timeout);
+  co_await stream.async_write_mysql_frame(auth_ok);
   logger_->log_format(
       binsrv::log_severity::debug,
       "net    : sent server ok after authentication ({} bytes to {})",
@@ -664,13 +655,10 @@ network_service::perform_connection_packet_exchange(
 // MySQL session handling coroutine - writes server greeting, then receives and
 // parses client greeting
 [[nodiscard]] boost::asio::awaitable<void>
-network_service::session(boost::asio::ip::tcp::socket socket) {
-  const auto remote_endpoint_str{extract_remote_endpoint_str(socket)};
+network_service::session(session_frame_stream stream) {
+  const auto &remote_endpoint_str{stream.get_readable_remote_endpoint()};
 
   const scope_tracer tracer(*logger_, "session " + remote_endpoint_str);
-
-  const std::chrono::seconds read_timeout{get_config().get<"read_timeout">()};
-  const std::chrono::seconds write_timeout{get_config().get<"write_timeout">()};
 
   try {
     network_buffer_type data;
@@ -681,7 +669,7 @@ network_service::session(boost::asio::ip::tcp::socket socket) {
         get_config().get<"authentication">().get<"user">(),
         get_config().get<"authentication">().get<"password">()};
 
-    if (!co_await perform_connection_packet_exchange(socket, context)) {
+    if (!co_await perform_connection_packet_exchange(stream, context)) {
       co_return;
     }
 
@@ -961,7 +949,7 @@ network_service::session(boost::asio::ip::tcp::socket socket) {
     bool terminated{false};
     while (!terminated) {
       context.enter_command_loop_iteration();
-      co_await async_read_mysql_frame(socket, data, read_timeout);
+      co_await stream.async_read_mysql_frame(data);
       logger_->log_format(binsrv::log_severity::debug,
                           "net    : received client command ({} bytes from {})",
                           std::size(data), remote_endpoint_str);
@@ -969,12 +957,11 @@ network_service::session(boost::asio::ip::tcp::socket socket) {
       print_client_command(remote_endpoint_str, context);
 
       switch (context.get_client_mysql_command()) {
-      case minimysql::client_command_type::query: {
+      case client_command_type::query: {
         auto resultset{select_query_resultset(context)};
         if (resultset.has_value()) {
           print_generic(remote_endpoint_str, context, "resultset");
-          co_await minimysql::async_write_mysql_frames(socket, *resultset,
-                                                       write_timeout);
+          co_await stream.async_write_mysql_frames(*resultset);
           logger_->log_format(
               binsrv::log_severity::debug,
               "net    : sent server resultset ({} frames to {})",
@@ -983,7 +970,7 @@ network_service::session(boost::asio::ip::tcp::socket socket) {
           // return 'syntax error' for every other query
           const auto syntax_error = context.generate_encoded_syntax_error();
           print_error(remote_endpoint_str, context, "syntax error");
-          co_await async_write_mysql_frame(socket, syntax_error, write_timeout);
+          co_await stream.async_write_mysql_frame(syntax_error);
           logger_->log_format(
               binsrv::log_severity::debug,
               "net    : sent server syntax error ({} bytes to {})",
@@ -993,13 +980,13 @@ network_service::session(boost::asio::ip::tcp::socket socket) {
       case client_command_type::ping: {
         const auto ok_after_ping{context.generate_encoded_ok()};
         print_generic(remote_endpoint_str, context, "ok (ping success)");
-        co_await async_write_mysql_frame(socket, ok_after_ping, write_timeout);
+        co_await stream.async_write_mysql_frame(ok_after_ping);
         logger_->log_format(
             binsrv::log_severity::debug,
             "net    : sent server ok after ping ({} bytes to {})",
             std::size(ok_after_ping), remote_endpoint_str);
       } break;
-      case minimysql::client_command_type::register_replica: {
+      case client_command_type::register_replica: {
         // Replica identifies itself just before COM_BINLOG_DUMP. The payload
         // (server_id, hostname, port, ...) is useful mainly for SHOW REPLICAS
         // and for detecting multiple replicas sharing the same server_id;
@@ -1013,15 +1000,14 @@ network_service::session(boost::asio::ip::tcp::socket socket) {
         // session in a process-wide table.
         const auto ok_after_register_replica{context.generate_encoded_ok()};
         print_generic(remote_endpoint_str, context, "ok (register replica)");
-        co_await minimysql::async_write_mysql_frame(
-            socket, ok_after_register_replica, write_timeout);
+        co_await stream.async_write_mysql_frame(ok_after_register_replica);
         logger_->log_format(
             binsrv::log_severity::debug,
             "net    : sent server ok after register replica ({} bytes to {})",
             std::size(ok_after_register_replica), remote_endpoint_str);
       } break;
-      case minimysql::client_command_type::binlog_dump:
-      case minimysql::client_command_type::binlog_dump_gtid: {
+      case client_command_type::binlog_dump:
+      case client_command_type::binlog_dump_gtid: {
         // Refuse to dump if the replica never set @source_binlog_checksum.
         // PBS may send events with a CRC32 trailer, and a client that is
         // not checksum-aware cannot parse them.
@@ -1036,8 +1022,7 @@ network_service::session(boost::asio::ip::tcp::socket socket) {
               "HY000")};
           print_error(remote_endpoint_str, context,
                       "missing @source_binlog_checksum declaration");
-          co_await minimysql::async_write_mysql_frame(socket, rejection_packet,
-                                                      write_timeout);
+          co_await stream.async_write_mysql_frame(rejection_packet);
           logger_->log_format(binsrv::log_severity::debug,
                               "net    : sent server error (missing "
                               "@source_binlog_checksum) ({} bytes to {})",
@@ -1045,7 +1030,7 @@ network_service::session(boost::asio::ip::tcp::socket socket) {
           terminated = true;
           break;
         }
-        co_await handle_binlog_dump_command(socket, context,
+        co_await handle_binlog_dump_command(stream, context,
                                             session_source_binlog_checksum,
                                             session_heartbeat_period);
         terminated = true;
@@ -1059,8 +1044,7 @@ network_service::session(boost::asio::ip::tcp::socket socket) {
         const auto unknown_command_error =
             context.generate_encoded_unknown_command();
         print_error(remote_endpoint_str, context, "unknown command");
-        co_await async_write_mysql_frame(socket, unknown_command_error,
-                                         write_timeout);
+        co_await stream.async_write_mysql_frame(unknown_command_error);
         logger_->log_format(
             binsrv::log_severity::debug,
             "net    : sent server unknown command ({} bytes to {})",
@@ -1068,6 +1052,8 @@ network_service::session(boost::asio::ip::tcp::socket socket) {
       }
       }
     }
+
+    co_await stream.async_secure_shutdown();
   } catch (...) {
     handle_exception("session " + remote_endpoint_str);
   }
@@ -1084,8 +1070,9 @@ boost::asio::awaitable<void> network_service::listener() {
   try {
     for (;;) {
       boost::system::error_code listener_ec;
-      boost::asio::ip::tcp::socket socket = co_await acceptor_->async_accept(
-          boost::asio::redirect_error(boost::asio::use_awaitable, listener_ec));
+      boost::asio::ip::tcp::socket socket{
+          co_await acceptor_->async_accept(boost::asio::redirect_error(
+              boost::asio::use_awaitable, listener_ec))};
       if (listener_ec) {
         if (listener_ec != boost::asio::error::operation_aborted &&
             listener_ec != boost::asio::error::bad_descriptor) {
@@ -1096,13 +1083,19 @@ boost::asio::awaitable<void> network_service::listener() {
         break;
       }
 
-      const auto remote_endpoint_str{extract_remote_endpoint_str(socket)};
+      const std::chrono::seconds read_timeout{
+          get_config().get<"read_timeout">()};
+      const std::chrono::seconds write_timeout{
+          get_config().get<"write_timeout">()};
+
+      session_frame_stream stream{std::move(socket), read_timeout,
+                                  write_timeout};
       logger_->log_format(binsrv::log_severity::info,
                           "net    : accepted connection from {}",
-                          remote_endpoint_str);
+                          stream.get_readable_remote_endpoint());
 
       // NOLINTNEXTLINE(misc-include-cleaner)
-      boost::asio::co_spawn(executor, session(std::move(socket)),
+      boost::asio::co_spawn(executor, session(std::move(stream)),
                             boost::asio::detached);
     }
   } catch (...) {
@@ -1186,13 +1179,6 @@ void network_service::initialize_optional_ssl_context() {
         ssl_context_ec, "cannot load SSL/TLS private key");
   }
   ssl_context_.reset(local_ssl_context.release());
-}
-
-[[nodiscard]] std::string network_service::extract_remote_endpoint_str(
-    const boost::asio::ip::tcp::socket &socket) {
-  boost::system::error_code socket_ec;
-  const auto remote_endpoint{socket.remote_endpoint(socket_ec)};
-  return boost::lexical_cast<std::string>(remote_endpoint);
 }
 
 } // namespace minimysql

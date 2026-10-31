@@ -31,7 +31,7 @@
 #include "binsrv/storage_fwd.hpp"
 
 #include "minimysql/connection_context_fwd.hpp"
-#include "minimysql/network_io_operations_fwd.hpp"
+#include "minimysql/session_frame_stream_fwd.hpp"
 
 #include "opensslpp/evp_pkey.hpp"
 
@@ -115,33 +115,30 @@ private:
   check_if_in_auth_cache(const connection_context &context) const noexcept;
   void add_to_auth_cache(const connection_context &context);
 
-  // for the 'socket' we use only the types available in the 'netfwd.hpp'
-  [[nodiscard]] boost::asio::awaitable<void> handle_binlog_dump_command(
-      boost::asio::basic_stream_socket<boost::asio::ip::tcp> &socket,
-      connection_context &context, bool session_source_binlog_checksum,
-      std::chrono::nanoseconds session_heartbeat_period);
+  [[nodiscard]] boost::asio::awaitable<void>
+  handle_binlog_dump_command(session_frame_stream &stream,
+                             connection_context &context,
+                             bool session_source_binlog_checksum,
+                             std::chrono::nanoseconds session_heartbeat_period);
 
-  [[nodiscard]] boost::asio::awaitable<bool> perform_fast_authentication(
-      boost::asio::basic_stream_socket<boost::asio::ip::tcp> &socket,
-      connection_context &context);
-  [[nodiscard]] boost::asio::awaitable<void> perform_public_key_dispatch(
-      boost::asio::basic_stream_socket<boost::asio::ip::tcp> &socket,
-      connection_context &context);
-  [[nodiscard]] boost::asio::awaitable<bool> perform_full_authentication(
-      boost::asio::basic_stream_socket<boost::asio::ip::tcp> &socket,
-      connection_context &context);
-  [[nodiscard]] boost::asio::awaitable<bool> perform_connection_packet_exchange(
-      boost::asio::basic_stream_socket<boost::asio::ip::tcp> &socket,
-      connection_context &context);
+  [[nodiscard]] boost::asio::awaitable<bool>
+  perform_fast_authentication(session_frame_stream &stream,
+                              connection_context &context);
+  [[nodiscard]] boost::asio::awaitable<void>
+  perform_public_key_dispatch(session_frame_stream &stream,
+                              connection_context &context);
+  [[nodiscard]] boost::asio::awaitable<bool>
+  perform_full_authentication(session_frame_stream &stream,
+                              connection_context &context);
+  [[nodiscard]] boost::asio::awaitable<bool>
+  perform_connection_packet_exchange(session_frame_stream &stream,
+                                     connection_context &context);
 
   [[nodiscard]] boost::asio::awaitable<void>
-  session(boost::asio::basic_stream_socket<boost::asio::ip::tcp> socket);
+  session(session_frame_stream stream);
   [[nodiscard]] boost::asio::awaitable<void> listener();
   void load_optional_auth_rsa_private_key();
   void initialize_optional_ssl_context();
-
-  [[nodiscard]] static std::string extract_remote_endpoint_str(
-      const boost::asio::basic_stream_socket<boost::asio::ip::tcp> &socket);
 };
 
 } // namespace minimysql
