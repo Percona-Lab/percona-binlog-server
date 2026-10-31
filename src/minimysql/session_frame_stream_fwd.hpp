@@ -13,9 +13,10 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-#ifndef MINIMYSQL_NETWORK_IO_OPERATIONS_FWD_HPP
-#define MINIMYSQL_NETWORK_IO_OPERATIONS_FWD_HPP
+#ifndef MINIMYSQL_SESSION_FRAME_STREAM_FWD_HPP
+#define MINIMYSQL_SESSION_FRAME_STREAM_FWD_HPP
 
+#include <cstddef>
 #include <string>
 #include <vector>
 
@@ -27,6 +28,8 @@ using network_buffer_container = std::vector<network_buffer_type>;
 inline constexpr std::size_t max_payload_size{
     16UZ * 1024UZ * 1024UZ}; // 16 MiB - MySQL's maximum packet size
 
+class session_frame_stream;
+
 } // namespace minimysql
 
-#endif // MINIMYSQL_NETWORK_IO_OPERATIONS_FWD_HPP
+#endif // MINIMYSQL_SESSION_FRAME_STREAM_FWD_HPP

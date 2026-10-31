@@ -25,7 +25,7 @@
 #include <string>
 #include <string_view>
 
-#include "minimysql/network_io_operations_fwd.hpp"
+#include "minimysql/session_frame_stream_fwd.hpp"
 
 #include "opensslpp/evp_pkey_fwd.hpp"
 

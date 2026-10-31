@@ -23,13 +23,11 @@
 
 #include <boost/asio/awaitable.hpp>
 
-#include <boost/asio/ip/tcp.hpp>
-
 #include "binsrv/basic_logger.hpp"
 #include "binsrv/log_severity.hpp"
 
 #include "minimysql/connection_context.hpp"
-#include "minimysql/network_io_operations.hpp"
+#include "minimysql/session_frame_stream.hpp"
 
 #include "operations/sender_context.hpp"
 
@@ -39,14 +37,11 @@ namespace minimysql {
 
 heartbeat_sender::heartbeat_sender(binsrv::basic_logger_ptr logger,
                                    std::chrono::nanoseconds period,
-                                   std::chrono::seconds write_timeout,
-                                   boost::asio::ip::tcp::socket &socket,
+                                   session_frame_stream &stream,
                                    connection_context &context,
-                                   operations::sender_context &sender_ctx,
-                                   std::string_view remote_endpoint)
-    : logger_{std::move(logger)}, socket_{&socket}, context_{&context},
-      sender_ctx_{&sender_ctx}, remote_endpoint_{remote_endpoint},
-      period_{period}, write_timeout_{write_timeout} {}
+                                   operations::sender_context &sender_ctx)
+    : logger_{std::move(logger)}, stream_{&stream}, context_{&context},
+      sender_ctx_{&sender_ctx}, period_{period} {}
 
 void heartbeat_sender::reset() noexcept {
   if (!enabled()) {
@@ -81,6 +76,7 @@ boost::asio::awaitable<void> heartbeat_sender::send_if_due() {
     co_return;
   }
 
+  const auto &remote_endpoint_str{stream_->get_readable_remote_endpoint()};
   util::const_byte_span heartbeat_data{};
   if (!sender_ctx_->generate_heartbeat(heartbeat_data)) {
     // the stream has not reached a point inside a binlog file where a heartbeat
@@ -90,7 +86,7 @@ boost::asio::awaitable<void> heartbeat_sender::send_if_due() {
     logger_->log_format(binsrv::log_severity::debug,
                         "net    : heartbeat due but stream not yet positioned "
                         "in a binlog file, skipping for {}",
-                        remote_endpoint_);
+                        remote_endpoint_str);
     reset();
     co_return;
   }
@@ -98,11 +94,11 @@ boost::asio::awaitable<void> heartbeat_sender::send_if_due() {
       context_->generate_encoded_binlog_event(heartbeat_data)};
   logger_->log_format(binsrv::log_severity::info,
                       "net    : generated heartbeat event packet for {}",
-                      remote_endpoint_);
-  co_await async_write_mysql_frame(*socket_, heartbeat_frame, write_timeout_);
+                      remote_endpoint_str);
+  co_await stream_->async_write_mysql_frame(heartbeat_frame);
   logger_->log_format(binsrv::log_severity::debug,
                       "net    : sent server heartbeat event ({} bytes to {})",
-                      std::size(heartbeat_frame), remote_endpoint_);
+                      std::size(heartbeat_frame), remote_endpoint_str);
   reset();
 }
 
