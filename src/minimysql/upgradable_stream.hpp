@@ -93,6 +93,9 @@ public:
     return get_underlying_stream().get_executor();
   }
 
+  // TODO: rework this method to provide "strong exception safety" guarantee
+  //       the type of the variant must be changed only the upgrades succeeds
+
   // asynchronously upgrade the stream to a secure SSL/TLS connection
   template <boost::asio::completion_token_for<void(boost::system::error_code)>
                 HandshakeToken =
@@ -130,6 +133,14 @@ public:
     return secure_stream->async_shutdown(std::forward<ShutdownToken>(token));
   }
 
+  // TODO: rework this method with boost::asio::async_initiate to support
+  //       all types of completion tokens - currently std::visit works only
+  //       for a subset of completion tokens when
+  //       secure_stream_type::async_write_some() and
+  //       underlying_stream_type::async_write_some() return the same value
+  //       type
+
+  // asynchronously write data to the stream, whether it is secure or plain
   template <typename ConstBufferSequence,
             boost::asio::completion_token_for<void(boost::system::error_code,
                                                    std::size_t)>
@@ -147,6 +158,14 @@ public:
         stream_);
   }
 
+  // TODO: rework this method with boost::asio::async_initiate to support
+  //       all types of completion tokens - currently std::visit works only
+  //       for a subset of completion tokens when
+  //       secure_stream_type::async_read_some() and
+  //       underlying_stream_type::async_read_some() return the same value
+  //       type
+
+  // asynchronously read data from the stream, whether it is secure or plain
   template <typename MutableBufferSequence,
             boost::asio::completion_token_for<void(boost::system::error_code,
                                                    std::size_t)>

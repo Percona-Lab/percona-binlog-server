@@ -130,30 +130,32 @@ boost::asio::awaitable<void> session_frame_stream::async_upgrade_to_secure(
 }
 
 boost::asio::awaitable<void> session_frame_stream::async_secure_shutdown() {
-  if (stream_.is_secure()) {
-    using namespace boost::asio::experimental::awaitable_operators;
+  if (!stream_.is_secure()) {
+    co_return;
+  }
 
-    // as this is a handshake operation (send and receive), we sum up the read
-    // and write timeouts here
-    const timer_guard shutdown_guard{timer_, read_timeout_ + write_timeout_};
-    // timed_shutdown_result is a variant of 2 results (one form async shutdown,
-    // one from timer)
-    auto timed_shutdown_result{co_await (
-        stream_.async_secure_shutdown(
-            boost::asio::as_tuple(boost::asio::use_awaitable)) ||
-        timer_.async_wait(boost::asio::as_tuple(boost::asio::use_awaitable)))};
+  using namespace boost::asio::experimental::awaitable_operators;
 
-    if (timed_shutdown_result.index() != 0UZ) {
-      util::exception_location().raise<boost::system::system_error>(
-          boost::asio::error::timed_out, "secure shutdown timeout");
-    }
+  // as this is a handshake operation (send and receive), we sum up the read
+  // and write timeouts here
+  const timer_guard shutdown_guard{timer_, read_timeout_ + write_timeout_};
+  // timed_shutdown_result is a variant of 2 results (one form async shutdown,
+  // one from timer)
+  auto timed_shutdown_result{co_await (
+      stream_.async_secure_shutdown(
+          boost::asio::as_tuple(boost::asio::use_awaitable)) ||
+      timer_.async_wait(boost::asio::as_tuple(boost::asio::use_awaitable)))};
 
-    const auto &shutdown_result{std::get<0UZ>(timed_shutdown_result)};
-    const auto shutdown_error_code{std::get<0UZ>(shutdown_result)};
-    if (shutdown_error_code) {
-      util::exception_location().raise<boost::system::system_error>(
-          shutdown_error_code, "secure shutdown error");
-    }
+  if (timed_shutdown_result.index() != 0UZ) {
+    util::exception_location().raise<boost::system::system_error>(
+        boost::asio::error::timed_out, "secure shutdown timeout");
+  }
+
+  const auto &shutdown_result{std::get<0UZ>(timed_shutdown_result)};
+  const auto shutdown_error_code{std::get<0UZ>(shutdown_result)};
+  if (shutdown_error_code) {
+    util::exception_location().raise<boost::system::system_error>(
+        shutdown_error_code, "secure shutdown error");
   }
 }
 

@@ -14,6 +14,26 @@ eval $stmt_reset_binary_logs_and_gtids;
 # identifying backend storage type ('file' or 's3')
 --source ../include/identify_storage_backend.inc
 
+# identifying client SSL mode from the combination
+--let $extracted_init_connect_variable_name = binsrv_client_ssl_mode
+--source ../include/extract_init_connect_variable_value.inc
+--let $mysql_client_ssl_mode = $extracted_init_connect_variable_value
+--let $enable_ssl_in_replication_source = 1
+if ($extracted_init_connect_variable_value == "DISABLED")
+{
+  --let $enable_ssl_in_replication_source = 0
+}
+if ($extracted_init_connect_variable_value == "PREFERRED_SECURE")
+{
+  --let $mysql_client_ssl_mode = PREFERRED
+}
+if ($extracted_init_connect_variable_value == "PREFERRED_INSECURE")
+{
+  --let $mysql_client_ssl_mode = PREFERRED
+  --let $enable_ssl_in_replication_source = 0
+}
+
+
 # creating data directory, configuration file, etc.
 --let $binsrv_connect_timeout = 10
 --let $binsrv_read_timeout = 10
@@ -21,6 +41,10 @@ eval $stmt_reset_binary_logs_and_gtids;
 --let $binsrv_verify_checksum = TRUE
 --let $binsrv_replication_mode = position
 --source ../include/set_up_auth_rsa_keys.inc
+if ($enable_ssl_in_replication_source)
+{
+  --source ../include/set_up_rs_certs_and_keys.inc
+}
 --source ../include/set_up_binsrv_environment.inc
 
 # SELECT VERSION() is one of the queries the Binlog Server's command loop
@@ -75,24 +99,38 @@ INSERT INTO auth_combinations(id, state, user, password, key_option, plugin)
 
 --echo
 --echo *** Marking the combinations expected to succeed.
-# fresh state: full authentication is required, so the client must send the
-# password itself, which (as the connection is not encrypted) is possible
-# only if the client has the server's RSA public key (either via
-# --server-public-key-path or --get-server-public-key) - the plugin does
-# not matter as after the AuthMethodSwitch the client uses
-# caching_sha2_password anyway
-UPDATE auth_combinations SET expected_result = TRUE
-  WHERE state = 'fresh' AND user = 'valid' AND password = 'valid' AND
-        key_option IN ('path', 'get');
+
+--disable_query_log
+if (!$enable_ssl_in_replication_source)
+{
+  # fresh state (plain): full authentication is required, so the client must
+  # send the password itself, which (as the connection is not encrypted) is
+  # possible only if the client has the server's RSA public key (either via
+  # --server-public-key-path or --get-server-public-key) - the plugin does
+  # not matter as after the AuthMethodSwitch the client uses
+  # caching_sha2_password anyway
+  UPDATE auth_combinations SET expected_result = TRUE
+    WHERE state = 'fresh' AND user = 'valid' AND password = 'valid' AND
+          key_option IN ('path', 'get');
+}
+if ($enable_ssl_in_replication_source)
+{
+  # fresh state (SSL / TLS): the only requirement is a valid user / password
+  # pair
+  UPDATE auth_combinations SET expected_result = TRUE
+    WHERE state = 'fresh' AND user = 'valid' AND password = 'valid';
+}
+
 # authenticated state: the user is in the authentication cache, so the
 # scramble is verified directly (fast authentication) and no RSA public key
 # is needed - the plugin does not matter for the same reason as above
 UPDATE auth_combinations SET expected_result = TRUE
   WHERE state = 'authenticated' AND user = 'valid' AND password = 'valid';
+--enable_query_log
 
 --echo
 --echo *** Printing the full list of combinations.
-SELECT * FROM auth_combinations ORDER BY id;
+SELECT id, state, user, password, key_option, plugin FROM auth_combinations ORDER BY id;
 
 # a combination used to populate the authentication cache before executing
 # 'authenticated' state combinations

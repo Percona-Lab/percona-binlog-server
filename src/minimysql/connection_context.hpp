@@ -58,11 +58,19 @@ public:
   [[nodiscard]] const std::string &get_server_password() const noexcept {
     return server_password_;
   }
+
+  [[nodiscard]] bool is_transport_secure() const noexcept {
+    return secure_transport_;
+  }
+  void mark_transport_secure() noexcept { secure_transport_ = true; }
+
   [[nodiscard]] bool check_client_fast_authentication() const;
   // 'private_key' is used to decrypt the password the client sent in response
   // to the "perform full authentication" packet
-  [[nodiscard]] bool check_client_full_authentication(
+  [[nodiscard]] bool check_client_full_authentication_rsa(
       const opensslpp::evp_pkey &private_key) const;
+  // in secure connection the password is sent in plain
+  [[nodiscard]] bool check_client_full_authentication_plain() const;
   // returns true if the client responded to the "perform full authentication"
   // packet with a request for the server's RSA public key
   [[nodiscard]] bool check_client_requested_public_key() const noexcept;
@@ -86,6 +94,9 @@ public:
   [[nodiscard]] capability_bitset get_shared_capabilities() const noexcept {
     return client_capabilities_ & server_capabilities_;
   }
+
+  [[nodiscard]] bool check_client_ssl_requested() const;
+
   [[nodiscard]] bool check_shared_plugin_auth_supported() const;
   [[nodiscard]] bool
   check_shared_text_result_with_session_tracking_supported() const;
@@ -234,6 +245,8 @@ private:
 
   std::uint32_t connection_id_;
   std::uint8_t sequence_number_{0U};
+
+  bool secure_transport_{false};
 
   capability_bitset server_capabilities_{};
   capability_bitset client_capabilities_{};
