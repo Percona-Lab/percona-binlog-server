@@ -1,0 +1,17 @@
+[ssl_disabled]
+init-connect = SET @binsrv_client_ssl_mode = 'DISABLED'
+
+[ssl_preferred_secure]
+init-connect = SET @binsrv_client_ssl_mode = 'PREFERRED_SECURE'
+
+[ssl_preferred_insecure]
+init-connect = SET @binsrv_client_ssl_mode = 'PREFERRED_INSECURE'
+
+[ssl_required]
+init-connect = SET @binsrv_client_ssl_mode = 'REQUIRED'
+
+[ssl_verify_ca]
+init-connect = SET @binsrv_client_ssl_mode = 'VERIFY_CA'
+
+[ssl_verify_identity]
+init-connect = SET @binsrv_client_ssl_mode = 'VERIFY_IDENTITY'

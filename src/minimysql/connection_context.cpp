@@ -124,7 +124,7 @@ connection_context::check_client_fast_authentication() const {
                                 get_server_auth_method_data()));
 }
 
-[[nodiscard]] bool connection_context::check_client_full_authentication(
+[[nodiscard]] bool connection_context::check_client_full_authentication_rsa(
     const opensslpp::evp_pkey &private_key) const {
   assert(!private_key.is_empty());
   if (get_client_username() != get_server_username()) {
@@ -144,11 +144,35 @@ connection_context::check_client_fast_authentication() const {
 }
 
 [[nodiscard]] bool
+connection_context::check_client_full_authentication_plain() const {
+  if (get_client_username() != get_server_username()) {
+    return false;
+  }
+  const util::const_byte_span client_data_span{get_client_auth_method_data()};
+  const auto client_data_span_size{std::size(client_data_span)};
+  if (client_data_span_size == 0UZ) {
+    return false;
+  }
+  // the last byte of the client data must be zero
+  if (client_data_span.back() != std::byte{}) {
+    return false;
+  }
+
+  return util::as_string_view(client_data_span.first(
+             client_data_span_size - 1UZ)) == get_server_password();
+}
+
+[[nodiscard]] bool
 connection_context::check_client_requested_public_key() const noexcept {
   // 0x02 means "request public key" in caching_sha2_password protocol
   static constexpr std::byte request_public_key_code{0x02U};
   const auto &data{get_client_auth_method_data()};
   return std::size(data) == 1UZ && data.front() == request_public_key_code;
+}
+
+[[nodiscard]] bool connection_context::check_client_ssl_requested() const {
+  return get_client_capabilities().test(
+      classic_protocol::capabilities::pos::ssl);
 }
 
 [[nodiscard]] bool

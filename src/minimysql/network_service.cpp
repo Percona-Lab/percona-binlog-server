@@ -65,6 +65,7 @@
 #include <boost/asio/ip/tcp.hpp>
 
 #include <boost/asio/ssl/context.hpp>
+#include <boost/asio/ssl/stream_base.hpp>
 
 #include <boost/describe/enum_to_string.hpp>
 
@@ -478,13 +479,14 @@ network_service::perform_full_authentication(
 
   const auto &remote_endpoint_str{stream.get_readable_remote_endpoint()};
 
-  // full authentication: the client has to send the password itself and,
-  // as the connection is not encrypted, the password is expected to be
-  // encrypted with the server's RSA public key
+  // full authentication: the client has to send the password itself -
+  // encrypted with auth plugin RSA key over unencrypted connection or
+  // sent in plain text over secure transport (SSL/TLS)
   const auto full_auth_required{context.generate_encoded_full_auth()};
   print_generic(remote_endpoint_str, context, "auth method data (full auth)");
 
-  // TODO: re-evaluate this when upgrading to clang-21, clang-22, or clang-23
+  // TODO: re-evaluate this suppression when upgrading clang-tidy to a
+  //       version > 20
 
   // Suppressing a false positive from 'clang-tidy'
   // NOLINTNEXTLINE(clang-analyzer-core.CallAndMessage)
@@ -501,6 +503,12 @@ network_service::perform_full_authentication(
                       std::size(data), remote_endpoint_str);
   context.parse_client_full_auth_response(data);
 
+  // early return for the secure transport branch (SSL/TLS)
+  // in this case client should never send "get public key" request
+  if (context.is_transport_secure()) {
+    co_return context.check_client_full_authentication_plain();
+  }
+
   // just like MySQL Server, checking for the RSA key availability before
   // checking performing full authentication (including the public key
   // request part)
@@ -516,7 +524,7 @@ network_service::perform_full_authentication(
     co_await perform_public_key_dispatch(stream, context);
   }
 
-  co_return context.check_client_full_authentication(auth_rsa_private_key_);
+  co_return context.check_client_full_authentication_rsa(auth_rsa_private_key_);
 }
 
 [[nodiscard]] boost::asio::awaitable<bool>
@@ -564,6 +572,44 @@ network_service::perform_connection_packet_exchange(
   context.parse_client_greeting(data);
   print_client_greeting(remote_endpoint_str, context);
 
+  if (context.check_client_ssl_requested()) {
+    // if 'ssl' flag is set in the client capabilities, this client greeting
+    // packet is a client SSL request packet
+    if (!context.is_ssl_tls_available()) {
+      // client sent SSL request although server did not advertise SSL/TLS
+      // support
+      logger_->log(binsrv::log_severity::error,
+                   "net    : client requested SSL/TLS whereas server did not "
+                   "advertise support for it");
+      co_return false;
+    }
+    logger_->log(
+        binsrv::log_severity::info,
+        "net    : client requested SSL/TLS - upgrading to secure connection");
+    auto *ssl_context{impl_helper::deimpl(ssl_context_)};
+    assert(ssl_context != nullptr);
+    co_await stream.async_upgrade_to_secure(
+        *ssl_context, boost::asio::ssl::stream_base::handshake_type::server);
+    context.mark_transport_secure();
+
+    co_await stream.async_read_mysql_frame(data);
+    logger_->log_format(binsrv::log_severity::debug,
+                        "net    : received actual client greeting after "
+                        "SSL/TLS upgrade({} bytes from {})",
+                        std::size(data), remote_endpoint_str);
+    context.parse_client_greeting(data);
+    print_client_greeting(remote_endpoint_str, context);
+  } else {
+    const bool require_secure_transport{
+        get_config().get<"require_secure_transport">()};
+    if (require_secure_transport) {
+      logger_->log(binsrv::log_severity::error,
+                   "net    : client did not request SSL/TLS whereas server "
+                   "requires secure transport");
+      co_return false;
+    }
+  }
+
   if (!context.check_shared_plugin_auth_supported()) {
     logger_->log(binsrv::log_severity::warning,
                  "net    : client does not support plugin authentication");
@@ -579,8 +625,8 @@ network_service::perform_connection_packet_exchange(
   if (context.get_client_auth_method() != context.get_server_auth_method()) {
     logger_->log_format(binsrv::log_severity::info,
                         "net    : client requested {} authentication that does "
-                        "not match the one "
-                        "associated with the user account ({})",
+                        "not match the one associated with the user account "
+                        "({})",
                         context.get_client_auth_method(),
                         context.get_server_auth_method());
 
@@ -1053,7 +1099,13 @@ network_service::session(session_frame_stream stream) {
       }
     }
 
-    co_await stream.async_secure_shutdown();
+    // often clients do not properly handle SSL shutdown and simply
+    // close the connection - so, here we are doing best effort SSL
+    // shutdown and not polluting the logs with errors if it fails
+    try {
+      co_await stream.async_secure_shutdown();
+    } catch (...) { // NOLINT(bugprone-empty-catch)
+    }
   } catch (...) {
     handle_exception("session " + remote_endpoint_str);
   }

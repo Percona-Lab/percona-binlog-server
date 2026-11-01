@@ -18,6 +18,12 @@
 #     Common part of the 'mysql' client command line (host, port).
 #   $probe_query
 #     A query to execute after successful authentication.
+#   $mysql_client_ssl_mode
+#     SSL mode to use for the 'mysql' client
+#     (e.g., DISABLED, PREFERRED, REQUIRED, VERIFY_CA, VERIFY_IDENTITY).
+#   $binsrv_source_ssl_ca_cert
+#     Path to the source SSL CA certificate file
+#     (needed only when $mysql_client_ssl_mode is either VERIFY_CA or VERIFY_IDENTITY)
 #   $binsrv_auth_user
 #     Valid user name.
 #   $binsrv_auth_password
@@ -33,6 +39,12 @@ if (!$combinations_condition)
   --die ERROR IN TEST: 'combinations_condition' parameter not specified
 }
 
+--let $client_ssl_options = --ssl-mode=$mysql_client_ssl_mode
+if (`SELECT '$mysql_client_ssl_mode' IN ('VERIFY_CA', 'VERIFY_IDENTITY')`)
+{
+  --let $client_ssl_options = $client_ssl_options --ssl-ca=$binsrv_source_ssl_ca_cert
+}
+
 --let $combination_count = `SELECT COUNT(*) FROM auth_combinations WHERE $combinations_condition`
 --let $combination_index = 0
 while ($combination_index < $combination_count)
@@ -46,24 +58,8 @@ while ($combination_index < $combination_count)
 
   --disable_query_log
   eval SELECT
-      CONCAT(
-        '#', id, ' ', state,
-        ': user=', user,
-        ', password=', password,
-        ', key_option=', key_option,
-        ', plugin=', plugin,
-        ' -> ', IF(expected_result, 'success', 'failure')
-      ) INTO @combination_description
-    FROM auth_combinations
-    WHERE id = $combination_id;
-  --enable_query_log
-  --let $combination_description = `SELECT @combination_description`
-  --echo *** $combination_description
-
-  --disable_query_log
-  eval SELECT
       CONCAT_WS(' ',
-        '--ssl-mode=DISABLED',
+        '$client_ssl_options',
         CASE user WHEN 'valid' THEN '--user=$binsrv_auth_user' ELSE '--user=wrong_$binsrv_auth_user' END,
         CASE password WHEN 'valid' THEN '--password=$binsrv_auth_password' WHEN 'invalid' THEN '--password=wrong_$binsrv_auth_password' ELSE '--password=' END,
         CASE key_option WHEN 'path' THEN '--server-public-key-path=$binsrv_auth_rsa_public_key' WHEN 'get' THEN '--get-server-public-key' ELSE '' END,
