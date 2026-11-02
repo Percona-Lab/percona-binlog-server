@@ -1,0 +1,29 @@
+*** Setting up the Binlog Server utility environment with telemetry
+*** pointed at a directory that does not exist, so that every report
+*** write fails.
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+
+*** Starting Binlog Server Utility in background in pull mode.
+
+*** Waiting until the utility logs the telemetry write failure.
+include/wait_for_pattern_in_file.inc [telemetry: report write failed]
+
+*** The utility must still be running despite the telemetry write failure.
+
+*** Sending SIGTERM signal to the Binlog Server Utility and waiting for
+*** the process to terminate.
+
+*** Cleaning up.
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.

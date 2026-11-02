@@ -1,0 +1,27 @@
+*** Setting up the Binlog Server utility environment with telemetry
+*** explicitly disabled and a short grace interval.
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+
+*** Starting Binlog Server Utility in background in pull mode.
+
+*** Waiting well past the grace interval, then confirming that no
+*** telemetry report was written.
+include/read_file_to_var.inc
+
+*** Sending SIGTERM signal to the Binlog Server Utility and waiting for
+*** the process to terminate.
+
+*** Cleaning up.
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.

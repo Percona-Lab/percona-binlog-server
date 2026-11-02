@@ -1,0 +1,33 @@
+*** Setting up the Binlog Server utility environment with telemetry
+*** enabled and a short grace interval.
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+
+*** Planting two report files from another instance: a stale one (older
+*** than the fixed upper-bound cleanup horizon of 7 days) and a recent
+*** one. The utility must remove the stale file and keep the recent one.
+
+*** Starting Binlog Server Utility in background in pull mode.
+
+*** Waiting until the utility reports a written report, which happens
+*** after the pre-write cleanup has run.
+include/wait_for_pattern_in_file.inc [telemetry: wrote report]
+
+*** The stale foreign report must be gone and the recent one kept.
+
+*** Sending SIGTERM signal to the Binlog Server Utility and waiting for
+*** the process to terminate.
+
+*** Cleaning up.
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.
