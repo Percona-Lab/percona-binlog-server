@@ -550,6 +550,9 @@ The Percona Binary Log Server configuration file has the following format.
       "kek_id": "alpha",
       "cipher": "AES-256-CTR"
     }
+  },
+  "telemetry": {
+    "enabled": true
   }
 }
 ```
@@ -751,6 +754,12 @@ Keyring JSON file should represent a top-level JSON object with the following ke
 
 Make sure that the mode of the `cipher` is one of the `ECB`, `CBC`, `CTR`, or `GCM`. Also, make sure that the key size identified from the cipher name matches the actual `data_hex` length (for instance, for `AES-256-GCM`, the key length should be `256` bits, meaning `32` bytes, meaning `64` hexadecimal characters).
 As for the `algoritm` part of the cipher name, PBS has been tested with `AES`, `AREA`, and `CAMELLIA`. However, other algorithms be supported as well.
+
+#### \<telemetry\> optional section
+This optional section controls Percona telemetry reporting. When the section is omitted, telemetry is enabled. Telemetry is only produced in `pull` mode, which is the long-running one; the other modes never write telemetry. A write failure (for example, a missing or non-writable directory) is logged as a warning and never affects replication.
+- `<telemetry.enabled>` - whether telemetry is produced (default `true`). Set to `false` to disable it.
+
+Each report is a small JSON file containing the two mandatory fields `db_instance_id` (the stable instance identifier from `<instance.local_settings_path>`) and `pillar_version` (the PBS version), plus `uptime` (the number of whole seconds since PBS started).
 
 ### Resuming previous operation
 

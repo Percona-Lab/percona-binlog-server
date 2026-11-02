@@ -693,6 +693,14 @@ set(binsrv_source_files
   src/binsrv/storage_config.hpp
   src/binsrv/storage_config.cpp
 
+  src/binsrv/telemetry_config_fwd.hpp
+  src/binsrv/telemetry_config.hpp
+  src/binsrv/telemetry_config.cpp
+
+  src/binsrv/telemetry_fwd.hpp
+  src/binsrv/telemetry.hpp
+  src/binsrv/telemetry.cpp
+
   src/binsrv/storage_metadata_fwd.hpp
   src/binsrv/storage_metadata.hpp
   src/binsrv/storage_metadata.cpp

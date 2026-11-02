@@ -71,5 +71,8 @@
       "kek_id": "alpha",
       "cipher": "AES-256-CTR"
     }
+  },
+  "telemetry": {
+    "enabled": true
   }
 }
