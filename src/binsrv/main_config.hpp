@@ -26,6 +26,7 @@
 #include "binsrv/replication_config.hpp"        // IWYU pragma: export
 #include "binsrv/replication_source_config.hpp" // IWYU pragma: export
 #include "binsrv/storage_config.hpp"            // IWYU pragma: export
+#include "binsrv/telemetry_config.hpp"          // IWYU pragma: export
 
 #include "easymysql/connection_config.hpp" // IWYU pragma: export
 
@@ -43,7 +44,8 @@ private:
       util::nv<"replication"       , binsrv::replication_config>,
       util::nv<"replication_source", binsrv::replication_source_config>,
       util::nv<"keyring"           , optional_keyring_config>,
-      util::nv<"storage"           , storage_config>
+      util::nv<"storage"           , storage_config>,
+      util::nv<"telemetry"         , optional_telemetry_config>
       // clang-format on
       >;
 

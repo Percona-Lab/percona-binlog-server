@@ -37,6 +37,7 @@
 #include "binsrv/main_config.hpp"
 #include "binsrv/storage.hpp"
 #include "binsrv/storage_core_fwd.hpp"
+#include "binsrv/telemetry.hpp"
 
 #include "easymysql/connection_fwd.hpp"
 
@@ -116,6 +117,8 @@ generic_operation<mode_type::pull>::generic_operation(
 
     const minimysql::network_service service(
         logger, io_ctx, storage, config->root().get<"replication_source">());
+
+    const auto telemetry{binsrv::telemetry::start(io_ctx, logger, *config)};
 
     const auto idle_time_seconds{
         config->root().get<"replication">().get<"idle_time">()};

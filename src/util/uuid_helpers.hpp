@@ -18,9 +18,20 @@
 
 #include <cctype>
 #include <cstddef>
+#include <string>
 #include <string_view>
 
+#include <boost/uuid/random_generator.hpp>
+#include <boost/uuid/uuid_io.hpp>
+
 namespace util {
+
+// Generates a fresh random (version 4) UUID in the canonical 8-4-4-4-12 hex
+// form, the same representation accepted by is_canonical_uuid below.
+[[nodiscard]] inline std::string generate_canonical_uuid() {
+  boost::uuids::random_generator generator;
+  return boost::uuids::to_string(generator());
+}
 
 // Checks the canonical 8-4-4-4-12 hex shape with '-' separators (36 chars),
 // matching @@GLOBAL.SERVER_UUID and the output of boost::uuids::to_string.

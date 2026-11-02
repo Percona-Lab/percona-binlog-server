@@ -25,9 +25,6 @@
 
 #include <boost/algorithm/string/trim.hpp>
 
-#include <boost/uuid/random_generator.hpp>
-#include <boost/uuid/uuid_io.hpp>
-
 #include "util/byte_span.hpp"
 #include "util/exception_location_helpers.hpp"
 #include "util/file_operations_helpers.hpp"
@@ -66,11 +63,6 @@ read_existing_instance_id(const std::filesystem::path &instance_id_path) {
   return {};
 }
 
-[[nodiscard]] std::string generate_instance_id() {
-  boost::uuids::random_generator generator;
-  return boost::uuids::to_string(generator());
-}
-
 void persist_instance_id(const std::filesystem::path &instance_id_path,
                          const std::string &instance_id) {
   // Standard write-temp-then-rename idiom (same as the filesystem storage
@@ -107,7 +99,7 @@ load_or_create_instance_id(const std::filesystem::path &local_settings_path) {
     return existing;
   }
 
-  auto generated{generate_instance_id()};
+  auto generated{util::generate_canonical_uuid()};
   persist_instance_id(instance_id_path, generated);
   return generated;
 }
