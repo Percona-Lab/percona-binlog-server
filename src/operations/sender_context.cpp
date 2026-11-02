@@ -73,33 +73,62 @@ sender_context::~sender_context() = default;
 sender_context::get_event(util::const_byte_span &event) {
   // resolving real binlog name
   if (current_binlog_name_.is_empty()) {
-    // in GTID-based replication mode we need to perform binlog
-    // auto-selection based on the provided GTID set
+    const auto gtid_mode{construction_replication_mode_ ==
+                         binsrv::replication_mode_type::gtid};
+    if (gtid_mode) {
+      // in GTID-based replication mode we need to perform binlog
+      // auto-positioning based on the provided GTID set
+      current_binlog_name_ =
+          storage_->get_auto_positioning_binlog_name(construction_gtids_);
 
-    // here we also need to make sure that the specified GTID set is a
-    // subset of what is already present in the storage
+      // TODO: Case A - the replica has more GTIDs than the source
 
-    // This is what Server reports in such a case.
+      // Condition: the client's GTID set includes GTIDs with the source's
+      // own server_uuid that the source hasn't executed (and isn't
+      // currently executing). Only the source's UUID is checked.
+      // The replica having extra GTIDs from other UUIDs is allowed.
 
-    // Replica has more GTIDs than the source has, using the source's
-    // SERVER_UUID. This may indicate that the the last binary log file was
-    // truncated or lost, e.g., after a power failure when sync_binlog != 1.
-    // The source may have rolled back transactions that were already
-    // replicated to the replica. Replicate any transactions that source has
-    // rolled back from replica to source, and/or commit empty transactions
-    // on source to account for transactions that have been committed on
-    // source but are not included in GTID_EXECUTED
+      // Message (ER_REPLICA_HAS_MORE_GTIDS_THAN_SOURCE, quoted as-is,
+      // including the "the the" typo):
 
-    // TODO: implement GTID-based binlog auto-selection logic here
+      // Replica has more GTIDs than the source has, using the source's
+      // SERVER_UUID. This may indicate that the the last binary log file
+      // was truncated or lost, e.g., after a power failure when
+      // sync_binlog != 1. The source may have rolled back transactions
+      // that were already replicated to the replica. Replicate any
+      // transactions that source has rolled back from replica to source,
+      // and/or commit empty transactions on source to account for
+      // transactions that have been committed on source but are not
+      // included in GTID_EXECUTED.
 
-    // TODO: ensure that client doesn't have more GTIDs that we have in the
-    //       storage - purged binlog files affect this check
-    //       see 'find_first_log_not_in_gtid_set()' implementation in the
-    //       MySQL Server code
+      // For PBS, we will need to decide which UUID counts as
+      // "the source's own": the upstream server's UUID in pass-through
+      // mode, or the configured one in rewrite mode.
 
-    // currently binlog auto-selection always starts from the first available
-    // binlog in storage
-    current_binlog_name_ = storage_->get_next_binlog_name(current_binlog_name_);
+      // TODO: Case B - the source has purged GTIDs the replica still
+      //       needs
+
+      // Condition: the source's purged set (gtid_purged) is not a subset
+      // of the client's GTID set. A later check reports the same error:
+      // find_first_log_not_in_gtid_set() fails when no binlog's
+      // Previous_gtids is a subset of the client's set (for example,
+      // after binlogs were deleted by hand).
+
+      // Message: the ER_SOURCE_HAS_PURGED_REQUIRED_GTIDS template, with
+      // %s filled in:
+
+      // Cannot replicate because the source purged required binary logs.
+      // Replicate the missing transactions from elsewhere, or provision
+      // a new replica from backup. Consider increasing the source's
+      // binary log expiration period. The GTID set sent by the replica is
+      // '<client_set>', and the missing transactions are
+      // '<purged - client_set>'
+    } else {
+      assert(construction_replication_mode_ ==
+             binsrv::replication_mode_type::position);
+      current_binlog_name_ =
+          storage_->get_next_binlog_name(current_binlog_name_);
+    }
     // the result may still be empty if the storage is empty
     if (current_binlog_name_.is_empty()) {
       logger_->log(binsrv::log_severity::info,
@@ -108,8 +137,9 @@ sender_context::get_event(util::const_byte_span &event) {
       return event_fetching_result_type::waiting;
     }
     logger_->log_format(binsrv::log_severity::info,
-                        "sender : empty binlog name resolved to {}",
-                        current_binlog_name_.str());
+                        "sender : empty binlog name resolved to {}{}",
+                        current_binlog_name_.str(),
+                        gtid_mode ? " (GTID auto-positioning)" : "");
   }
 
   while (true) {

@@ -180,6 +180,8 @@ public:
   [[nodiscard]] network_buffer_type generate_encoded_access_denied();
   [[nodiscard]] network_buffer_type generate_encoded_unknown_command();
   [[nodiscard]] network_buffer_type generate_encoded_syntax_error();
+  [[nodiscard]] network_buffer_type
+  generate_encoded_reading_binlog_error(std::string_view message);
 
   [[nodiscard]] network_buffer_type
   generate_encoded_binlog_event(util::const_byte_span event_data);

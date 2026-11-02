@@ -351,12 +351,25 @@ network_service::handle_binlog_dump_command(
   const auto &binlog_name{context.get_binlog_filename()};
   const auto position{context.get_binlog_position()};
 
-  // TODO: close connection with an error if client requested a GTID-based
-  //       mode whereas the storage was created in position-based mode
   auto replication_mode{binsrv::replication_mode_type::position};
   binsrv::gtids::gtid_set gtids{};
   if (context.get_client_mysql_command() ==
       client_command_type::binlog_dump_gtid) {
+    // close connection with an error if client requested a GTID-based
+    // mode whereas the storage was created in position-based mode
+    if (!storage_->is_in_gtid_replication_mode()) {
+      const auto rejection_packet{context.generate_encoded_reading_binlog_error(
+          "The replication sender thread cannot start in AUTO_POSITION mode: "
+          "this server has GTID_MODE = OFF instead of ON.")};
+      print_error(remote_endpoint_str, context,
+                  "gtid replication request on position-based storage");
+      co_await stream.async_write_mysql_frame(rejection_packet);
+      logger_->log(binsrv::log_severity::error,
+                   "net    : client requested GTID-based replication, but "
+                   "storage is in position-based mode");
+      co_return;
+    }
+
     replication_mode = binsrv::replication_mode_type::gtid;
     gtids = binsrv::gtids::gtid_set{
         util::as_const_byte_span(context.get_binlog_sids())};
@@ -1058,18 +1071,15 @@ network_service::session(session_frame_stream stream) {
         // PBS may send events with a CRC32 trailer, and a client that is
         // not checksum-aware cannot parse them.
         if (!session_source_binlog_checksum_name.has_value()) {
-          static constexpr std::uint16_t er_source_fatal_error_reading_binlog{
-              1236U};
-          const auto rejection_packet{context.generate_encoded_error(
-              er_source_fatal_error_reading_binlog,
-              "Replica did not declare @source_binlog_checksum before "
-              "COM_BINLOG_DUMP; PBS refuses to serve replicas that are not "
-              "checksum-aware.",
-              "HY000")};
+          const auto rejection_packet{
+              context.generate_encoded_reading_binlog_error(
+                  "Replica did not declare @source_binlog_checksum before "
+                  "COM_BINLOG_DUMP; PBS refuses to serve replicas that are not "
+                  "checksum-aware.")};
           print_error(remote_endpoint_str, context,
                       "missing @source_binlog_checksum declaration");
           co_await stream.async_write_mysql_frame(rejection_packet);
-          logger_->log_format(binsrv::log_severity::debug,
+          logger_->log_format(binsrv::log_severity::error,
                               "net    : sent server error (missing "
                               "@source_binlog_checksum) ({} bytes to {})",
                               std::size(rejection_packet), remote_endpoint_str);

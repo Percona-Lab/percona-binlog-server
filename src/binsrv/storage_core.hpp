@@ -187,6 +187,13 @@ public:
   [[nodiscard]] events::composite_binlog_name
   get_next_binlog_name(const events::composite_binlog_name &current) const;
 
+  // Returns the name of the first binlog file that has at least one GTID
+  // that is not included in the specified 'gtids'. Returns an empty name if
+  // the storage is empty. In the case where all GTIDs in the storage are
+  // included in 'gtids', the last binlog name (the active one) is returned.
+  [[nodiscard]] events::composite_binlog_name
+  get_auto_positioning_binlog_name(const gtids::gtid_set &gtids) const;
+
   // Reads up to 'range.get_length()' bytes from 'binlog_name', starting at
   // 'range.get_offset()'. The range and binlog name are not modified; the
   // fetched bytes are written to 'buffer'.
