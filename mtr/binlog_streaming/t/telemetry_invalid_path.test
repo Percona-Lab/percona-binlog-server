@@ -1,0 +1,53 @@
+--source ../include/have_binsrv.inc
+
+--source ../include/v80_v84_compatibility_defines.inc
+
+--source include/count_sessions.inc
+
+# The telemetry feature is independent of the storage backend, so this test
+# runs with the default 'file' backend only.
+--source ../include/identify_storage_backend.inc
+
+--echo *** Setting up the Binlog Server utility environment with telemetry
+--echo *** pointed at a directory that does not exist, so that every report
+--echo *** write fails.
+--let $binsrv_connect_timeout = 3
+--let $binsrv_read_timeout = 3
+--let $binsrv_idle_time = 1
+--let $binsrv_verify_checksum = TRUE
+--let $binsrv_replication_mode = position
+# Deliberately NOT created: the write must fail and be handled gracefully.
+--let $binsrv_telemetry_path = $MYSQL_TMP_DIR/telemetry_missing_dir
+--let $binsrv_telemetry_grace_interval = 2
+--source ../include/set_up_binsrv_environment.inc
+
+--echo
+--echo *** Starting Binlog Server Utility in background in pull mode.
+--let $proc_command_line = $BINSRV pull $binsrv_config_file_path > /dev/null
+--source ../include/start_proc_in_background.inc
+
+--echo
+--echo *** Waiting until the utility logs the telemetry write failure.
+# The '--file_exists' retry argument waits for the log file to appear before
+# wait_for_pattern_in_file.inc opens it.
+--file_exists $binsrv_log_path 60
+--let $grep_pattern = telemetry: report write failed
+--let $grep_file = $binsrv_log_path
+--let $wait_timeout = 120
+--source include/wait_for_pattern_in_file.inc
+
+--echo
+--echo *** The utility must still be running despite the telemetry write failure.
+--exec kill -0 `cat $proc_pid_file`
+
+--echo
+--echo *** Sending SIGTERM signal to the Binlog Server Utility and waiting for
+--echo *** the process to terminate.
+--source ../include/terminate_proc.inc
+
+--echo
+--echo *** Cleaning up.
+--source ../include/tear_down_binsrv_environment.inc
+
+--source ../include/kill_binlog_dump_connection.inc
+--source include/wait_until_count_sessions.inc

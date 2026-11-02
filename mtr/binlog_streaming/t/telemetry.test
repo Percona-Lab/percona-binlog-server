@@ -1,0 +1,76 @@
+--source ../include/have_binsrv.inc
+
+--source ../include/v80_v84_compatibility_defines.inc
+
+--source include/count_sessions.inc
+
+# The telemetry feature is independent of the storage backend, so this test
+# runs with the default 'file' backend only.
+--source ../include/identify_storage_backend.inc
+
+--echo *** Setting up the Binlog Server utility environment with a telemetry
+--echo *** section that has a path and a short grace interval but no explicit
+--echo *** 'enabled' flag, so that this test also verifies telemetry is enabled
+--echo *** by default.
+--let $binsrv_connect_timeout = 3
+--let $binsrv_read_timeout = 3
+--let $binsrv_idle_time = 1
+--let $binsrv_verify_checksum = TRUE
+--let $binsrv_replication_mode = position
+--let $binsrv_telemetry_path = $MYSQL_TMP_DIR/telemetry_dir
+--let $binsrv_telemetry_grace_interval = 2
+--let $binsrv_telemetry_scrape_interval = 3600
+--let $binsrv_telemetry_history_keep_interval = 3600
+--source ../include/set_up_binsrv_environment.inc
+
+--mkdir $binsrv_telemetry_path
+
+--echo
+--echo *** Starting Binlog Server Utility in background in pull mode.
+--let $proc_command_line = $BINSRV pull $binsrv_config_file_path > /dev/null
+--source ../include/start_proc_in_background.inc
+
+--echo
+--echo *** Waiting until the utility reports that it wrote a telemetry report.
+# The '--file_exists' retry argument waits for the log file to appear before
+# wait_for_pattern_in_file.inc opens it.
+--file_exists $binsrv_log_path 60
+--let $grep_pattern = telemetry: wrote report
+--let $grep_file = $binsrv_log_path
+--let $wait_timeout = 120
+--source include/wait_for_pattern_in_file.inc
+
+--echo
+--echo *** Validating the telemetry report contents: db_instance_id must equal
+--echo *** the canonical UUID persisted in the instance_id file, pillar_version
+--echo *** must be non-empty and uptime must be numeric.
+--let $read_from_file = $binsrv_local_settings_path/instance_id
+--source include/read_file_to_var.inc
+--let $persisted_instance_id = $result
+--exec cat $binsrv_telemetry_path/*.json > $MYSQL_TMP_DIR/telemetry_report.json
+--let $read_from_file = $MYSQL_TMP_DIR/telemetry_report.json
+--source include/read_file_to_var.inc
+--disable_query_log
+eval SET @report = '$result';
+--enable_query_log
+--assert(`SELECT IS_UUID('$persisted_instance_id')`)
+--assert(`SELECT JSON_UNQUOTE(JSON_EXTRACT(@report, '$.db_instance_id')) = '$persisted_instance_id'`)
+--assert(`SELECT JSON_UNQUOTE(JSON_EXTRACT(@report, '$.pillar_version')) <> ''`)
+--assert(`SELECT JSON_UNQUOTE(JSON_EXTRACT(@report, '$.uptime')) REGEXP '^[0-9]+\$'`)
+
+--echo
+--echo *** Sending SIGTERM signal to the Binlog Server Utility and waiting for
+--echo *** the process to terminate.
+--source ../include/terminate_proc.inc
+
+--echo
+--echo *** Cleaning up.
+--remove_file $MYSQL_TMP_DIR/telemetry_report.json
+--force-rmdir $binsrv_telemetry_path
+--source ../include/tear_down_binsrv_environment.inc
+
+# As the Binlog Server Utility interrupts the connection upon timeout, close it
+# on the MySQL server side as well so that MTR 'check-testcase' before and after
+# the test produces the same output.
+--source ../include/kill_binlog_dump_connection.inc
+--source include/wait_until_count_sessions.inc
