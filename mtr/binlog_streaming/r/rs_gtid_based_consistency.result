@@ -22,6 +22,25 @@ value VARCHAR(32) NOT NULL,
 PRIMARY KEY(id)
 ) ENGINE=InnoDB;
 
+*** Step 2: Inserting the first batch of rows.
+INSERT INTO tbl VALUES (1, 'one'), (2, 'two'), (3, 'three');
+
+*** Step 3: Flushing the source binary log for the first time.
+FLUSH BINARY LOGS;
+
+*** Step 4: Inserting the second batch of rows.
+INSERT INTO tbl VALUES (4, 'four'), (5, 'five'), (6, 'six');
+
+*** Step 5: Flushing the source binary log for the second time.
+FLUSH BINARY LOGS;
+
+*** Step 6: Flushing the source binary log for the third time (producing an
+*** empty binary log file).
+FLUSH BINARY LOGS;
+
+*** Step 7: Inserting the third batch of rows.
+INSERT INTO tbl VALUES (7, 'seven'), (8, 'eight'), (9, 'nine');
+
 *** Fetching the source binary logs in position mode.
 
 *** Starting Binlog Server Utility in background in pull mode.
@@ -37,6 +56,24 @@ PRIMARY KEY(id)
 
 *** Comparing event sequences from the PBS and MySQL Server starting
 *** from checkpoint 'after creating tbl'.
+
+*** Comparing event sequences from the PBS and MySQL Server starting
+*** from checkpoint 'after inserting the first batch of rows'.
+
+*** Comparing event sequences from the PBS and MySQL Server starting
+*** from checkpoint 'after the first FLUSH BINARY LOGS'.
+
+*** Comparing event sequences from the PBS and MySQL Server starting
+*** from checkpoint 'after inserting the second batch of rows'.
+
+*** Comparing event sequences from the PBS and MySQL Server starting
+*** from checkpoint 'after the second FLUSH BINARY LOGS'.
+
+*** Comparing event sequences from the PBS and MySQL Server starting
+*** from checkpoint 'after the third FLUSH BINARY LOGS'.
+
+*** Comparing event sequences from the PBS and MySQL Server starting
+*** from checkpoint 'after inserting the third batch of rows'.
 
 *** Sending SIGTERM signal to the Binlog Server Utility and waiting for
 *** the process to terminate.

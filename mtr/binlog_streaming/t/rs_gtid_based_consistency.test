@@ -49,8 +49,6 @@ CREATE TABLE tbl(
 --let $checkpoint_label = after creating tbl
 --source ../include/rs_gtid_based_consistency_save.inc
 
-# TODO: uncomment this block when GTID auto-positioning is implemented
-if (0) {
 --echo
 --echo *** Step 2: Inserting the first batch of rows.
 INSERT INTO tbl VALUES (1, 'one'), (2, 'two'), (3, 'three');
@@ -87,7 +85,6 @@ FLUSH BINARY LOGS;
 INSERT INTO tbl VALUES (7, 'seven'), (8, 'eight'), (9, 'nine');
 --let $checkpoint_label = after inserting the third batch of rows
 --source ../include/rs_gtid_based_consistency_save.inc
-}
 
 --echo
 --echo *** Fetching the source binary logs in position mode.

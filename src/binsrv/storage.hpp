@@ -125,6 +125,9 @@ public:
   [[nodiscard]] events::composite_binlog_name
   get_next_binlog_name(const events::composite_binlog_name &current) const;
 
+  [[nodiscard]] events::composite_binlog_name
+  get_auto_positioning_binlog_name(const gtids::gtid_set &gtids) const;
+
   [[nodiscard]] storage_fetch_result_type
   fetch_event_block(const events::composite_binlog_name &binlog_name,
                     const util::byte_range &range,

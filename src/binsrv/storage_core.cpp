@@ -233,8 +233,8 @@ storage_core::storage_core(basic_logger_ptr logger, const main_config &config,
   load_and_validate_binlog_metadata_set(storage_objects,
                                         storage_metadata_objects);
   assert(binlog_records_.empty() ||
-         !binlog_records_.front().added_gtids.has_value() ||
-         purged_gtids_ == binlog_records_.front().added_gtids);
+         !binlog_records_.front().previous_gtids.has_value() ||
+         purged_gtids_ == binlog_records_.front().previous_gtids);
 
   remove_garbage_objects(garbage_object_names);
 }
@@ -461,6 +461,45 @@ storage_core::purge_binlogs(const events::composite_binlog_name &target) {
   const auto next_it{std::next(current_it)};
   return next_it == std::cend(binlog_records_) ? events::composite_binlog_name{}
                                                : next_it->name;
+}
+
+[[nodiscard]] events::composite_binlog_name
+storage_core::get_auto_positioning_binlog_name(
+    const gtids::gtid_set &gtids) const {
+  if (!is_in_gtid_replication_mode()) {
+    util::exception_location().raise<std::logic_error>(
+        "cannot auto-position binlog name in position-based replication mode");
+  }
+
+  const std::shared_lock lock{mutex_};
+  if (is_empty_unsafe()) {
+    return {};
+  }
+
+  // here we are looking for the first binlog file that contains at least
+  // one transaction that is not included in the 'gtids'
+
+  // in the case when the 'gtids' is empty, we should look for the first
+  // binlog file that has at least one transaction (not just
+  // FORMAT_DESCRIPTION, PREVIOUS_GTIDS, and ROTATE / STOP)
+
+  // in both cases, the '!(*optional_added_gtids - gtids).is_empty()'
+  // condition works as expected
+
+  for (const auto &record : binlog_records_) {
+    const auto &optional_added_gtids{record.added_gtids};
+    if (!optional_added_gtids.has_value()) {
+      util::exception_location().raise<std::logic_error>(
+          "binlog record does not have added GTIDs in GTID-enabled storage");
+    }
+    if (!(*optional_added_gtids - gtids).is_empty()) {
+      return record.name;
+    }
+  }
+  // if previous "for" did not return, it means that everything that storage
+  // has is included in 'gtids' - in this case we return the last binlog name
+  // (the active one, which may still be updated with new transactions)
+  return binlog_records_.back().name;
 }
 
 [[nodiscard]] storage_fetch_result_type storage_core::fetch_event_block(
@@ -1200,12 +1239,12 @@ void storage_core::load_and_validate_binlog_metadata_set(
     }
   }
 
-  // if we are in GTID replication mode, then we can consider GTIDs from the
-  // first binlog metadata as purged GTIDs for the whole storage
+  // if we are in GTID replication mode, then we can consider previous GTIDs
+  // from the first binlog metadata as purged GTIDs for the whole storage
   if (!binlog_records_.empty()) {
-    const auto &optional_added_gtids{binlog_records_.front().added_gtids};
-    if (optional_added_gtids.has_value()) {
-      purged_gtids_ = *optional_added_gtids;
+    const auto &optional_previous_gtids{binlog_records_.front().previous_gtids};
+    if (optional_previous_gtids.has_value()) {
+      purged_gtids_ = *optional_previous_gtids;
     }
   }
 }

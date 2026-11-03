@@ -450,6 +450,13 @@ connection_context::generate_encoded_syntax_error() {
 }
 
 [[nodiscard]] network_buffer_type
+connection_context::generate_encoded_reading_binlog_error(
+    std::string_view message) {
+  return generate_encoded_error(ER_SOURCE_FATAL_ERROR_READING_BINLOG, message,
+                                "HY000");
+}
+
+[[nodiscard]] network_buffer_type
 connection_context::generate_encoded_binlog_event(
     util::const_byte_span event_data) {
   std::string result_buffer{};
