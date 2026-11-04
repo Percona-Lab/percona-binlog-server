@@ -1,0 +1,44 @@
+*** Setting up the Binlog Server utility environment with telemetry
+*** intervals below their permitted minimums: a zero grace interval and
+*** a one-second scrape interval. Both must be clamped up to their
+*** minimums instead of being applied verbatim.
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+
+*** Starting Binlog Server Utility in background in pull mode.
+
+*** On startup the utility logs its effective intervals once; the
+*** out-of-range grace and scrape intervals appear clamped up to their
+*** minimums.
+include/wait_for_pattern_in_file.inc [telemetry: reporting to .*grace_interval=20s, scrape_interval=10s]
+
+*** A zero grace interval is clamped up to its minimum, so no report is
+*** written in the first few seconds.
+include/read_file_to_var.inc
+
+*** Waiting until the first telemetry report is written, which only
+*** happens once the clamped grace interval has elapsed.
+include/wait_for_pattern_in_file.inc [telemetry: wrote report]
+
+*** A one-second scrape interval is clamped up to its minimum, so the
+*** next report does not follow within a second: the set of report files
+*** is unchanged a few seconds after the first one.
+include/read_file_to_var.inc
+include/read_file_to_var.inc
+
+*** Sending SIGTERM signal to the Binlog Server Utility and waiting for
+*** the process to terminate.
+
+*** Cleaning up.
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.

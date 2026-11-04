@@ -1,0 +1,102 @@
+--source ../include/have_binsrv.inc
+
+--source ../include/v80_v84_compatibility_defines.inc
+
+--source include/count_sessions.inc
+
+# The telemetry feature is independent of the storage backend, so this test
+# runs with the default 'file' backend only.
+--source ../include/identify_storage_backend.inc
+
+--echo *** Setting up the Binlog Server utility environment with telemetry
+--echo *** intervals below their permitted minimums: a zero grace interval and
+--echo *** a one-second scrape interval. Both must be clamped up to their
+--echo *** minimums instead of being applied verbatim.
+--let $binsrv_connect_timeout = 3
+--let $binsrv_read_timeout = 3
+--let $binsrv_idle_time = 1
+--let $binsrv_verify_checksum = TRUE
+--let $binsrv_replication_mode = position
+--let $binsrv_telemetry_path = $MYSQL_TMP_DIR/telemetry_dir
+--let $binsrv_telemetry_grace_interval = 0
+--let $binsrv_telemetry_scrape_interval = 1
+--source ../include/set_up_binsrv_environment.inc
+
+--mkdir $binsrv_telemetry_path
+
+--echo
+--echo *** Starting Binlog Server Utility in background in pull mode.
+--let $proc_command_line = $BINSRV pull $binsrv_config_file_path > /dev/null
+--source ../include/start_proc_in_background.inc
+
+--echo
+--echo *** On startup the utility logs its effective intervals once; the
+--echo *** out-of-range grace and scrape intervals appear clamped up to their
+--echo *** minimums.
+# The '--file_exists' retry argument waits for the log file to appear before
+# wait_for_pattern_in_file.inc opens it.
+--file_exists $binsrv_log_path 60
+--let $grep_file = $binsrv_log_path
+--let $wait_timeout = 120
+--let $grep_pattern = telemetry: reporting to .*grace_interval=20s, scrape_interval=10s
+--source include/wait_for_pattern_in_file.inc
+
+--echo
+--echo *** A zero grace interval is clamped up to its minimum, so no report is
+--echo *** written in the first few seconds.
+--sleep 3
+--let $telemetry_listing = $MYSQL_TMP_DIR/telemetry_listing.txt
+--list_files_write_file $telemetry_listing $binsrv_telemetry_path *.json
+--let $read_from_file = $telemetry_listing
+--source include/read_file_to_var.inc
+if ($result != '')
+{
+  --die A telemetry report was written despite the clamped grace interval.
+}
+--remove_file $telemetry_listing
+
+--echo
+--echo *** Waiting until the first telemetry report is written, which only
+--echo *** happens once the clamped grace interval has elapsed.
+# The '--file_exists' retry argument waits for the log file to appear before
+# wait_for_pattern_in_file.inc opens it.
+--file_exists $binsrv_log_path 60
+--let $grep_pattern = telemetry: wrote report
+--let $grep_file = $binsrv_log_path
+--let $wait_timeout = 120
+--source include/wait_for_pattern_in_file.inc
+
+--echo
+--echo *** A one-second scrape interval is clamped up to its minimum, so the
+--echo *** next report does not follow within a second: the set of report files
+--echo *** is unchanged a few seconds after the first one.
+--let $telemetry_listing_before = $MYSQL_TMP_DIR/telemetry_listing_before.txt
+--list_files_write_file $telemetry_listing_before $binsrv_telemetry_path *.json
+--let $read_from_file = $telemetry_listing_before
+--source include/read_file_to_var.inc
+--let $reports_before = $result
+--sleep 3
+--let $telemetry_listing_after = $MYSQL_TMP_DIR/telemetry_listing_after.txt
+--list_files_write_file $telemetry_listing_after $binsrv_telemetry_path *.json
+--let $read_from_file = $telemetry_listing_after
+--source include/read_file_to_var.inc
+--let $reports_after = $result
+if ($reports_before != $reports_after)
+{
+  --die A further telemetry report followed within a second; the scrape interval was not clamped.
+}
+--remove_file $telemetry_listing_before
+--remove_file $telemetry_listing_after
+
+--echo
+--echo *** Sending SIGTERM signal to the Binlog Server Utility and waiting for
+--echo *** the process to terminate.
+--source ../include/terminate_proc.inc
+
+--echo
+--echo *** Cleaning up.
+--force-rmdir $binsrv_telemetry_path
+--source ../include/tear_down_binsrv_environment.inc
+
+--source ../include/kill_binlog_dump_connection.inc
+--source include/wait_until_count_sessions.inc
