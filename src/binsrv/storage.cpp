@@ -284,6 +284,13 @@ void storage::update_last_checkpoint_info() {
 }
 
 void storage::flush_event_buffer_internal() {
+  // A previous flush failed and may have left the backend partially
+  // updated while the data is still buffered here; flushing again would
+  // write the same bytes twice, so refuse any further flush.
+  if (write_failed_) {
+    return;
+  }
+
   assert(!event_buffer_.empty());
   assert(last_transaction_boundary_position_in_event_buffer_ <=
          std::size(event_buffer_));
@@ -293,9 +300,14 @@ void storage::flush_event_buffer_internal() {
       last_transaction_boundary_position_in_event_buffer_};
   // writing <last_transaction_boundary_position_in_event_buffer_> bytes from
   // the beginning of the event buffer
-  core_->write_event_block(transactions_data, gtids_in_event_buffer_,
-                           ready_to_flush_timestamps_,
-                           ready_to_flush_last_sequence_number_);
+  try {
+    core_->write_event_block(transactions_data, gtids_in_event_buffer_,
+                             ready_to_flush_timestamps_,
+                             ready_to_flush_last_sequence_number_);
+  } catch (...) {
+    write_failed_ = true;
+    throw;
+  }
 
   const auto begin_it{std::cbegin(event_buffer_)};
   const auto portion_it{std::next(
