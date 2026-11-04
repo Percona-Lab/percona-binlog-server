@@ -1,0 +1,32 @@
+*** Setting up the Binlog Server utility environment with telemetry
+*** intervals that are outside their permitted ranges: a zero scrape
+*** interval (below the minimum) and a grace and history keep interval
+*** far above the maximum. The grace interval is large enough that,
+*** applied verbatim, it would overflow the report timer and fire
+*** immediately; it must instead be clamped so that no report is written.
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+
+*** Starting Binlog Server Utility in background in pull mode.
+
+*** Waiting long enough that an unclamped, overflowing grace interval
+*** would already have written a report, then confirming that none was
+*** written because the interval was clamped into range.
+include/read_file_to_var.inc
+
+*** Sending SIGTERM signal to the Binlog Server Utility and waiting for
+*** the process to terminate.
+
+*** Cleaning up.
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.

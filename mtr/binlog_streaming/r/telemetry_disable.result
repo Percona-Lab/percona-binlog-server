@@ -11,8 +11,9 @@
 
 *** Starting Binlog Server Utility in background in pull mode.
 
-*** Waiting well past the grace interval, then confirming that no
-*** telemetry report was written.
+*** Waiting past the configured grace interval, so that a report would
+*** have appeared if telemetry were active, then confirming that none was
+*** written because telemetry is disabled.
 include/read_file_to_var.inc
 
 *** Sending SIGTERM signal to the Binlog Server Utility and waiting for

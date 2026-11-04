@@ -84,7 +84,15 @@ public:
         tag_uuid_{util::generate_canonical_uuid()},
         start_time_{std::chrono::steady_clock::now()}, timer_{io_ctx},
         scrape_interval_{telemetry_cfg.scrape_interval()} {
-    timer_.expires_after(telemetry_cfg.grace_interval());
+    const auto grace_interval{telemetry_cfg.grace_interval()};
+    // Report the effective intervals (after clamping into their permitted
+    // ranges) once, when reporting starts.
+    logger_->log_format(log_severity::info,
+                        "telemetry: reporting to {} with grace_interval={}s, "
+                        "scrape_interval={}s, history_keep_interval={}s",
+                        path_, grace_interval.count(), scrape_interval_.count(),
+                        history_keep_interval_.count());
+    timer_.expires_after(grace_interval);
     arm();
   }
   impl(const impl &) = delete;
