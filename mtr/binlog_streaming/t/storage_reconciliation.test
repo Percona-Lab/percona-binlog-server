@@ -51,21 +51,11 @@ INSERT INTO t1 VALUES(DEFAULT);
 --source ../include/extract_init_connect_variable_value.inc
 if ($extracted_init_connect_variable_value == on)
 {
-  # generating keyring data file silently ('generate_keyring_data_file.inc'
-  # cannot be used as it echoes, and the output of both combinations must be
-  # the same - confirmed by recording this test with it, which left a
-  # combination-only echo in the shared result file)
-  --disable_query_log
-  SET @keyring_keys_array = JSON_ARRAY(
-    JSON_OBJECT('id', 'alpha16', 'cipher', 'AES-128-ECB', 'data_hex', '000102030405060708090A0B0C0D0E0F')
-  );
-  --enable_query_log
   --let $binsrv_keyring_data_file_path = $MYSQL_TMP_DIR/keyring_data.json
-  --let $write_var = `SELECT JSON_OBJECT('version', 1, 'keys', CAST(@keyring_keys_array AS JSON))`
-  --let $write_to_file = $binsrv_keyring_data_file_path
-  --let $include_silent = 1
-  --source include/write_var_to_file.inc
-  --let $include_silent =
+  --let $binsrv_encryption_keyring_content = `SELECT JSON_ARRAY(JSON_OBJECT('id', 'alpha16', 'cipher', 'AES-128-ECB', 'data_hex', '000102030405060708090A0B0C0D0E0F'))`
+  --let $binsrv_keyring_data_file_silent_generation = 1
+  --source ../include/generate_keyring_data_file.inc
+
   --let $binsrv_encryption_kek_id = alpha16
   --let $binsrv_encryption_cipher = AES-256-CTR
 }
@@ -538,12 +528,9 @@ DROP TABLE t1;
 --source ../include/tear_down_binsrv_environment.inc
 if ($binsrv_keyring_data_file_path != "")
 {
-  # not using 'delete_keyring_data_file.inc' - same combination-parity
-  # reason as above
-  --remove_file $binsrv_keyring_data_file_path
-  --disable_query_log
-  SET @keyring_keys_array = NULL;
-  --enable_query_log
+  --let $binsrv_keyring_data_file_silent_generation = 1
+  --source ../include/delete_keyring_data_file.inc
+
   --let $binsrv_keyring_data_file_path =
   --let $binsrv_encryption_kek_id =
   --let $binsrv_encryption_cipher =
