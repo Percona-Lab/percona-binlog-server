@@ -158,6 +158,17 @@ private:
   events::seq_no_t ready_to_flush_last_sequence_number_{0ULL};
   events::seq_no_t incomplete_transaction_last_sequence_number_{0ULL};
 
+  // Latched when a flush to the backend throws. A failed flush may have
+  // already persisted part of the buffered data (for example the binlog
+  // data object was written but its metadata was not), while the data
+  // remains in 'event_buffer_' because it is erased only after a
+  // successful write. Re-flushing it - most notably from the destructor
+  // when 'fetch' / 'pull' unwinds after the error - would append the same
+  // bytes a second time and corrupt the stored binlog. Once set, every
+  // further flush becomes a no-op so the storage stops writing after a
+  // failure.
+  bool write_failed_{false};
+
   [[nodiscard]] bool size_checkpointing_enabled() const noexcept {
     return checkpoint_size_bytes_ != 0ULL;
   }
