@@ -105,8 +105,8 @@ indexed_event_block::get_first_entity_size_in_unparsed_tail() const {
   return transaction_size;
 }
 
-util::optional_size_t indexed_event_block::extract_event_size_internal(
-    std::size_t offset) const noexcept {
+[[nodiscard]] util::optional_size_t
+indexed_event_block::extract_event_size_internal(std::size_t offset) const {
   if (std::size(buffer_) - offset <
       events::common_header_view_base::size_in_bytes) {
     return {};
@@ -129,7 +129,7 @@ indexed_event_block::parse_single_event(std::size_t offset,
   }
 
   if (*extracted_size < events::common_header_view_base::size_in_bytes) {
-    util::exception_location().raise<std::runtime_error>(
+    util::exception_location().raise<std::logic_error>(
         "in indexed_event_block constructor encountered an event with "
         "abnormal size");
   }

@@ -70,7 +70,7 @@ public:
   [[nodiscard]] std::string_view get_readable_server_version() const noexcept;
   [[nodiscard]] util::semantic_version get_server_version() const;
 
-  [[nodiscard]] std::uint32_t get_encoded_server_version() const noexcept;
+  [[nodiscard]] std::uint32_t get_encoded_server_version() const;
 
   [[nodiscard]] std::uint32_t get_create_timestamp_raw() const noexcept {
     return create_timestamp_;
@@ -97,7 +97,7 @@ public:
     return post_header_lengths_;
   }
 
-  [[nodiscard]] std::size_t calculate_encoded_size() const noexcept {
+  [[nodiscard]] std::size_t calculate_encoded_size() const {
     return get_size_in_bytes(get_encoded_server_version());
   }
   void encode_to(util::byte_span &destination) const;
