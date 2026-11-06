@@ -131,7 +131,7 @@ private:
   std::size_t parsed_size_{0UZ};
 
   [[nodiscard]] util::optional_size_t
-  extract_event_size_internal(std::size_t offset) const noexcept;
+  extract_event_size_internal(std::size_t offset) const;
   [[nodiscard]] bool parse_single_event(std::size_t offset,
                                         std::size_t &event_size) const;
   void parse_single_transaction_internal(const events::reader_context &context,

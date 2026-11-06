@@ -163,8 +163,7 @@ generic_post_header_impl<code_type::format_description>::get_server_version()
 }
 
 [[nodiscard]] std::uint32_t generic_post_header_impl<
-    code_type::format_description>::get_encoded_server_version()
-    const noexcept {
+    code_type::format_description>::get_encoded_server_version() const {
   return get_server_version().get_encoded();
 }
 
