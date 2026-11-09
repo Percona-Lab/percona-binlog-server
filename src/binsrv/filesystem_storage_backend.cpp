@@ -46,7 +46,7 @@ namespace binsrv {
 
 filesystem_storage_backend::filesystem_storage_backend(
     const storage_config &config)
-    : root_path_{}, ofs_{} {
+    : root_path_{}, ofs_{}, current_file_path_{} {
   // TODO: switch to utf8 file names
 
   // setting "unbuffered mode" as we will be using our own buffer
@@ -196,13 +196,13 @@ void filesystem_storage_backend::do_fsync() {
 [[nodiscard]] std::uint64_t filesystem_storage_backend::do_open_stream(
     std::string_view name, storage_backend_open_stream_mode mode) {
   assert(!ofs_.is_open());
-  const std::filesystem::path current_file_path{get_object_path(name)};
+  current_file_path_ = get_object_path(name);
 
   const auto open_mode{std::ios_base::out | std::ios_base::binary |
                        (mode == storage_backend_open_stream_mode::create
                             ? std::ios_base::trunc
                             : std::ios_base::app | std::ios_base::ate)};
-  ofs_.open(current_file_path, open_mode);
+  ofs_.open(current_file_path_, open_mode);
   if (!ofs_.is_open()) {
     util::exception_location().raise<std::runtime_error>(
         "cannot open underlying file for the stream");
@@ -226,13 +226,21 @@ void filesystem_storage_backend::do_write_data_to_stream(
     util::exception_location().raise<std::runtime_error>(
         "cannot flush the underlying stream file");
   }
-  // TODO: make sure that the data is properly written to the disk
-  //       use fsync() system call here
+  // 'flush()' only hands the data over to the OS page cache. Every write
+  // to the stream is followed by a binlog metadata update (which is made
+  // durable in 'do_put_object()') recording the new binlog size, so the
+  // data must reach stable storage first. Otherwise, after a power loss
+  // or a kernel crash the binlog file may end up shorter than the size
+  // from its metadata, and such a storage cannot be recovered.
+  // 'fsync(2)' flushes the file data regardless of which file descriptor
+  // it is called on, so syncing via the path is sufficient here.
+  util::fsync(current_file_path_);
 }
 
 void filesystem_storage_backend::do_close_stream() {
   assert(ofs_.is_open());
   ofs_.close();
+  current_file_path_.clear();
 }
 
 [[nodiscard]] std::string
