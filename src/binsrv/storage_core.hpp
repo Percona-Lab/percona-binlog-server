@@ -187,6 +187,10 @@ public:
   [[nodiscard]] events::composite_binlog_name
   get_next_binlog_name(const events::composite_binlog_name &current) const;
 
+  // Returns true if the specified binlog name is present in the storage.
+  [[nodiscard]] bool
+  contains_binlog(const events::composite_binlog_name &binlog_name) const;
+
   // Returns the name of the first binlog file that has at least one GTID
   // that is not included in the specified 'gtids'. Returns an empty name if
   // the storage is empty. In the case where all GTIDs in the storage are

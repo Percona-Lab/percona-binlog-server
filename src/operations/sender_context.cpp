@@ -46,8 +46,8 @@ sender_context::sender_context(
     binsrv::gtids::gtid_set gtids, bool session_source_binlog_checksum)
     : logger_{std::move(logger)}, storage_{std::move(storage)},
       construction_block_size_{block_size},
-      construction_gtids_{std::move(gtids)},
       construction_replication_mode_{replication_mode},
+      construction_gtids_{std::move(gtids)},
       current_binlog_name_{
           binlog_name.empty()
               ? binsrv::events::composite_binlog_name{}
@@ -69,78 +69,38 @@ sender_context::sender_context(
 
 sender_context::~sender_context() = default;
 
+[[nodiscard]] sender_context_check_result_type
+sender_context::check_for_non_empty_and_validate() {
+  auto result{sender_context_check_result_type::ready};
+  if (!current_binlog_name_.is_empty()) {
+    // similarly to MySQL Server, when the replica specifies the binlog file
+    // name to start from (in both COM_BINLOG_DUMP and COM_BINLOG_DUMP_GTID),
+    // we only check that this binlog file exists in the storage - no
+    // GTID-related checks are performed in this case
+    if (!storage_->contains_binlog(current_binlog_name_)) {
+      logger_->log_format(
+          binsrv::log_severity::error,
+          "sender : the binlog '{}' requested by the replica does not exist",
+          current_binlog_name_.str());
+      result = sender_context_check_result_type::error_non_existing_binlog;
+    }
+  } else {
+    result = (construction_replication_mode_ ==
+                      binsrv::replication_mode_type::position
+                  ? check_for_non_empty_and_validate_position()
+                  : check_for_non_empty_and_validate_gtid());
+  }
+  check_passed_ = (result == sender_context_check_result_type::ready);
+  return result;
+}
+
 [[nodiscard]] event_fetching_result_type
 sender_context::get_event(util::const_byte_span &event) {
-  // resolving real binlog name
-  if (current_binlog_name_.is_empty()) {
-    const auto gtid_mode{construction_replication_mode_ ==
-                         binsrv::replication_mode_type::gtid};
-    if (gtid_mode) {
-      // in GTID-based replication mode we need to perform binlog
-      // auto-positioning based on the provided GTID set
-      current_binlog_name_ =
-          storage_->get_auto_positioning_binlog_name(construction_gtids_);
-
-      // TODO: Case A - the replica has more GTIDs than the source
-
-      // Condition: the client's GTID set includes GTIDs with the source's
-      // own server_uuid that the source hasn't executed (and isn't
-      // currently executing). Only the source's UUID is checked.
-      // The replica having extra GTIDs from other UUIDs is allowed.
-
-      // Message (ER_REPLICA_HAS_MORE_GTIDS_THAN_SOURCE, quoted as-is,
-      // including the "the the" typo):
-
-      // Replica has more GTIDs than the source has, using the source's
-      // SERVER_UUID. This may indicate that the the last binary log file
-      // was truncated or lost, e.g., after a power failure when
-      // sync_binlog != 1. The source may have rolled back transactions
-      // that were already replicated to the replica. Replicate any
-      // transactions that source has rolled back from replica to source,
-      // and/or commit empty transactions on source to account for
-      // transactions that have been committed on source but are not
-      // included in GTID_EXECUTED.
-
-      // For PBS, we will need to decide which UUID counts as
-      // "the source's own": the upstream server's UUID in pass-through
-      // mode, or the configured one in rewrite mode.
-
-      // TODO: Case B - the source has purged GTIDs the replica still
-      //       needs
-
-      // Condition: the source's purged set (gtid_purged) is not a subset
-      // of the client's GTID set. A later check reports the same error:
-      // find_first_log_not_in_gtid_set() fails when no binlog's
-      // Previous_gtids is a subset of the client's set (for example,
-      // after binlogs were deleted by hand).
-
-      // Message: the ER_SOURCE_HAS_PURGED_REQUIRED_GTIDS template, with
-      // %s filled in:
-
-      // Cannot replicate because the source purged required binary logs.
-      // Replicate the missing transactions from elsewhere, or provision
-      // a new replica from backup. Consider increasing the source's
-      // binary log expiration period. The GTID set sent by the replica is
-      // '<client_set>', and the missing transactions are
-      // '<purged - client_set>'
-    } else {
-      assert(construction_replication_mode_ ==
-             binsrv::replication_mode_type::position);
-      current_binlog_name_ =
-          storage_->get_next_binlog_name(current_binlog_name_);
-    }
-    // the result may still be empty if the storage is empty
-    if (current_binlog_name_.is_empty()) {
-      logger_->log(binsrv::log_severity::info,
-                   "sender : waiting for first binlog in empty storage");
-      event = {};
-      return event_fetching_result_type::waiting;
-    }
-    logger_->log_format(binsrv::log_severity::info,
-                        "sender : empty binlog name resolved to {}{}",
-                        current_binlog_name_.str(),
-                        gtid_mode ? " (GTID auto-positioning)" : "");
+  if (!check_passed_) {
+    util::exception_location().raise<std::logic_error>(
+        "check_for_non_empty_and_validate() has not been passed yet");
   }
+  assert(!current_binlog_name_.is_empty());
 
   while (true) {
     if (!single_file_context_) {
@@ -194,6 +154,70 @@ sender_context::generate_heartbeat(util::const_byte_span &event) {
   // the active single-file context owns the read-up-to position, server_id and
   // checksum flag that the heartbeat has to carry, so it assembles the event
   return single_file_context_->generate_heartbeat(event);
+}
+
+[[nodiscard]] sender_context_check_result_type
+sender_context::check_for_non_empty_and_validate_position() {
+  assert(construction_replication_mode_ ==
+         binsrv::replication_mode_type::position);
+  assert(current_binlog_name_.is_empty());
+
+  if (storage_->is_empty()) {
+    logger_->log(binsrv::log_severity::info,
+                 "sender : waiting for first binlog in empty storage");
+    return sender_context_check_result_type::still_empty;
+  }
+
+  current_binlog_name_ = storage_->get_next_binlog_name(current_binlog_name_);
+  assert(!current_binlog_name_.is_empty());
+  logger_->log_format(binsrv::log_severity::info,
+                      "sender : empty binlog name resolved to {}",
+                      current_binlog_name_.str());
+  return sender_context_check_result_type::ready;
+}
+
+[[nodiscard]] sender_context_check_result_type
+sender_context::check_for_non_empty_and_validate_gtid() {
+  assert(construction_replication_mode_ == binsrv::replication_mode_type::gtid);
+  assert(current_binlog_name_.is_empty());
+
+  if (storage_->is_empty()) {
+    logger_->log(binsrv::log_severity::info,
+                 "sender : waiting for first binlog in empty storage");
+    return sender_context_check_result_type::still_empty;
+  }
+
+  // in GTID-based replication mode, we first check if source has not purged
+  // GTIDs that the replica has not yet received
+  extracted_purged_gtids_ = storage_->get_purged_gtids();
+  const auto missing_purged_gtids{extracted_purged_gtids_ -
+                                  construction_gtids_};
+  if (!missing_purged_gtids.is_empty()) {
+    logger_->log_format(
+        binsrv::log_severity::error,
+        "sender : the storage has purged GTIDs '{}' required by the replica",
+        missing_purged_gtids.str());
+    return sender_context_check_result_type::error_source_purged_required_gtids;
+  }
+
+  // unlike MySQL Server, we do not check if the replica has more GTIDs than
+  // the source (ER_REPLICA_HAS_MORE_GTIDS_THAN_SOURCE): PBS never originates
+  // transactions and its 'replication_source.server_uuid' is used only to
+  // identify it in the replication topology - it never appears in any GTID;
+  // a replica that is ahead with GTIDs of other UUIDs (e.g. because PBS lags
+  // behind the upstream server) is accepted and waits for them, similarly to
+  // a MySQL Server intermediate replica
+
+  // in GTID-based replication mode we need to perform binlog
+  // auto-positioning based on the provided GTID set
+  current_binlog_name_ =
+      storage_->get_auto_positioning_binlog_name(construction_gtids_);
+  assert(!current_binlog_name_.is_empty());
+  logger_->log_format(
+      binsrv::log_severity::info,
+      "sender : empty binlog name resolved to {} (GTID auto-positioning)",
+      current_binlog_name_.str());
+  return sender_context_check_result_type::ready;
 }
 
 } // namespace operations

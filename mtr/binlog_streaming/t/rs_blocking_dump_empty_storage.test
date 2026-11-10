@@ -96,12 +96,9 @@ eval $stmt_reset_binary_logs_and_gtids;
 --echo
 --echo *** Verifying the downstream mysqlbinlog session is still alive
 --echo *** while PBS has nothing in storage.
---error 0, 1
---exec kill -0 `cat $downstream_pid_file` 2>/dev/null
-if ($__error != 0)
-{
-  --die mysqlbinlog session was disconnected while waiting for the oldest binlog in empty storage
-}
+--let $proc_pid_file = $downstream_pid_file
+--let $proc_assert_text = mysqlbinlog session must not be disconnected while waiting for the oldest binlog in empty storage
+--source ../include/assert_proc_exists.inc
 
 --echo
 --echo *** Starting the upstream MySQL server again. PBS's collector
@@ -120,6 +117,10 @@ INSERT INTO test1.t VALUES (1), (2), (3);
 --echo *** session via PBS. This proves PBS stayed connected to the
 --echo *** replica across the empty-storage window and then started
 --echo *** delivering events once storage became non-empty.
+# The '--file_exists' retry argument waits for the dump file (created by the
+# background mysqlbinlog process) to appear before
+# wait_for_pattern_in_file.inc opens it.
+--file_exists $downstream_dump 60
 --let $grep_pattern = test1
 --let $grep_file = $downstream_dump
 --let $wait_timeout = 60

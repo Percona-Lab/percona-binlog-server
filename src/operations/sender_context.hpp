@@ -52,6 +52,19 @@ public:
   sender_context &operator=(sender_context &&) = delete;
   ~sender_context();
 
+  [[nodiscard]] const binsrv::gtids::gtid_set &
+  get_construction_gtids() const noexcept {
+    return construction_gtids_;
+  }
+
+  [[nodiscard]] const binsrv::gtids::gtid_set &
+  get_extracted_purged_gtids() const noexcept {
+    return extracted_purged_gtids_;
+  }
+
+  [[nodiscard]] sender_context_check_result_type
+  check_for_non_empty_and_validate();
+
   [[nodiscard]] event_fetching_result_type
   get_event(util::const_byte_span &event);
 
@@ -68,15 +81,23 @@ private:
   binsrv::storage_ptr storage_{};
 
   std::size_t construction_block_size_{};
+  binsrv::replication_mode_type construction_replication_mode_;
+
   binsrv::gtids::gtid_set construction_gtids_{};
 
-  binsrv::replication_mode_type construction_replication_mode_;
+  binsrv::gtids::gtid_set extracted_purged_gtids_{};
+  bool check_passed_{false};
 
   binsrv::events::composite_binlog_name current_binlog_name_{};
   std::uint64_t current_position_{};
   bool current_binlog_checksum_{};
 
   sender_single_file_context_ptr single_file_context_{};
+
+  [[nodiscard]] sender_context_check_result_type
+  check_for_non_empty_and_validate_position();
+  [[nodiscard]] sender_context_check_result_type
+  check_for_non_empty_and_validate_gtid();
 };
 
 } // namespace operations

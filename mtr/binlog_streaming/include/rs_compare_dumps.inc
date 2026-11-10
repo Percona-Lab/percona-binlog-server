@@ -58,7 +58,7 @@ if (!$checkpoint_remote_source_mode)
 }
 
 --let $checkpoint_gtid_options =
-if ($checkpoint_gtids)
+if ($checkpoint_gtids != "")
 {
   --let $checkpoint_gtid_options = --exclude-gtids="$checkpoint_gtids"
 }

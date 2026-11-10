@@ -379,33 +379,83 @@ network_service::handle_binlog_dump_command(
       logger_,     storage_, block_size,       replication_mode,
       binlog_name, position, std::move(gtids), session_source_binlog_checksum};
 
-  // Emits HEARTBEAT_LOG_EVENT_V2 while this blocking dump sits idle at EOF, at
-  // the cadence the replica requested via SET @{master,source}_heartbeat_period
-  // (a zero period disables them).
-  heartbeat_sender heartbeat{logger_, session_heartbeat_period, stream, context,
-                             sender_ctx};
-
   boost::asio::steady_timer idle_timer{
       co_await boost::asio::this_coro::executor};
-  util::const_byte_span event_data{};
-  for (;;) {
-    const auto get_event_result{sender_ctx.get_event(event_data)};
-    if (get_event_result != operations::event_fetching_result_type::success) {
-      if (!blocking) {
-        break;
-      }
-      co_await heartbeat.send_if_due();
-      idle_timer.expires_after(heartbeat.wait_cap(blocking_poll_interval));
-      co_await idle_timer.async_wait(boost::asio::use_awaitable);
-      continue;
+
+  operations::sender_context_check_result_type check_result{};
+  while ((check_result = sender_ctx.check_for_non_empty_and_validate()) ==
+         operations::sender_context_check_result_type::still_empty) {
+    if (!blocking) {
+      break;
     }
-    const auto event_frame{context.generate_encoded_binlog_event(event_data)};
-    print_generic(remote_endpoint_str, context, "binlog event");
-    co_await stream.async_write_mysql_frame(event_frame);
-    logger_->log_format(binsrv::log_severity::debug,
-                        "net    : sent server binlog event ({} bytes to {})",
-                        std::size(event_frame), remote_endpoint_str);
-    heartbeat.reset();
+    idle_timer.expires_after(blocking_poll_interval);
+    co_await idle_timer.async_wait(boost::asio::use_awaitable);
+  }
+  if (check_result == operations::sender_context_check_result_type::
+                          error_source_purged_required_gtids) {
+    // the same message as MySQL Server's ER_SOURCE_HAS_PURGED_REQUIRED_GTIDS
+    const auto missing_gtids{sender_ctx.get_extracted_purged_gtids() -
+                             sender_ctx.get_construction_gtids()};
+    const auto rejection_packet{context.generate_encoded_reading_binlog_error(
+        "Cannot replicate because the source purged required binary logs. "
+        "Replicate the missing transactions from elsewhere, or provision a "
+        "new replica from backup. Consider increasing the source's binary "
+        "log expiration period. The GTID set sent by the replica is '" +
+        sender_ctx.get_construction_gtids().str() +
+        "', and the missing transactions are '" + missing_gtids.str() + "'")};
+    print_error(remote_endpoint_str, context,
+                "source purged GTIDs required by the replica");
+    co_await stream.async_write_mysql_frame(rejection_packet);
+    logger_->log_format(binsrv::log_severity::error,
+                        "net    : sent server error (source purged GTIDs "
+                        "required by the replica) ({} bytes to {})",
+                        std::size(rejection_packet), remote_endpoint_str);
+    co_return;
+  }
+  if (check_result ==
+      operations::sender_context_check_result_type::error_non_existing_binlog) {
+    // the same message as MySQL Server reports in this case
+    const auto rejection_packet{context.generate_encoded_reading_binlog_error(
+        "Could not find first log file name in binary log index file")};
+    print_error(remote_endpoint_str, context,
+                "binlog requested by the replica does not exist");
+    co_await stream.async_write_mysql_frame(rejection_packet);
+    logger_->log_format(binsrv::log_severity::error,
+                        "net    : sent server error (binlog requested by the "
+                        "replica does not exist) ({} bytes to {})",
+                        std::size(rejection_packet), remote_endpoint_str);
+    co_return;
+  }
+
+  // in the non-blocking mode the check may end with an empty storage - in
+  // this case there is nothing to stream and the replica simply gets EOF
+  if (check_result == operations::sender_context_check_result_type::ready) {
+    // Emits HEARTBEAT_LOG_EVENT_V2 while this blocking dump sits idle at EOF,
+    // at the cadence the replica requested via
+    // SET @{master,source}_heartbeat_period (a zero period disables them).
+    heartbeat_sender heartbeat{logger_, session_heartbeat_period, stream,
+                               context, sender_ctx};
+
+    util::const_byte_span event_data{};
+    for (;;) {
+      const auto get_event_result{sender_ctx.get_event(event_data)};
+      if (get_event_result != operations::event_fetching_result_type::success) {
+        if (!blocking) {
+          break;
+        }
+        co_await heartbeat.send_if_due();
+        idle_timer.expires_after(heartbeat.wait_cap(blocking_poll_interval));
+        co_await idle_timer.async_wait(boost::asio::use_awaitable);
+        continue;
+      }
+      const auto event_frame{context.generate_encoded_binlog_event(event_data)};
+      print_generic(remote_endpoint_str, context, "binlog event");
+      co_await stream.async_write_mysql_frame(event_frame);
+      logger_->log_format(binsrv::log_severity::debug,
+                          "net    : sent server binlog event ({} bytes to {})",
+                          std::size(event_frame), remote_endpoint_str);
+      heartbeat.reset();
+    }
   }
 
   const auto eof = context.generate_encoded_eof();

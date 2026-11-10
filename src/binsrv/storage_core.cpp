@@ -463,6 +463,13 @@ storage_core::purge_binlogs(const events::composite_binlog_name &target) {
                                                : next_it->name;
 }
 
+[[nodiscard]] bool storage_core::contains_binlog(
+    const events::composite_binlog_name &binlog_name) const {
+  const std::shared_lock lock{mutex_};
+  return std::ranges::find(std::as_const(binlog_records_), binlog_name,
+                           &binlog_record::name) != std::cend(binlog_records_);
+}
+
 [[nodiscard]] events::composite_binlog_name
 storage_core::get_auto_positioning_binlog_name(
     const gtids::gtid_set &gtids) const {

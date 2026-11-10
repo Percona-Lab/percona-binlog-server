@@ -1,0 +1,297 @@
+--source ../include/have_binsrv.inc
+
+--source ../include/v80_v84_compatibility_defines.inc
+
+--source include/count_sessions.inc
+
+# ==== Purpose ====
+#
+# A downstream replica that requests GTID-based replication
+# (COM_BINLOG_DUMP_GTID) with a GTID set that does not include some of the
+# GTIDs purged from the PBS storage (the PREVIOUS_GTIDS of the first binlog
+# file in the storage) must be rejected with the same error MySQL Server
+# reports in this situation (ER_SOURCE_HAS_PURGED_REQUIRED_GTIDS message
+# sent as ER_SOURCE_FATAL_ERROR_READING_BINLOG). A replica whose GTID set
+# includes all the purged GTIDs must be served as usual. Similarly to MySQL
+# Server, this check is performed only when the replica does not specify the
+# binlog file name to start from. A replica that specifies a binlog file name
+# that does not exist in the storage (in both COM_BINLOG_DUMP and
+# COM_BINLOG_DUMP_GTID) must be rejected with the same error MySQL Server
+# reports in this situation.
+#
+# While the PBS storage is empty, its purged GTID set is not final yet: on
+# the first successful connection to the upstream server it is set to the
+# upstream's @@GLOBAL.gtid_purged. So, the test first checks that a
+# blocking replica that connects before PBS has pulled anything waits until
+# the storage becomes non-empty and only then gets checked (and rejected):
+#   1. Purge some GTIDs on the upstream MySQL server and shut it down.
+#   2. Start PBS in pull mode: its collector thread spins in a reconnect
+#      loop and the storage stays empty.
+#   3. Start a blocking downstream mysqlbinlog session with an empty GTID
+#      set. It must not be disconnected while the storage is empty.
+#   4. Start the upstream MySQL server again. PBS reconnects, takes the
+#      upstream's gtid_purged as the purged GTIDs of the storage and
+#      writes the first binlog file. The downstream session must be
+#      rejected.
+# After that, with the storage fully synchronized, the test checks
+# GTID-based dump requests with different GTID sets against a non-empty
+# storage.
+
+--echo *** Resetting replication at the very beginning of the test.
+--disable_query_log
+eval $stmt_reset_binary_logs_and_gtids;
+--enable_query_log
+
+--let $server_uuid = `SELECT @@GLOBAL.server_uuid`
+
+# identifying backend storage type ('file' or 's3')
+--source ../include/identify_storage_backend.inc
+
+--let $binsrv_connect_timeout = 3
+--let $binsrv_read_timeout = 3
+--let $binsrv_idle_time = 1
+--let $binsrv_verify_checksum = TRUE
+--let $binsrv_replication_mode = gtid
+--let $binsrv_checkpoint_size = 1
+--source ../include/set_up_auth_rsa_keys.inc
+--source ../include/set_up_binsrv_environment.inc
+
+--echo
+--echo *** Creating a simple table and filling it with some data.
+CREATE TABLE t1(id INT UNSIGNED NOT NULL PRIMARY KEY) ENGINE=InnoDB;
+INSERT INTO t1 VALUES(1);
+
+--echo
+--echo *** Flushing the first binary log and switching to the second one.
+FLUSH BINARY LOGS;
+--let $second_binlog = query_get_value($stmt_show_binary_log_status, File, 1)
+
+--echo
+--echo *** Filling the table with more data.
+INSERT INTO t1 VALUES(2);
+
+--echo
+--echo *** Purging the first binary log.
+--replace_result $second_binlog <second_binlog>
+eval PURGE BINARY LOGS TO '$second_binlog';
+
+--let $captured_gtid_purged = `SELECT @@GLOBAL.gtid_purged`
+--let $assert_text = gtid_purged must contain the first two transactions
+--let $assert_cond = "$captured_gtid_purged" = "$server_uuid:1-2"
+--source include/assert.inc
+
+--let $dump_command_common = $MYSQL_BINLOG --to-last-log
+--let $dump_command_common = $dump_command_common --host=$binsrv_connection_host --port=$binsrv_replication_source_port
+--let $dump_command_common = $dump_command_common --user=$binsrv_auth_user --password=$binsrv_auth_password --default-auth=caching_sha2_password
+--let $dump_command_common = $dump_command_common --ssl-mode=DISABLED --get-server-public-key
+
+--let $dump_command_position = $dump_command_common --read-from-remote-source=BINLOG-DUMP-NON-GTIDS
+--let $dump_command_gtid = $dump_command_common --read-from-remote-source=BINLOG-DUMP-GTIDS
+
+--echo
+--echo *** Shutting down the upstream MySQL server so PBS cannot pull
+--echo *** anything and the storage stays empty while the downstream
+--echo *** replica connects.
+--source include/shutdown_mysqld.inc
+
+--echo
+--echo *** Starting Binlog Server Utility in background in pull mode.
+--let $proc_command_line = $BINSRV pull $binsrv_config_file_path > /dev/null
+--let $proc_pid_file = $MYSQL_TMP_DIR/rs_gtid_purged_binsrv.pid
+--source ../include/start_proc_in_background.inc
+--let $binsrv_pid_file = $proc_pid_file
+
+--echo
+--echo *** Waiting for the replication source listener port ready to accept
+--echo *** connections.
+--let $listening_host = $binsrv_connection_host
+--let $listening_port = $binsrv_replication_source_port
+--source ../include/wait_for_listening_port.inc
+
+--echo
+--echo *** Requesting non-blocking dumps while the storage is still empty.
+--echo *** GTID-based and position-based ones without the binlog file name
+--echo *** to start from must simply get EOF ('mysqlbinlog' exits with a
+--echo *** non-zero status if the connection is lost instead).
+--exec $dump_command_gtid "" > /dev/null 2>&1
+--exec $dump_command_position "" > /dev/null 2>&1
+
+--echo
+--echo *** GTID-based and position-based dumps with the binlog file name to
+--echo *** start from must be rejected as this binlog file does not exist (yet).
+--exec $dump_command_gtid "$second_binlog" 2>&1 > /dev/null | grep -o "Could not find.*"
+--exec $dump_command_position "$second_binlog" 2>&1 > /dev/null | grep -o "Could not find.*"
+
+--echo
+--echo *** Restarting the Binlog Server Utility (the storage is still empty) so
+--echo *** that its fresh log contains records only of the blocking dump session
+--echo *** below.
+--let $proc_pid_file = $binsrv_pid_file
+--source ../include/terminate_proc.inc
+--let $proc_command_line = $BINSRV pull $binsrv_config_file_path > /dev/null
+--let $proc_pid_file = $MYSQL_TMP_DIR/rs_gtid_purged_binsrv.pid
+--source ../include/start_proc_in_background.inc
+--let $binsrv_pid_file = $proc_pid_file
+--source ../include/wait_for_listening_port.inc
+
+--echo
+--echo *** Starting a blocking downstream mysqlbinlog session requesting a
+--echo *** GTID-based dump with an empty GTID set.
+--let $downstream_stderr = $MYSQL_TMP_DIR/rs_gtid_purged_downstream.err
+--let $proc_command_line = $dump_command_gtid --stop-never "" > /dev/null 2> $downstream_stderr
+--let $proc_pid_file = $MYSQL_TMP_DIR/rs_gtid_purged_downstream.pid
+--source ../include/start_proc_in_background.inc
+--let $downstream_pid_file = $proc_pid_file
+
+--echo
+--echo *** Waiting for PBS's log to record that the sender reached the
+--echo *** empty-storage polling path (the purged GTIDs check is postponed
+--echo *** until the storage becomes non-empty).
+--let $grep_pattern = sender : waiting for first binlog in empty storage
+--let $grep_file = $binsrv_log_path
+--let $wait_timeout = 60
+--source include/wait_for_pattern_in_file.inc
+
+--echo
+--echo *** Verifying the downstream mysqlbinlog session is still alive
+--echo *** while PBS has nothing in storage.
+--let $proc_pid_file = $downstream_pid_file
+--let $proc_assert_text = mysqlbinlog session must not be disconnected while waiting for the first binlog in empty storage
+--source ../include/assert_proc_exists.inc
+
+--echo
+--echo *** Starting the upstream MySQL server again. PBS's collector
+--echo *** thread will notice on its next iteration (idle_time=1s), take
+--echo *** the upstream's gtid_purged as the purged GTIDs of the storage
+--echo *** and start populating it.
+--source include/start_mysqld.inc
+
+--echo
+--echo *** Waiting for the downstream mysqlbinlog session to be rejected
+--echo *** (with the GTID set sent by the replica and the missing GTIDs
+--echo *** reported in the error message).
+# The '--file_exists' retry argument waits for the stderr file (created by
+# the background mysqlbinlog process) to appear before
+# wait_for_pattern_in_file.inc opens it.
+--file_exists $downstream_stderr 60
+# the server UUID is matched by a regular expression as this pattern is
+# echoed to the result file
+--let $grep_pattern = Cannot replicate because the source purged required binary logs.* The GTID set sent by the replica is '', and the missing transactions are '[-0-9a-f]+:1-2'
+--let $grep_file = $downstream_stderr
+--let $wait_timeout = 60
+--source include/wait_for_pattern_in_file.inc
+
+--echo
+--echo *** Waiting for the downstream mysqlbinlog session to terminate.
+--let $proc_pid_file = $downstream_pid_file
+--source ../include/wait_for_proc_to_terminate.inc
+--remove_file $downstream_pid_file
+--remove_file $downstream_stderr
+
+--echo
+--echo *** Sending SIGTERM signal to the Binlog Server Utility and waiting
+--echo *** for the process to terminate.
+--let $proc_pid_file = $binsrv_pid_file
+--source ../include/terminate_proc.inc
+
+--echo
+--echo *** Filling the table with more data (so that the binary log created
+--echo *** by the MySQL Server restart is not empty).
+INSERT INTO t1 VALUES(3);
+
+--echo
+--echo *** Fetching the rest of the binary logs to make sure that the storage
+--echo *** is fully synchronized with the upstream MySQL server.
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+--echo
+--echo *** Starting Binlog Server Utility in background in pull mode once
+--echo *** again (now with a non-empty storage).
+--let $proc_command_line = $BINSRV pull $binsrv_config_file_path > /dev/null
+--let $proc_pid_file = $MYSQL_TMP_DIR/rs_gtid_purged_binsrv.pid
+--source ../include/start_proc_in_background.inc
+--let $binsrv_pid_file = $proc_pid_file
+
+--echo
+--echo *** Waiting for the replication source listener port ready to accept
+--echo *** connections.
+--source ../include/wait_for_listening_port.inc
+
+--echo
+--echo *** Requesting a GTID-based dump with an empty GTID set (none of the
+--echo *** purged GTIDs is executed by the replica). Expecting an error.
+--replace_result $server_uuid <server_uuid>
+--exec $dump_command_gtid "" 2>&1 > /dev/null | grep -o "Cannot replicate.*"
+
+--echo
+--echo *** Requesting a GTID-based dump with a GTID set that includes only
+--echo *** some of the purged GTIDs. Expecting an error.
+--replace_result $server_uuid <server_uuid>
+--exec $dump_command_gtid --exclude-gtids="$server_uuid:1" "" 2>&1 > /dev/null | grep -o "Cannot replicate.*"
+
+--echo
+--echo *** Requesting a GTID-based dump that names a start binlog file with
+--echo *** an empty GTID set. Similarly to MySQL Server, no GTID-related checks
+--echo *** are performed in this case. Expecting the same events as from the
+--echo *** MySQL Server.
+--let $checkpoint_label = from the named binlog file with the empty GTID set
+--let $checkpoint_replication_mode = gtid
+--let $checkpoint_binlog_name = $second_binlog
+--let $checkpoint_binlog_position = 4
+--let $checkpoint_gtids =
+--source ../include/rs_compare_dumps.inc
+
+--echo
+--echo *** Checking that the Binlog Server Utility received the start binlog
+--echo *** file name in the GTID-based dump request.
+--let $assert_text = GTID-based dump must start from the named binlog file
+--let $assert_file = $binsrv_log_path
+--let $assert_select = sender : starting serving events in gtid-based mode from $second_binlog:4
+--let $assert_count = 1
+--source include/assert_grep.inc
+
+--echo
+--echo *** Requesting GTID-based (with a GTID set that includes all the purged
+--echo *** GTIDs) and position-based dumps that name a non-existent start binlog
+--echo *** file. Expecting an error.
+--let $non_existing_binlog = nonexistent.000001
+--exec $dump_command_gtid --exclude-gtids="$captured_gtid_purged" "$non_existing_binlog" 2>&1 > /dev/null | grep -o "Could not find.*"
+--exec $dump_command_position "$non_existing_binlog" 2>&1 > /dev/null | grep -o "Could not find.*"
+
+--echo
+--echo *** Requesting a GTID-based dump with a GTID set that includes all the
+--echo *** purged GTIDs. Expecting the same events as from the MySQL Server.
+--let $checkpoint_label = from the purged GTID set
+--let $checkpoint_replication_mode = gtid
+--let $checkpoint_binlog_name =
+--let $checkpoint_binlog_position = 4
+--let $checkpoint_gtids = $captured_gtid_purged
+--source ../include/rs_compare_dumps.inc
+
+--echo
+--echo *** Checking that the rejections were logged by the Binlog Server
+--echo *** Utility.
+--let $assert_text = rejections must be logged by the Binlog Server Utility
+--let $assert_file = $binsrv_log_path
+--let $assert_select = sender : the storage has purged GTIDs
+--let $assert_count = 2
+--source include/assert_grep.inc
+
+--echo
+--echo *** Sending SIGTERM signal to the Binlog Server Utility and waiting for
+--echo *** the process to terminate.
+--let $proc_pid_file = $binsrv_pid_file
+--source ../include/terminate_proc.inc
+
+--echo
+--echo *** Dropping the table.
+DROP TABLE t1;
+
+--source ../include/tear_down_binsrv_environment.inc
+
+# PBS reconnected to the source after start_mysqld.inc and ran normal
+# Binlog Dump sessions, so we need to kill the server-side Binlog Dump
+# connection and let 'count_sessions' confirm it is gone.
+--source ../include/kill_binlog_dump_connection.inc
+
+--source include/wait_until_count_sessions.inc

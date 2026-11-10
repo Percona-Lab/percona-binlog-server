@@ -80,6 +80,10 @@ INSERT INTO test1.t VALUES (1), (2), (3);
 --echo
 --echo *** Waiting for the first batch to reach the first downstream
 --echo *** mysqlbinlog through its blocking COM_BINLOG_DUMP connection.
+# The '--file_exists' retry argument waits for the dump file (created by the
+# background mysqlbinlog process) to appear before
+# wait_for_pattern_in_file.inc opens it.
+--file_exists $downstream1_dump 60
 --let $grep_pattern = test1
 --let $grep_file = $downstream1_dump
 --let $wait_timeout = 60
@@ -88,6 +92,7 @@ INSERT INTO test1.t VALUES (1), (2), (3);
 --echo
 --echo *** Waiting for the first batch to reach the second downstream
 --echo *** mysqlbinlog as well.
+--file_exists $downstream2_dump 60
 --let $grep_pattern = test1
 --let $grep_file = $downstream2_dump
 --let $wait_timeout = 60

@@ -246,6 +246,11 @@ storage::purge_binlogs(const events::composite_binlog_name &target) {
   return core_->get_next_binlog_name(current);
 }
 
+[[nodiscard]] bool storage::contains_binlog(
+    const events::composite_binlog_name &binlog_name) const {
+  return core_->contains_binlog(binlog_name);
+}
+
 [[nodiscard]] events::composite_binlog_name
 storage::get_auto_positioning_binlog_name(const gtids::gtid_set &gtids) const {
   return core_->get_auto_positioning_binlog_name(gtids);
