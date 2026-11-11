@@ -16,9 +16,18 @@
 #ifndef OPERATIONS_SENDER_CONTEXT_FWD_HPP
 #define OPERATIONS_SENDER_CONTEXT_FWD_HPP
 
+#include <cstdint>
+
 namespace operations {
 
 class sender_context;
+
+enum class sender_context_check_result_type : std::uint8_t {
+  ready,
+  still_empty,
+  error_source_purged_required_gtids,
+  error_non_existing_binlog
+};
 
 } // namespace operations
 

@@ -1,0 +1,134 @@
+*** Resetting replication at the very beginning of the test.
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+
+*** Creating a simple table and filling it with some data.
+CREATE TABLE t1(id INT UNSIGNED NOT NULL PRIMARY KEY) ENGINE=InnoDB;
+INSERT INTO t1 VALUES(1);
+
+*** Flushing the first binary log and switching to the second one.
+FLUSH BINARY LOGS;
+
+*** Filling the table with more data.
+INSERT INTO t1 VALUES(2);
+
+*** Purging the first binary log.
+PURGE BINARY LOGS TO '<second_binlog>';
+include/assert.inc [gtid_purged must contain the first two transactions]
+
+*** Shutting down the upstream MySQL server so PBS cannot pull
+*** anything and the storage stays empty while the downstream
+*** replica connects.
+
+*** Starting Binlog Server Utility in background in pull mode.
+
+*** Waiting for the replication source listener port ready to accept
+*** connections.
+
+*** Requesting non-blocking dumps while the storage is still empty.
+*** GTID-based and position-based ones without the binlog file name
+*** to start from must simply get EOF ('mysqlbinlog' exits with a
+*** non-zero status if the connection is lost instead).
+
+*** GTID-based and position-based dumps with the binlog file name to
+*** start from must be rejected as this binlog file does not exist (yet).
+Could not find first log file name in binary log index file
+Could not find first log file name in binary log index file
+
+*** Restarting the Binlog Server Utility (the storage is still empty) so
+*** that its fresh log contains records only of the blocking dump session
+*** below.
+
+*** Starting a blocking downstream mysqlbinlog session requesting a
+*** GTID-based dump with an empty GTID set.
+
+*** Waiting for PBS's log to record that the sender reached the
+*** empty-storage polling path (the purged GTIDs check is postponed
+*** until the storage becomes non-empty).
+include/wait_for_pattern_in_file.inc [sender : waiting for first binlog in empty storage]
+
+*** Verifying the downstream mysqlbinlog session is still alive
+*** while PBS has nothing in storage.
+
+*** Starting the upstream MySQL server again. PBS's collector
+*** thread will notice on its next iteration (idle_time=1s), take
+*** the upstream's gtid_purged as the purged GTIDs of the storage
+*** and start populating it.
+# restart
+
+*** Waiting for the downstream mysqlbinlog session to be rejected
+*** (with the GTID set sent by the replica and the missing GTIDs
+*** reported in the error message).
+include/wait_for_pattern_in_file.inc [Cannot replicate because the source purged required binary logs.* The GTID set sent by the replica is '', and the missing transactions are '[-0-9a-f]+:1-2']
+
+*** Waiting for the downstream mysqlbinlog session to terminate.
+
+*** Sending SIGTERM signal to the Binlog Server Utility and waiting
+*** for the process to terminate.
+
+*** Filling the table with more data (so that the binary log created
+*** by the MySQL Server restart is not empty).
+INSERT INTO t1 VALUES(3);
+
+*** Fetching the rest of the binary logs to make sure that the storage
+*** is fully synchronized with the upstream MySQL server.
+
+*** Starting Binlog Server Utility in background in pull mode once
+*** again (now with a non-empty storage).
+
+*** Waiting for the replication source listener port ready to accept
+*** connections.
+
+*** Requesting a GTID-based dump with an empty GTID set (none of the
+*** purged GTIDs is executed by the replica). Expecting an error.
+Cannot replicate because the source purged required binary logs. Replicate the missing transactions from elsewhere, or provision a new replica from backup. Consider increasing the source's binary log expiration period. The GTID set sent by the replica is '', and the missing transactions are '<server_uuid>:1-2'
+
+*** Requesting a GTID-based dump with a GTID set that includes only
+*** some of the purged GTIDs. Expecting an error.
+Cannot replicate because the source purged required binary logs. Replicate the missing transactions from elsewhere, or provision a new replica from backup. Consider increasing the source's binary log expiration period. The GTID set sent by the replica is '<server_uuid>:1', and the missing transactions are '<server_uuid>:2'
+
+*** Requesting a GTID-based dump that names a start binlog file with
+*** an empty GTID set. Similarly to MySQL Server, no GTID-related checks
+*** are performed in this case. Expecting the same events as from the
+*** MySQL Server.
+
+*** Comparing event sequences from the PBS and MySQL Server starting
+*** from checkpoint 'from the named binlog file with the empty GTID set'.
+
+*** Checking that the Binlog Server Utility received the start binlog
+*** file name in the GTID-based dump request.
+include/assert_grep.inc [GTID-based dump must start from the named binlog file]
+
+*** Requesting GTID-based (with a GTID set that includes all the purged
+*** GTIDs) and position-based dumps that name a non-existent start binlog
+*** file. Expecting an error.
+Could not find first log file name in binary log index file
+Could not find first log file name in binary log index file
+
+*** Requesting a GTID-based dump with a GTID set that includes all the
+*** purged GTIDs. Expecting the same events as from the MySQL Server.
+
+*** Comparing event sequences from the PBS and MySQL Server starting
+*** from checkpoint 'from the purged GTID set'.
+
+*** Checking that the rejections were logged by the Binlog Server
+*** Utility.
+include/assert_grep.inc [rejections must be logged by the Binlog Server Utility]
+
+*** Sending SIGTERM signal to the Binlog Server Utility and waiting for
+*** the process to terminate.
+
+*** Dropping the table.
+DROP TABLE t1;
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.

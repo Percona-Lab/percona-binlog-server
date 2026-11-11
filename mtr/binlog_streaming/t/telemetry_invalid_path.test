@@ -38,7 +38,8 @@
 
 --echo
 --echo *** The utility must still be running despite the telemetry write failure.
---exec kill -0 `cat $proc_pid_file`
+--let $proc_assert_text = the utility must still be running despite the telemetry write failure
+--source ../include/assert_proc_exists.inc
 
 --echo
 --echo *** Sending SIGTERM signal to the Binlog Server Utility and waiting for
