@@ -41,6 +41,7 @@ public:
 private:
   std::filesystem::path root_path_;
   std::ofstream ofs_;
+  std::filesystem::path current_file_path_;
 
   [[nodiscard]] storage_object_name_container do_list_objects() override;
 
