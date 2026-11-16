@@ -12,6 +12,11 @@
 --let $binsrv_verify_checksum = TRUE
 --let $binsrv_replication_mode = `SELECT IF(@@global.gtid_mode = 'ON', 'gtid', 'position')`
 --let $binsrv_local_settings_path = $MYSQL_TMP_DIR/binsrv_local_settings
+# the 'rewrite' mode is mandatory in 'gtid' replication mode
+if ($binsrv_replication_mode == gtid)
+{
+  --let $binsrv_rewrite_file_size = 1G
+}
 --source ../include/set_up_binsrv_environment.inc
 
 --let $instance_id_file = $binsrv_local_settings_path/instance_id

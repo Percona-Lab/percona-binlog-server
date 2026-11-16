@@ -11,7 +11,7 @@ eval $stmt_reset_binary_logs_and_gtids;
 
 --echo
 --echo *** Determining the first binary log name.
---let $first_binlog = query_get_value($stmt_show_binary_log_status, File, 1)
+--let $first_binlog = bnlg.000001
 
 # identifying backend storage type ('file' or 's3')
 --source ../include/identify_storage_backend.inc
@@ -23,6 +23,13 @@ eval $stmt_reset_binary_logs_and_gtids;
 --let $binsrv_verify_checksum = TRUE
 --let $binsrv_replication_mode = gtid
 --let $binsrv_checkpoint_size = 1
+# the utility always operates in 'rewrite' mode in 'gtid' replication mode,
+# in which storage binlog files are switched based on their size rather than
+# on source binlog rotations - using the minimal allowed 'file_size' and
+# making each transaction that precedes FLUSH BINARY LOGS larger than it
+# ensures that storage binlog files are switched at the same points as on
+# the source
+--let $binsrv_rewrite_file_size = 1K
 --source ../include/set_up_binsrv_environment.inc
 
 --let $read_from_file = $MYSQL_TMP_DIR/search_result.json
@@ -49,14 +56,14 @@ eval $stmt_reset_binary_logs_and_gtids;
 
 --echo
 --echo *** Creating a simple table.
-CREATE TABLE t1(id INT UNSIGNED NOT NULL AUTO_INCREMENT, PRIMARY KEY(id)) ENGINE=InnoDB;
+CREATE TABLE t1(id INT UNSIGNED NOT NULL AUTO_INCREMENT, payload VARCHAR(2048) NOT NULL DEFAULT '', PRIMARY KEY(id)) ENGINE=InnoDB;
 
 --let $gtid_executed_after_create_table = `SELECT @@global.gtid_executed`
 --let $create_table_gtid = `SELECT GTID_SUBTRACT(@@global.gtid_executed, '$gtid_executed_initial')`
 
 --echo
 --echo *** Filling the table with some data.
-INSERT INTO t1 VALUES();
+INSERT INTO t1(payload) VALUES(REPEAT('a', 1024));
 --let $gtid_executed_after_first_insert = `SELECT @@global.gtid_executed`
 --let $first_insert_gtid = `SELECT GTID_SUBTRACT(@@global.gtid_executed, '$gtid_executed_after_create_table')`
 
@@ -66,7 +73,7 @@ FLUSH BINARY LOGS;
 
 --echo
 --echo *** Determining the second binary log name.
---let $second_binlog = query_get_value($stmt_show_binary_log_status, File, 1)
+--let $second_binlog = bnlg.000002
 
 --echo
 --echo *** Filling the table with more data.

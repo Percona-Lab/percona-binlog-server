@@ -33,6 +33,7 @@
 #include "binsrv/encryption_format_type_fwd.hpp"
 #include "binsrv/main_config_fwd.hpp"
 #include "binsrv/replication_mode_type_fwd.hpp"
+#include "binsrv/rewrite_config_fwd.hpp"
 
 #include "binsrv/events/composite_binlog_name.hpp"
 
@@ -336,6 +337,8 @@ private:
   void validate_metadata(
       replication_mode_type replication_mode,
       const optional_encryption_format_type &encryption_format) const;
+  void validate_rewrite_base_file_name(
+      const optional_rewrite_config &rewrite_config) const;
   void save_metadata() const;
 
   [[nodiscard]] static std::string generate_binlog_metadata_name(

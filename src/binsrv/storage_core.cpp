@@ -43,6 +43,7 @@
 #include "binsrv/main_config.hpp"
 #include "binsrv/replication_config.hpp"
 #include "binsrv/replication_mode_type.hpp"
+#include "binsrv/rewrite_config.hpp"
 #include "binsrv/storage_backend_factory.hpp"
 #include "binsrv/storage_config.hpp"
 #include "binsrv/storage_metadata.hpp"
@@ -235,6 +236,7 @@ storage_core::storage_core(basic_logger_ptr logger, const main_config &config,
   assert(binlog_records_.empty() ||
          !binlog_records_.front().previous_gtids.has_value() ||
          purged_gtids_ == binlog_records_.front().previous_gtids);
+  validate_rewrite_base_file_name(replication_config.get<"rewrite">());
 
   remove_garbage_objects(garbage_object_names);
 }
@@ -1107,6 +1109,26 @@ void storage_core::validate_metadata(
     util::exception_location().raise<std::logic_error>(
         "storage encryption format provided to initialize storage differs from "
         "the one stored in metadata");
+  }
+}
+
+void storage_core::validate_rewrite_base_file_name(
+    const optional_rewrite_config &rewrite_config) const {
+  if (!rewrite_config.has_value() || binlog_records_.empty()) {
+    return;
+  }
+  // in 'rewrite' mode new binlog file names are derived from the name of the
+  // last binlog file in a non-empty storage, so the base file name from the
+  // configuration must match it
+  const auto &configured_base_file_name{
+      rewrite_config->get<"base_file_name">()};
+  const auto &storage_base_file_name{
+      binlog_records_.back().name.get_base_name()};
+  if (configured_base_file_name != storage_base_file_name) {
+    util::exception_location().raise<std::logic_error>(
+        "rewrite base file name '" + configured_base_file_name +
+        "' provided to initialize storage differs from the base name '" +
+        storage_base_file_name + "' of binlog files in the storage");
   }
 }
 
