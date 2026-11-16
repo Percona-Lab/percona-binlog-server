@@ -12,6 +12,9 @@ if ($storage_backend == s3)
 
 --echo
 --echo *** Removing the Binlog Server utility log file.
+# the log file may not exist if the utility failed before creating it
+# (e.g. because of an invalid configuration file)
+--error 0, 1
 --remove_file $binsrv_log_path
 
 --echo

@@ -54,6 +54,8 @@ eval $stmt_reset_binary_logs_and_gtids;
 --let $binsrv_replication_mode = gtid
 --let $binsrv_checkpoint_size = 1
 --source ../include/set_up_auth_rsa_keys.inc
+# the 'rewrite' mode is mandatory in 'gtid' replication mode
+--let $binsrv_rewrite_file_size = 1G
 --source ../include/set_up_binsrv_environment.inc
 
 --echo
@@ -237,6 +239,10 @@ INSERT INTO t1 VALUES(3);
 --let $checkpoint_label = from the named binlog file with the empty GTID set
 --let $checkpoint_replication_mode = gtid
 --let $checkpoint_binlog_name = $second_binlog
+# in 'gtid' replication mode the utility always operates in 'rewrite' mode,
+# so the first binlog file in its storage has a generated name
+--let $first_storage_binlog = bnlg.000001
+--let $checkpoint_roundtrip_binlog_name = $first_storage_binlog
 --let $checkpoint_binlog_position = 4
 --let $checkpoint_gtids =
 --source ../include/rs_compare_dumps.inc
@@ -246,7 +252,7 @@ INSERT INTO t1 VALUES(3);
 --echo *** file name in the GTID-based dump request.
 --let $assert_text = GTID-based dump must start from the named binlog file
 --let $assert_file = $binsrv_log_path
---let $assert_select = sender : starting serving events in gtid-based mode from $second_binlog:4
+--let $assert_select = sender : starting serving events in gtid-based mode from $first_storage_binlog:4
 --let $assert_count = 1
 --source include/assert_grep.inc
 

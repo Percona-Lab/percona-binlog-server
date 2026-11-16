@@ -18,6 +18,8 @@ eval $stmt_reset_binary_logs_and_gtids;
 --let $binsrv_replication_mode = gtid
 --let $binsrv_checkpoint_size = 1
 --source ../include/set_up_auth_rsa_keys.inc
+# the 'rewrite' mode is mandatory in 'gtid' replication mode
+--let $binsrv_rewrite_file_size = 1G
 --source ../include/set_up_binsrv_environment.inc
 
 --echo

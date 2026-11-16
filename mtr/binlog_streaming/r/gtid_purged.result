@@ -1,7 +1,5 @@
 *** Resetting replication at the very beginning of the test.
 
-*** Determining the first binary log name.
-
 *** Generating a configuration file in JSON format for the Binlog
 *** Server utility.
 

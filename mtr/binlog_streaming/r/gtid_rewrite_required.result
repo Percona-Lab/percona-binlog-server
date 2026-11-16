@@ -1,0 +1,55 @@
+*** Resetting replication at the very beginning of the test.
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+
+*** 1. Executing the Binlog Server utility in 'gtid' replication mode
+*** without the 'rewrite' section in the configuration file.
+include/assert_grep.inc ['gtid' replication mode must require the 'rewrite' section]
+
+*** Creating a simple table.
+CREATE TABLE t1(id INT UNSIGNED NOT NULL AUTO_INCREMENT, PRIMARY KEY(id)) ENGINE=InnoDB;
+
+*** 2. Re-generating the configuration file in 'gtid' replication
+***    mode with the 'rewrite' section present.
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Executing the Binlog Server utility in 'gtid' replication mode
+*** with the 'rewrite' section in the configuration file.
+
+*** 3. Re-generating the configuration file in 'gtid' replication
+***    mode with a 'rewrite' base file name that differs from the one
+***    of the binlog files in the non-empty storage.
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Executing the Binlog Server utility in 'fetch' mode with the
+*** mismatching 'rewrite' base file name.
+include/assert_grep.inc ['fetch' must refuse a mismatching 'rewrite' base file name]
+
+*** 4. Re-generating the configuration file in 'position' replication
+***    mode with the 'rewrite' section present.
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Executing the Binlog Server utility in 'position' replication mode
+*** with the 'rewrite' section in the configuration file.
+include/assert_grep.inc ['position' replication mode must not allow the 'rewrite' section]
+
+*** Dropping the table.
+DROP TABLE t1;
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.

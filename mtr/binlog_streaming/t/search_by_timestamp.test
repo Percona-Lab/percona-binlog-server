@@ -9,9 +9,18 @@
 eval $stmt_reset_binary_logs_and_gtids;
 --enable_query_log
 
+--let $binsrv_replication_mode = `SELECT IF(@@global.gtid_mode = 'ON', 'gtid', 'position')`
+
 --echo
 --echo *** Determining the first binary log name.
---let $first_binlog = query_get_value($stmt_show_binary_log_status, File, 1)
+if ($binsrv_replication_mode == gtid)
+{
+  --let $first_binlog = bnlg.000001
+}
+if ($binsrv_replication_mode == position)
+{
+  --let $first_binlog = query_get_value($stmt_show_binary_log_status, File, 1)
+}
 
 # identifying backend storage type ('file' or 's3')
 --source ../include/identify_storage_backend.inc
@@ -21,8 +30,17 @@ eval $stmt_reset_binary_logs_and_gtids;
 --let $binsrv_read_timeout = 60
 --let $binsrv_idle_time = 10
 --let $binsrv_verify_checksum = TRUE
---let $binsrv_replication_mode = `SELECT IF(@@global.gtid_mode = 'ON', 'gtid', 'position')`
 --let $binsrv_checkpoint_size = 1
+# in 'gtid' replication mode the utility always operates in 'rewrite' mode,
+# in which storage binlog files are switched based on their size rather than
+# on source binlog rotations - using the minimal allowed 'file_size' and
+# making each transaction that precedes FLUSH BINARY LOGS larger than it
+# ensures that storage binlog files are switched at the same points as on
+# the source
+if ($binsrv_replication_mode == gtid)
+{
+  --let $binsrv_rewrite_file_size = 1K
+}
 --source ../include/set_up_binsrv_environment.inc
 
 --let $timestamp_query = SELECT DATE_FORMAT(CONVERT_TZ(NOW(), @@session.time_zone, '+00:00'),'%Y-%m-%dT%H:%i:%s')
@@ -52,11 +70,11 @@ eval $stmt_reset_binary_logs_and_gtids;
 
 --echo
 --echo *** Creating a simple table.
-CREATE TABLE t1(id INT UNSIGNED NOT NULL AUTO_INCREMENT, PRIMARY KEY(id)) ENGINE=InnoDB;
+CREATE TABLE t1(id INT UNSIGNED NOT NULL AUTO_INCREMENT, payload VARCHAR(2048) NOT NULL DEFAULT '', PRIMARY KEY(id)) ENGINE=InnoDB;
 
 --echo
 --echo *** Filling the table with some data.
-INSERT INTO t1 VALUES();
+INSERT INTO t1(payload) VALUES(REPEAT('a', 1024));
 
 --let $inside_activity_timestamp = `$timestamp_query`
 --sleep 2
@@ -67,7 +85,14 @@ FLUSH BINARY LOGS;
 
 --echo
 --echo *** Determining the second binary log name.
---let $second_binlog = query_get_value($stmt_show_binary_log_status, File, 1)
+if ($binsrv_replication_mode == gtid)
+{
+  --let $second_binlog = bnlg.000002
+}
+if ($binsrv_replication_mode == position)
+{
+  --let $second_binlog = query_get_value($stmt_show_binary_log_status, File, 1)
+}
 
 --echo
 --echo *** Filling the table with more data.

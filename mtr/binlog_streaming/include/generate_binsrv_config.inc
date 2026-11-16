@@ -24,6 +24,7 @@
 #   --let $binsrv_checkpoint_size = 2M (optional)
 #   --let $binsrv_checkpoint_interval = 30s (optional)
 #   --let $binsrv_rewrite_file_size = 1K (optional)
+#   --let $binsrv_rewrite_base_file_name = bnlg (optional, default: bnlg; used only with $binsrv_rewrite_file_size)
 #   --let $binsrv_encryption_cipher = AES-256-CTR (optional)
 #   --let $binsrv_encryption_kek_id = alpha (optional)
 #   --let $binsrv_keyring_data_file_path = $MYSQL_TMP_DIR/keyring_data.json (optional)
@@ -195,7 +196,12 @@ eval SET @binsrv_config_json = JSON_OBJECT(
 
 if ($binsrv_rewrite_file_size != "")
 {
-  eval SET @binsrv_config_json = JSON_INSERT(@binsrv_config_json, '$.replication.rewrite', JSON_OBJECT('base_file_name', 'bnlg', 'file_size', '$binsrv_rewrite_file_size'));
+  --let $binsrv_effective_rewrite_base_file_name = bnlg
+  if ($binsrv_rewrite_base_file_name != "")
+  {
+    --let $binsrv_effective_rewrite_base_file_name = $binsrv_rewrite_base_file_name
+  }
+  eval SET @binsrv_config_json = JSON_INSERT(@binsrv_config_json, '$.replication.rewrite', JSON_OBJECT('base_file_name', '$binsrv_effective_rewrite_base_file_name', 'file_size', '$binsrv_rewrite_file_size'));
 }
 
 if ($storage_backend == s3)

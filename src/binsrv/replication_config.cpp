@@ -25,14 +25,21 @@ namespace binsrv {
 
 void replication_config::validate() const {
   const auto &optional_rewrite{get<"rewrite">()};
-  if (optional_rewrite.has_value()) {
-    if (get<"mode">() != replication_mode_type::gtid) {
+  const auto is_gtid_mode{get<"mode">() == replication_mode_type::gtid};
+
+  if (is_gtid_mode) {
+    if (!optional_rewrite.has_value()) {
+      util::exception_location().raise<std::invalid_argument>(
+          "error validating replication config: "
+          "rewrite must be enabled in gtid replication mode");
+    }
+    optional_rewrite->validate();
+  } else {
+    if (optional_rewrite.has_value()) {
       util::exception_location().raise<std::invalid_argument>(
           "error validating replication config: "
           "rewrite can only be enabled in gtid replication mode");
     }
-
-    optional_rewrite->validate();
   }
 }
 

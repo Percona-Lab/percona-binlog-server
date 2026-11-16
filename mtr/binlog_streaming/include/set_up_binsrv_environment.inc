@@ -21,6 +21,7 @@
 #   --let $binsrv_checkpoint_size = 2M (optional)
 #   --let $binsrv_checkpoint_interval = 30s (optional)
 #   --let $binsrv_rewrite_file_size = 1K (optional)
+#   --let $binsrv_rewrite_base_file_name = bnlg (optional, default: bnlg; used only with $binsrv_rewrite_file_size)
 #   --let $binsrv_encryption_cipher = AES-256-CTR (optional)
 #   --let $binsrv_encryption_kek_id = alpha (optional)
 #   --let $binsrv_keyring_data_file_path = $MYSQL_TMP_DIR/keyring_data.json (optional)

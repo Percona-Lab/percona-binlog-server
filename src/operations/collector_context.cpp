@@ -147,7 +147,8 @@ bool collector_context::receive_binlog_events(
 
   bool fetch_result{};
 
-  const auto &optional_rewrite_config{replication_config.get<"rewrite">()};
+  const auto is_in_gtid_replication_mode{
+      storage_->is_in_gtid_replication_mode()};
   while (!io_ctx.stopped() &&
          (fetch_result = connection.fetch_binlog_event(portion)) &&
          !portion.empty()) {
@@ -160,10 +161,11 @@ bool collector_context::receive_binlog_events(
 
     const binsrv::events::event_view current_event_v{context, portion};
 
-    if (optional_rewrite_config.has_value()) {
-      // in rewrite mode we need to ignore ROTATE (artificial),
-      // FORMAT_DESCRIPTION, PREVIOUS_GTIDS_LOG, ROTATE (non-artificial),
-      // and STOP events
+    if (is_in_gtid_replication_mode) {
+      // GTID replication mode always implies rewrite mode (enforced by
+      // replication_config::validate()); in rewrite mode we need to ignore
+      // ROTATE (artificial), FORMAT_DESCRIPTION, PREVIOUS_GTIDS_LOG,
+      // ROTATE (non-artificial), and STOP events
       rewrite_and_process_binlog_event(current_event_v, context);
     } else {
       process_binlog_event(current_event_v, context);

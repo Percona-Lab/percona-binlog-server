@@ -1,0 +1,99 @@
+--source ../include/have_binsrv.inc
+
+--source ../include/v80_v84_compatibility_defines.inc
+
+# in case of --repeat=N, we need to start from a fresh binary log to make
+# this test deterministic
+--echo *** Resetting replication at the very beginning of the test.
+--disable_query_log
+eval $stmt_reset_binary_logs_and_gtids;
+--enable_query_log
+
+# identifying backend storage type ('file' or 's3')
+--source ../include/identify_storage_backend.inc
+
+# creating data directory, configuration file, etc.
+--let $binsrv_connect_timeout = 20
+--let $binsrv_read_timeout = 60
+--let $binsrv_idle_time = 10
+--let $binsrv_verify_checksum = TRUE
+# deliberately not setting $binsrv_rewrite_file_size so that the generated
+# configuration file does not have the 'rewrite' section
+--let $binsrv_replication_mode = gtid
+--source ../include/set_up_binsrv_environment.inc
+
+--let $binsrv_console_output_path = $MYSQL_TMP_DIR/binsrv_console_output.log
+
+--echo
+--echo *** 1. Executing the Binlog Server utility in 'gtid' replication mode
+--echo *** without the 'rewrite' section in the configuration file.
+--error 1
+--exec $BINSRV fetch $binsrv_config_file_path > $binsrv_console_output_path
+
+--let $assert_text = 'gtid' replication mode must require the 'rewrite' section
+--let $assert_file = $binsrv_console_output_path
+--let $assert_count = 1
+--let $assert_select = rewrite must be enabled in gtid replication mode
+--source include/assert_grep.inc
+
+--echo
+--echo *** Creating a simple table.
+CREATE TABLE t1(id INT UNSIGNED NOT NULL AUTO_INCREMENT, PRIMARY KEY(id)) ENGINE=InnoDB;
+
+--echo
+--echo *** 2. Re-generating the configuration file in 'gtid' replication
+--echo ***    mode with the 'rewrite' section present.
+--let $binsrv_rewrite_file_size = 1G
+--source ../include/generate_binsrv_config.inc
+
+--echo
+--echo *** Executing the Binlog Server utility in 'gtid' replication mode
+--echo *** with the 'rewrite' section in the configuration file.
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+--echo
+--echo *** 3. Re-generating the configuration file in 'gtid' replication
+--echo ***    mode with a 'rewrite' base file name that differs from the one
+--echo ***    of the binlog files in the non-empty storage.
+--let $binsrv_rewrite_base_file_name = other
+--source ../include/generate_binsrv_config.inc
+
+--echo
+--echo *** Executing the Binlog Server utility in 'fetch' mode with the
+--echo *** mismatching 'rewrite' base file name.
+--error 1
+--exec $BINSRV fetch $binsrv_config_file_path > /dev/null
+
+--let $assert_text = 'fetch' must refuse a mismatching 'rewrite' base file name
+--let $assert_file = $binsrv_log_path
+--let $assert_count = 1
+--let $assert_select = rewrite base file name 'other' provided to initialize storage differs from the base name 'bnlg' of binlog files in the storage
+--source include/assert_grep.inc
+--let $binsrv_rewrite_base_file_name =
+
+--echo
+--echo *** 4. Re-generating the configuration file in 'position' replication
+--echo ***    mode with the 'rewrite' section present.
+--let $binsrv_replication_mode = position
+--let $binsrv_rewrite_file_size = 1G
+--source ../include/generate_binsrv_config.inc
+
+--echo
+--echo *** Executing the Binlog Server utility in 'position' replication mode
+--echo *** with the 'rewrite' section in the configuration file.
+--error 1
+--exec $BINSRV fetch $binsrv_config_file_path > $binsrv_console_output_path
+
+--let $assert_text = 'position' replication mode must not allow the 'rewrite' section
+--let $assert_file = $binsrv_console_output_path
+--let $assert_count = 1
+--let $assert_select = rewrite can only be enabled in gtid replication mode
+--source include/assert_grep.inc
+
+--echo
+--echo *** Dropping the table.
+DROP TABLE t1;
+
+# cleaning up
+--remove_file $binsrv_console_output_path
+--source ../include/tear_down_binsrv_environment.inc

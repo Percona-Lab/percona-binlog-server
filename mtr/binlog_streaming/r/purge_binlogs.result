@@ -15,10 +15,10 @@ include/read_file_to_var.inc
 *** Determining the first binary log name.
 
 *** Creating a simple table.
-CREATE TABLE t1(id INT UNSIGNED NOT NULL AUTO_INCREMENT, PRIMARY KEY(id)) ENGINE=InnoDB;
+CREATE TABLE t1(id INT UNSIGNED NOT NULL AUTO_INCREMENT, payload VARCHAR(2048) NOT NULL DEFAULT '', PRIMARY KEY(id)) ENGINE=InnoDB;
 
 *** Filling the table with some data.
-INSERT INTO t1 VALUES();
+INSERT INTO t1(payload) VALUES(REPEAT('a', 1024));
 
 *** Flushing the first binary log and switching to the second one.
 FLUSH BINARY LOGS;
@@ -26,7 +26,7 @@ FLUSH BINARY LOGS;
 *** Determining the second binary log name.
 
 *** Filling the table with more data.
-INSERT INTO t1 VALUES();
+INSERT INTO t1(payload) VALUES(REPEAT('a', 1024));
 
 *** Flushing the second binary log and switching to the third one.
 FLUSH BINARY LOGS;
