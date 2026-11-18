@@ -640,6 +640,10 @@ set(binsrv_source_files
 
   src/binsrv/null_logger.hpp
 
+  src/binsrv/logger_repeat_adapter_fwd.hpp
+  src/binsrv/logger_repeat_adapter.hpp
+  src/binsrv/logger_repeat_adapter.cpp
+
   src/binsrv/replication_config_fwd.hpp
   src/binsrv/replication_config.hpp
   src/binsrv/replication_config.cpp

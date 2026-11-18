@@ -482,7 +482,7 @@ The Percona Binary Log Server configuration file has the following format.
     "local_settings_path": "/var/lib/pbs"
   },
   "logger": {
-    "level": "debug",
+    "level": "info",
     "file": "binsrv.log"
   },
   "connection": {
@@ -572,9 +572,9 @@ Currently we use the following mapping:
 - `fatal` - currently not used,
 - `error` - used for printing messages coming from caught exceptions,
 - `warning` - currently not used,
-- `info` - primary log severity level used mostly to indicate progress (configuration file read, storage created, connection established, etc.),
-- `debug` - used to print function names from caught exceptions and to print the data from parsed binary log events,
-- `trace` - used to print source file name / line number / position from caught exceptions and to print raw data (hex dumps) of binary log events.
+- `info` - primary log severity level used mostly to indicate progress (configuration file read, storage created, connection established, etc.); messages at this level are not written for every individual binary log event and this is the recommended level for production use,
+- `debug` - used to print function names from caught exceptions and to print a short line for every binary log event received from the MySQL server / sent to a replica,
+- `trace` - used to print source file name / line number / position from caught exceptions and to print the data from parsed binary log events and their raw data (hex dumps).
 
 #### \<connection\> section
 - `<connection.host>` - MySQL server host name (e.g. `127.0.0.1`, `192.168.0.100`, `dbsrv.mydomain.com`, etc.). Please do not use `localhost` here as it will be interpreted differently by the `libmysqlclient` and will instruct the library to use Unix socket file for connection instead of TCP protocol - use `127.0.0.1` instead (see [this page](https://dev.mysql.com/doc/c-api/8.0/en/mysql-real-connect.html) for more details).

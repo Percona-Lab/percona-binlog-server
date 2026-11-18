@@ -25,10 +25,11 @@
 #include <string_view>
 #include <utility>
 
-#include "binsrv/basic_logger.hpp"
+#include "binsrv/basic_logger_fwd.hpp"
 #include "binsrv/basic_storage_backend_fwd.hpp"
 #include "binsrv/indexed_event_block.hpp"
 #include "binsrv/log_severity.hpp"
+#include "binsrv/logger_repeat_adapter.hpp"
 #include "binsrv/replication_mode_type.hpp"
 #include "binsrv/storage.hpp"
 #include "binsrv/storage_core_fwd.hpp"
@@ -62,8 +63,9 @@ sender_single_file_context::sender_single_file_context(
     std::size_t block_size, binsrv::replication_mode_type replication_mode,
     binsrv::events::composite_binlog_name binlog_name, std::uint64_t position,
     const binsrv::gtids::gtid_set &gtids, bool checksum_enabled)
-    : logger_{std::move(logger)}, storage_{std::move(storage)},
-      construction_block_size_{block_size},
+    : logger_{std::make_unique<binsrv::logger_repeat_adapter>(
+          std::move(logger))},
+      storage_{std::move(storage)}, construction_block_size_{block_size},
       construction_replication_mode_{replication_mode},
       construction_binlog_name_{std::move(binlog_name)},
       construction_position_{position}, construction_gtids_borrowed_{&gtids},
@@ -134,10 +136,15 @@ sender_single_file_context::get_event(util::const_byte_span &event) {
       if (populate_result == event_fetching_result_type::eof) {
         fsm_state_ = fsm_state_type::finish;
       }
-      logger_->log(binsrv::log_severity::info, "sender : fetched EOF");
+
+      logger_->log_format_repeat(
+          fetched_eof_logger_group_id, binsrv::log_severity::info,
+          "sender : fetched EOF at {}:{}", construction_binlog_name_.str(),
+          current_position_);
       event = {};
       return populate_result;
     }
+    logger_->reset_group(fetched_eof_logger_group_id);
     // at this point the 'event_block_' must be populated and have
     // available events
     assert(event_block_ &&
@@ -209,7 +216,7 @@ sender_single_file_context::fetch_with_carry_buffer(
     discard_from_carry_buffer(carried_size);
     buffer = std::move(result_buffer);
     logger_->log_format(
-        binsrv::log_severity::info,
+        binsrv::log_severity::debug,
         "sender : reusing {} byte(s) carried from previous fetch",
         carried_size);
 
@@ -218,10 +225,13 @@ sender_single_file_context::fetch_with_carry_buffer(
 
   const auto fetch_result{
       storage_->fetch_event_block(construction_binlog_name_, range, buffer)};
-  logger_->log_format(binsrv::log_severity::info,
-                      "sender : fetched event block of size {}, {}:{}",
-                      std::size(buffer), construction_binlog_name_.str(),
-                      range.to_string());
+  if (fetch_result == binsrv::storage_fetch_result_type::success_full ||
+      fetch_result == binsrv::storage_fetch_result_type::success_truncated) {
+    logger_->log_format(binsrv::log_severity::debug,
+                        "sender : fetched event block of size {}, {}:{}",
+                        std::size(buffer), construction_binlog_name_.str(),
+                        range.to_string());
+  }
   return fetch_result;
 }
 
@@ -529,7 +539,7 @@ sender_single_file_context::populate_event_block() {
     const auto first_event_size{*optional_first_event_size};
     fetch_range = util::byte_range{current_position_, first_event_size};
     logger_->log_format(
-        binsrv::log_severity::info,
+        binsrv::log_severity::debug,
         "sender : block too small for first event (needs {} bytes)",
         first_event_size);
 
@@ -549,7 +559,7 @@ sender_single_file_context::populate_event_block() {
     util::exception_location().raise<std::runtime_error>(
         "Failed to fetch block with at least one event after retry");
   }
-  logger_->log_format(binsrv::log_severity::info,
+  logger_->log_format(binsrv::log_severity::debug,
                       "sender : parsed event block with {} matching events, "
                       "actual size {} byte(s)",
                       event_block_->get_number_of_matching_events(),

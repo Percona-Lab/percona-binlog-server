@@ -23,8 +23,9 @@
 #include <string_view>
 #include <utility>
 
-#include "binsrv/basic_logger.hpp"
+#include "binsrv/basic_logger_fwd.hpp"
 #include "binsrv/log_severity.hpp"
+#include "binsrv/logger_repeat_adapter.hpp"
 #include "binsrv/replication_mode_type.hpp"
 #include "binsrv/storage.hpp"
 
@@ -44,8 +45,9 @@ sender_context::sender_context(
     std::size_t block_size, binsrv::replication_mode_type replication_mode,
     std::string_view binlog_name, std::uint64_t position,
     binsrv::gtids::gtid_set gtids, bool session_source_binlog_checksum)
-    : logger_{std::move(logger)}, storage_{std::move(storage)},
-      construction_block_size_{block_size},
+    : logger_{std::make_unique<binsrv::logger_repeat_adapter>(
+          std::move(logger))},
+      storage_{std::move(storage)}, construction_block_size_{block_size},
       construction_replication_mode_{replication_mode},
       construction_gtids_{std::move(gtids)},
       current_binlog_name_{
@@ -105,7 +107,7 @@ sender_context::get_event(util::const_byte_span &event) {
   while (true) {
     if (!single_file_context_) {
       single_file_context_ = std::make_unique<sender_single_file_context>(
-          logger_, storage_, construction_block_size_,
+          logger_->get_underlying(), storage_, construction_block_size_,
           construction_replication_mode_, current_binlog_name_,
           current_position_, construction_gtids_, current_binlog_checksum_);
       logger_->log_format(binsrv::log_severity::info,
@@ -163,10 +165,11 @@ sender_context::check_for_non_empty_and_validate_position() {
   assert(current_binlog_name_.is_empty());
 
   if (storage_->is_empty()) {
-    logger_->log(binsrv::log_severity::info,
-                 "sender : waiting for first binlog in empty storage");
+    logger_->log_repeat(still_empty_logger_group_id, binsrv::log_severity::info,
+                        "sender : waiting for first binlog in empty storage");
     return sender_context_check_result_type::still_empty;
   }
+  logger_->reset_group(still_empty_logger_group_id);
 
   current_binlog_name_ = storage_->get_next_binlog_name(current_binlog_name_);
   assert(!current_binlog_name_.is_empty());
@@ -182,10 +185,11 @@ sender_context::check_for_non_empty_and_validate_gtid() {
   assert(current_binlog_name_.is_empty());
 
   if (storage_->is_empty()) {
-    logger_->log(binsrv::log_severity::info,
-                 "sender : waiting for first binlog in empty storage");
+    logger_->log_repeat(still_empty_logger_group_id, binsrv::log_severity::info,
+                        "sender : waiting for first binlog in empty storage");
     return sender_context_check_result_type::still_empty;
   }
+  logger_->reset_group(still_empty_logger_group_id);
 
   // in GTID-based replication mode, we first check if source has not purged
   // GTIDs that the replica has not yet received

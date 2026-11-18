@@ -304,7 +304,7 @@ void log_replication_info(
 
 void log_span_dump(binsrv::basic_logger &logger,
                    util::const_byte_span portion) {
-  logger.log_format(binsrv::log_severity::debug,
+  logger.log_format(binsrv::log_severity::trace,
                     "fetched {}-byte(s) event from binlog", std::size(portion));
   // explicitly checking log level and return early as computing
   // hex dump is not a trivial operation

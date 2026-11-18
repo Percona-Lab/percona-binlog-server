@@ -325,7 +325,7 @@ void collector_context::rewrite_and_process_binlog_event(
 
     const auto readable_flags{current_common_header_v.get_readable_flags()};
     logger_->log_format(
-        binsrv::log_severity::info,
+        binsrv::log_severity::debug,
         "rewrite: encountered {}{} event in the rewrite mode - skipping",
         current_common_header_v.get_readable_type_code(),
         (readable_flags.empty() ? std::string{}
@@ -382,7 +382,7 @@ void collector_context::rewrite_and_process_binlog_event(
           event_buffer, context, offset, true /* current timestamp */,
           server_id, false /* non-artificial */, binlog_name,
           binsrv::events::magic_binlog_offset)};
-      logger_->log(binsrv::log_severity::info,
+      logger_->log(binsrv::log_severity::debug,
                    "rewrite: generated rotate event in the rewrite mode");
       process_binlog_event(generated_rotate_event_v, context);
     }
@@ -395,7 +395,7 @@ void collector_context::rewrite_and_process_binlog_event(
         true /* artificial */, binlog_name,
         binsrv::events::magic_binlog_offset)};
     logger_->log(
-        binsrv::log_severity::info,
+        binsrv::log_severity::debug,
         "rewrite: generated artificial rotate event in the rewrite mode");
     process_binlog_event(generated_artificial_rotate_event_v, context);
 
@@ -405,7 +405,7 @@ void collector_context::rewrite_and_process_binlog_event(
                                           server_id, true /* enable checksum */,
                                           false /* non-artificial */)};
     logger_->log(
-        binsrv::log_severity::info,
+        binsrv::log_severity::debug,
         "rewrite: generated format description event in the rewrite mode");
     process_binlog_event(generated_format_description_event_v, context);
 
@@ -416,7 +416,7 @@ void collector_context::rewrite_and_process_binlog_event(
         generate_previous_gtids_log_event(event_buffer, context, offset,
                                           server_id, storage_->get_gtids())};
     logger_->log(
-        binsrv::log_severity::info,
+        binsrv::log_severity::debug,
         "rewrite: generated previous gtids log event in the rewrite mode");
     process_binlog_event(generated_previous_gtids_log_event_v, context);
   }
@@ -435,33 +435,33 @@ void collector_context::process_binlog_event(
     binsrv::events::reader_context &context) {
   const auto current_common_header_v{current_event_v.get_common_header_view()};
   const auto readable_flags{current_common_header_v.get_readable_flags()};
-  logger_->log_format(binsrv::log_severity::info, "event  : {}{}",
+  logger_->log_format(binsrv::log_severity::debug, "event  : {}{}",
                       current_common_header_v.get_readable_type_code(),
                       (readable_flags.empty()
                            ? std::string{}
                            : std::format(" ({})", readable_flags)));
-  logger_->log_format(binsrv::log_severity::debug, "event  : [parsed view] {}",
+  logger_->log_format(binsrv::log_severity::trace, "event  : [parsed view] {}",
                       boost::lexical_cast<std::string>(current_event_v));
 
   const bool info_only{context.process_event_view(current_event_v)};
 
   if (info_only) {
     logger_->log(
-        binsrv::log_severity::info,
+        binsrv::log_severity::debug,
         "event  : [info_only] - will not be written to the binary log file");
   }
 
   if (context.is_at_transaction_boundary()) {
     logger_->log_format(
-        binsrv::log_severity::info, "event  : [end_of_transaction] {}",
+        binsrv::log_severity::debug, "event  : [end_of_transaction] {}",
         boost::lexical_cast<std::string>(context.get_transaction_gtid()));
   }
 
   // here we additionally check for log level because event materialization
   // is not a trivial operation
-  if (binsrv::log_severity::debug >= logger_->get_min_level()) {
+  if (binsrv::log_severity::trace >= logger_->get_min_level()) {
     const binsrv::events::event current_event{current_event_v};
-    logger_->log_format(binsrv::log_severity::debug, "event  : [parsed] {}",
+    logger_->log_format(binsrv::log_severity::trace, "event  : [parsed] {}",
                         boost::lexical_cast<std::string>(current_event));
   }
 
