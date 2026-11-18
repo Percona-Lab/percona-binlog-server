@@ -227,43 +227,38 @@ void network_service::print_error(std::string_view remote_endpoint,
 
 void network_service::print_client_command(std::string_view remote_endpoint,
                                            const connection_context &context) {
-  logger_->log_format(binsrv::log_severity::info,
-                      "net    : parsed client command from {}",
-                      remote_endpoint);
-
   std::string command_details;
   if (context.get_client_mysql_command() == client_command_type::query) {
-    command_details =
-        std::format("\n  statement       : {}", context.get_client_statement());
+    command_details = std::format(": {}", context.get_client_statement());
   }
   if (context.get_client_mysql_command() == client_command_type::binlog_dump ||
       context.get_client_mysql_command() ==
           client_command_type::binlog_dump_gtid) {
     command_details = std::format(
-        "\n  binlog blocking mode : {}"
-        "\n  binlog server id     : {}"
-        "\n  binlog file name     : {}"
-        "\n  binlog position      : {}",
+        ": {}, heartbeat={}, server_id={}, \"{}\":{}",
         (context.check_binlog_non_blocking_dump() ? "non-blocking"
                                                   : "blocking"),
+        (context.check_binlog_use_heartbeat_event_v2() ? "v2" : "v1"),
         context.get_binlog_server_id(), context.get_binlog_filename(),
         context.get_binlog_position());
     if (context.get_client_mysql_command() ==
         client_command_type::binlog_dump_gtid) {
-      command_details +=
-          std::format("\n  binlog SIDs          : {} byte(s)"
-                      "\n  binlog use heartbeat event v2 : {}",
-                      std::size(context.get_binlog_sids()),
-                      context.check_binlog_use_heartbeat_event_v2());
+      command_details += ", gtids=\"";
+      command_details += binsrv::gtids::gtid_set{util::as_const_byte_span(
+                                                     context.get_binlog_sids())}
+                             .str();
+      command_details += '"';
     }
   }
-  logger_->log_format(binsrv::log_severity::debug,
-                      "net    : frame sequence_number {:d}\n"
-                      "  code            : {}{}",
-                      context.get_last_sequence_number(),
+
+  logger_->log_format(binsrv::log_severity::info,
+                      "net    : parsed \"{}\" client command from {}{}",
                       boost::describe::enum_to_string(
                           context.get_client_mysql_command(), "unknown"),
-                      command_details);
+                      remote_endpoint, command_details);
+  logger_->log_format(binsrv::log_severity::debug,
+                      "net    : frame sequence_number {:d}",
+                      context.get_last_sequence_number());
 }
 
 // a helper function to log exceptions with context information
@@ -449,11 +444,14 @@ network_service::handle_binlog_dump_command(
         continue;
       }
       const auto event_frame{context.generate_encoded_binlog_event(event_data)};
-      print_generic(remote_endpoint_str, context, "binlog event");
       co_await stream.async_write_mysql_frame(event_frame);
+      // per-event logging is intentionally limited to the 'debug' level as
+      // this loop runs for every binlog event sent to every replica
       logger_->log_format(binsrv::log_severity::debug,
-                          "net    : sent server binlog event ({} bytes to {})",
-                          std::size(event_frame), remote_endpoint_str);
+                          "net    : sent server binlog event ({} bytes to {}, "
+                          "frame sequence_number {:d})",
+                          std::size(event_frame), remote_endpoint_str,
+                          context.get_last_sequence_number());
       heartbeat.reset();
     }
   }

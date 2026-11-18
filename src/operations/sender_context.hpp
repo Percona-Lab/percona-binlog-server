@@ -23,6 +23,7 @@
 #include <string_view>
 
 #include "binsrv/basic_logger_fwd.hpp"
+#include "binsrv/logger_repeat_adapter_fwd.hpp"
 #include "binsrv/replication_mode_type_fwd.hpp"
 #include "binsrv/storage_fwd.hpp"
 
@@ -77,7 +78,9 @@ public:
   [[nodiscard]] bool generate_heartbeat(util::const_byte_span &event);
 
 private:
-  binsrv::basic_logger_ptr logger_{};
+  static constexpr auto still_empty_logger_group_id{0UZ};
+
+  binsrv::logger_repeat_adapter_ptr logger_{};
   binsrv::storage_ptr storage_{};
 
   std::size_t construction_block_size_{};

@@ -3,7 +3,7 @@
     "local_settings_path": "/var/lib/pbs"
   },
   "logger": {
-    "level": "debug",
+    "level": "info",
     "file": "binsrv.log"
   },
   "connection": {

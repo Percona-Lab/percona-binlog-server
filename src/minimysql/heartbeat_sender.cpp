@@ -92,7 +92,7 @@ boost::asio::awaitable<void> heartbeat_sender::send_if_due() {
   }
   const auto heartbeat_frame{
       context_->generate_encoded_binlog_event(heartbeat_data)};
-  logger_->log_format(binsrv::log_severity::info,
+  logger_->log_format(binsrv::log_severity::debug,
                       "net    : generated heartbeat event packet for {}",
                       remote_endpoint_str);
   co_await stream_->async_write_mysql_frame(heartbeat_frame);

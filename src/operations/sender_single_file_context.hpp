@@ -26,6 +26,7 @@
 
 #include "binsrv/basic_logger_fwd.hpp"
 #include "binsrv/indexed_event_block_fwd.hpp"
+#include "binsrv/logger_repeat_adapter_fwd.hpp"
 #include "binsrv/replication_mode_type_fwd.hpp"
 #include "binsrv/storage_core_fwd.hpp"
 #include "binsrv/storage_fwd.hpp"
@@ -96,8 +97,11 @@ private:
     main_loop,
     finish
   };
+
+  static constexpr auto fetched_eof_logger_group_id{0UZ};
+
   // construction-time parameters
-  binsrv::basic_logger_ptr logger_{};
+  binsrv::logger_repeat_adapter_ptr logger_{};
   binsrv::storage_ptr storage_{};
   std::size_t construction_block_size_{};
   binsrv::replication_mode_type construction_replication_mode_{};
