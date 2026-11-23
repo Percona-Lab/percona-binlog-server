@@ -65,7 +65,7 @@ include/wait_for_pattern_in_file.inc [sender : waiting for first binlog in empty
 *** Waiting for the downstream mysqlbinlog session to be rejected
 *** (with the GTID set sent by the replica and the missing GTIDs
 *** reported in the error message).
-include/wait_for_pattern_in_file.inc [Cannot replicate because the source purged required binary logs.* The GTID set sent by the replica is '', and the missing transactions are '[-0-9a-f]+:1-2']
+include/wait_for_pattern_in_file.inc [Cannot replicate because the source purged required binary logs.* The GTID set sent by the replica is '', and the missing transactions are '[[:xdigit:]]{8}(-[[:xdigit:]]{4}){3}-[[:xdigit:]]{12}:1-2']
 
 *** Waiting for the downstream mysqlbinlog session to terminate.
 

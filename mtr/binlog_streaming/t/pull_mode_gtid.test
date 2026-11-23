@@ -1,0 +1,162 @@
+--source ../include/have_binsrv.inc
+
+--source ../include/v80_v84_compatibility_defines.inc
+
+--source ../include/regexp_helpers.inc
+
+--source include/count_sessions.inc
+
+# Verifies that in GTID-based 'pull' mode restarting the MySQL server
+# several times does not make the Binlog Server Utility store the same
+# transactions more than once.
+#
+# When the server shuts down, its Binlog Dump thread is killed and finishes
+# the replication stream with an EOF packet, which the utility sees as an
+# orderly end of the stream rather than as a lost connection. Transactions
+# still kept in the in-memory event buffer at this moment must be flushed to
+# the storage before reconnecting, as the GTID set sent to the server upon
+# reconnection is built only from the transactions that were already
+# flushed. Otherwise, the server re-sends the buffered transactions which
+# then are written to the storage for the second time.
+
+--echo *** Resetting replication at the very beginning of the test.
+--disable_query_log
+eval $stmt_reset_binary_logs_and_gtids;
+--enable_query_log
+
+# identifying backend storage type ('file' or 's3')
+--source ../include/identify_storage_backend.inc
+
+# creating data directory, configuration file, etc.
+--let $binsrv_connect_timeout = 3
+# read timeout must be long enough not to expire before the server restarts
+# (so that the replication stream is finished by the server-side EOF packet
+# rather than by the client-side read timeout) and short enough for the
+# utility to notice the SIGTERM signal in a timely manner
+--let $binsrv_read_timeout = 15
+--let $binsrv_idle_time = 1
+--let $binsrv_verify_checksum = TRUE
+--let $binsrv_replication_mode = gtid
+# no checkpointing - received transactions remain in the in-memory event
+# buffer until the connection to the server is terminated
+--let $binsrv_rewrite_file_size = 1G
+--source ../include/set_up_binsrv_environment.inc
+
+--echo
+--echo *** Starting Binlog Server Utility in background in pull mode
+--let $proc_command_line = $BINSRV pull $binsrv_config_file_path > /dev/null
+--source ../include/start_proc_in_background.inc
+
+--echo
+--echo *** Creating a simple table and filling it with some data.
+CREATE TABLE t1(id INT UNSIGNED NOT NULL AUTO_INCREMENT, PRIMARY KEY(id)) ENGINE=InnoDB;
+INSERT INTO t1 VALUES(DEFAULT);
+
+--echo
+--echo *** Waiting till Binlog Server Utility receives the second transaction.
+# The '--file_exists' retry argument waits for the log file to appear before
+# wait_for_pattern_in_file.inc opens it.
+--file_exists $binsrv_log_path 60
+# the server UUID is matched by a regular expression as this pattern is
+# echoed to the result file
+--let $grep_pattern = \[end_of_transaction\] $uuid_regexp:2\$
+--let $grep_file = $binsrv_log_path
+--let $wait_timeout = 60
+--source include/wait_for_pattern_in_file.inc
+
+--echo
+--echo *** Restarting the server for the first time.
+--source include/restart_mysqld.inc
+
+--echo
+--echo *** Filling the table with some more data.
+INSERT INTO t1 VALUES(DEFAULT);
+
+--echo
+--echo *** Waiting till Binlog Server Utility receives the third transaction.
+--let $grep_pattern = \[end_of_transaction\] $uuid_regexp:3\$
+--let $grep_file = $binsrv_log_path
+--let $wait_timeout = 60
+--source include/wait_for_pattern_in_file.inc
+
+--echo
+--echo *** Restarting the server for the second time.
+--source include/restart_mysqld.inc
+
+--echo
+--echo *** Filling the table with some more data again.
+INSERT INTO t1 VALUES(DEFAULT);
+
+--echo
+--echo *** Waiting till Binlog Server Utility receives the fourth transaction.
+--let $grep_pattern = \[end_of_transaction\] $uuid_regexp:4\$
+--let $grep_file = $binsrv_log_path
+--let $wait_timeout = 60
+--source include/wait_for_pattern_in_file.inc
+
+--echo
+--echo *** Sending SIGTERM signal to the Binlog Server Utility and waiting for
+--echo *** the process to terminate
+--source ../include/terminate_proc.inc
+
+--echo
+--echo *** Materializing the local binlog file and dumping it via mysqlbinlog.
+if ($storage_backend == file)
+{
+  --let $local_binlog_path = $binsrv_storage_path/bnlg.000001
+}
+if ($storage_backend == s3)
+{
+  --let $local_binlog_path = $MYSQL_TMP_DIR/pull_mode_gtid.bnlg.000001
+  --exec $aws_cli s3 cp s3://$aws_s3_bucket$binsrv_storage_path/bnlg.000001 $local_binlog_path > /dev/null
+}
+
+# extracting the GTIDs of all stored transactions (one per line, in the order
+# they appear in the local binlog file) - the GTID_NEXT 'AUTOMATIC' statement
+# at the end of the dump is filtered out by the second 'grep'
+--let $gtid_list_path = $MYSQL_TMP_DIR/pull_mode_gtid.gtids
+--exec $MYSQL_BINLOG $local_binlog_path | grep "^SET @@SESSION.GTID_NEXT= '" | grep -oE "$uuid_regexp:[0-9]+" > $gtid_list_path
+
+--echo
+--echo *** Checking that every transaction was stored exactly once.
+--let $gtid_count_path = $MYSQL_TMP_DIR/pull_mode_gtid.gtid_count
+--exec wc -l < $gtid_list_path > $gtid_count_path
+--let $read_from_file = $gtid_count_path
+--source include/read_file_to_var.inc
+--let $assert_text = There must be exactly 4 transactions in the local binlog file
+--let $assert_cond = $result = 4
+--source include/assert.inc
+
+--let $read_from_file = $gtid_list_path
+--source include/read_file_to_var.inc
+--disable_query_log
+--eval SET @stored_gtids = REPLACE('$result', '\n', ',')
+--enable_query_log
+--let $assert_text = GTIDs stored in the local binlog file must be equal to gtid_executed
+--let $assert_cond = GTID_SUBSET(@stored_gtids, @@GLOBAL.gtid_executed) AND GTID_SUBSET(@@GLOBAL.gtid_executed, @stored_gtids)
+--source include/assert.inc
+
+--echo
+--echo *** Removing temporary files.
+--remove_file $gtid_count_path
+--remove_file $gtid_list_path
+if ($storage_backend == s3)
+{
+  --remove_file $local_binlog_path
+}
+
+--echo
+--echo *** Dropping the table.
+DROP TABLE t1;
+
+# cleaning up
+--source ../include/tear_down_binsrv_environment.inc
+
+# As the Binlog Server Utility interrupts the connection upon timeout, here we
+# need to close it on the MySQL server side as well in order to make sure that
+# MTR 'check-test' before and after the test produces the same output.
+--source ../include/kill_binlog_dump_connection.inc
+
+# Also, we use 'count_sessions' include files to make sure that 'Binlog Dump'
+# connection is indeed closed.
+--source include/wait_until_count_sessions.inc
