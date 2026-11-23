@@ -175,20 +175,19 @@ bool collector_context::receive_binlog_events(
   // 1) termination signal was received
   //    (termination_flag_->is_flag_set() is true)
   // 2) connection timed out waiting for events (fetch_result is false)
-  // 3) fetched everything and disconnected (fetch_result is true)
-  //    (can only happen in "fetch", non-blocking node)
+  // 3) the server finished the replication stream with an EOF packet
+  //    (fetch_result is true) - in "fetch", non-blocking mode this happens
+  //    when everything has been fetched, in "pull", blocking mode this
+  //    happens when the server-side Binlog Dump thread is killed (for
+  //    instance, during the server shutdown)
   if (io_ctx.stopped()) {
     // case (1)
     logger_->log(binsrv::log_severity::info,
                  "fetching binlog events loop terminated by signal");
     return false;
   }
-  if (fetch_result) {
-    // case (3)
-    return true;
-  }
 
-  // case (2)
+  // cases (2) and (3)
 
   // Truncate the in-memory event buffer to the last completed transaction so
   // the persisted stream offset matches a transaction boundary. On reconnect,
@@ -199,8 +198,21 @@ bool collector_context::receive_binlog_events(
   // connection termination is a good place to flush any remaining data
   // in the event buffer - this can be considered the third kind of
   // checkpointing (in addition to size-based and time-based ones)
+  // Moreover, this flush is mandatory before reconnecting: the resume point
+  // (GTID set in GTID mode, binlog name / position in position mode) is
+  // calculated from the storage state, and in GTID mode it includes only
+  // flushed transactions - leaving complete transactions in the buffer would
+  // make the server send them again, and they would be stored twice
   storage_->flush_event_buffer();
 
+  if (fetch_result) {
+    // case (3)
+    logger_->log(binsrv::log_severity::info,
+                 "replication stream finished by the server");
+    return true;
+  }
+
+  // case (2)
   logger_->log(binsrv::log_severity::info,
                "timed out waiting for events and disconnected");
   return false;

@@ -1,0 +1,58 @@
+*** Resetting replication at the very beginning of the test.
+
+*** Generating a configuration file in JSON format for the Binlog
+*** Server utility.
+
+*** Determining binlog file directory from the server.
+
+*** Creating a temporary directory <BINSRV_STORAGE_PATH> for storing
+*** binlog files downloaded via the Binlog Server utility.
+
+*** Starting Binlog Server Utility in background in pull mode
+
+*** Creating a simple table and filling it with some data.
+CREATE TABLE t1(id INT UNSIGNED NOT NULL AUTO_INCREMENT, PRIMARY KEY(id)) ENGINE=InnoDB;
+INSERT INTO t1 VALUES(DEFAULT);
+
+*** Waiting till Binlog Server Utility receives the second transaction.
+include/wait_for_pattern_in_file.inc [\[end_of_transaction\] [[:xdigit:]]{8}(-[[:xdigit:]]{4}){3}-[[:xdigit:]]{12}:2$]
+
+*** Restarting the server for the first time.
+# restart
+
+*** Filling the table with some more data.
+INSERT INTO t1 VALUES(DEFAULT);
+
+*** Waiting till Binlog Server Utility receives the third transaction.
+include/wait_for_pattern_in_file.inc [\[end_of_transaction\] [[:xdigit:]]{8}(-[[:xdigit:]]{4}){3}-[[:xdigit:]]{12}:3$]
+
+*** Restarting the server for the second time.
+# restart
+
+*** Filling the table with some more data again.
+INSERT INTO t1 VALUES(DEFAULT);
+
+*** Waiting till Binlog Server Utility receives the fourth transaction.
+include/wait_for_pattern_in_file.inc [\[end_of_transaction\] [[:xdigit:]]{8}(-[[:xdigit:]]{4}){3}-[[:xdigit:]]{12}:4$]
+
+*** Sending SIGTERM signal to the Binlog Server Utility and waiting for
+*** the process to terminate
+
+*** Materializing the local binlog file and dumping it via mysqlbinlog.
+
+*** Checking that every transaction was stored exactly once.
+include/read_file_to_var.inc
+include/assert.inc [There must be exactly 4 transactions in the local binlog file]
+include/read_file_to_var.inc
+include/assert.inc [GTIDs stored in the local binlog file must be equal to gtid_executed]
+
+*** Removing temporary files.
+
+*** Dropping the table.
+DROP TABLE t1;
+
+*** Removing the Binlog Server utility storage directory.
+
+*** Removing the Binlog Server utility log file.
+
+*** Removing the Binlog Server utility configuration file.

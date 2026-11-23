@@ -2,6 +2,8 @@
 
 --source ../include/v80_v84_compatibility_defines.inc
 
+--source ../include/regexp_helpers.inc
+
 --source include/count_sessions.inc
 
 # ==== Purpose ====
@@ -178,7 +180,7 @@ eval PURGE BINARY LOGS TO '$second_binlog';
 --file_exists $downstream_stderr 60
 # the server UUID is matched by a regular expression as this pattern is
 # echoed to the result file
---let $grep_pattern = Cannot replicate because the source purged required binary logs.* The GTID set sent by the replica is '', and the missing transactions are '[-0-9a-f]+:1-2'
+--let $grep_pattern = Cannot replicate because the source purged required binary logs.* The GTID set sent by the replica is '', and the missing transactions are '$uuid_regexp:1-2'
 --let $grep_file = $downstream_stderr
 --let $wait_timeout = 60
 --source include/wait_for_pattern_in_file.inc
